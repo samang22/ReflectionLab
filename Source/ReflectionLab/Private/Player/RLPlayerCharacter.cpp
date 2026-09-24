@@ -36,6 +36,53 @@ ARLPlayerCharacter::ARLPlayerCharacter()
 void ARLPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	CurrentHealth = MaxHealth;
+	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+}
+
+float ARLPlayerCharacter::TakeDamage(
+	float DamageAmount,
+	const FDamageEvent& DamageEvent,
+	AController* EventInstigator,
+	AActor* DamageCauser)
+{
+	const float AppliedDamage = Super::TakeDamage(
+		DamageAmount,
+		DamageEvent,
+		EventInstigator,
+		DamageCauser);
+
+	if (AppliedDamage <= 0.0f || IsDead())
+	{
+		return 0.0f;
+	}
+
+	CurrentHealth = FMath::Max(0.0f, CurrentHealth - AppliedDamage);
+	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Player took %.1f damage. Health: %.1f / %.1f"),
+		AppliedDamage,
+		CurrentHealth,
+		MaxHealth);
+
+	if (IsDead())
+	{
+		Die();
+	}
+
+	return AppliedDamage;
+}
+
+void ARLPlayerCharacter::Die_Implementation()
+{
+	GetCharacterMovement()->DisableMovement();
+	SetActorEnableCollision(false);
+
+	UE_LOG(LogTemp, Display, TEXT("Player died."));
 }
 
 // Called every frame
