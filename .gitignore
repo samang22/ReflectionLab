@@ -1,6 +1,9 @@
 # Visual Studio 2015 user specific files
 .vs/
 
+# Rider / IntelliJ user-specific project state
+.idea/
+
 # Compiled Object files
 *.slo
 *.lo
