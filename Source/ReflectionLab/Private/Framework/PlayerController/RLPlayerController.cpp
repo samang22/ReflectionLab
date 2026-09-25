@@ -9,11 +9,16 @@
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/Pawn.h"
 #include "InputAction.h"
+#include "InputCoreTypes.h"
 #include "InputMappingContext.h"
+#include "Player/RLPlayerCharacter.h"
 #include "UObject/ConstructorHelpers.h"
 
 ARLPlayerController::ARLPlayerController()
 {
+	bShowMouseCursor = true;
+	DefaultMouseCursor = EMouseCursor::Crosshairs;
+
 	static ConstructorHelpers::FObjectFinder<UInputMappingContext> MappingContextFinder(
 		TEXT("/Game/ReflectionLab/Input/IMC_Player.IMC_Player"));
 	static ConstructorHelpers::FObjectFinder<UInputAction> MoveForwardActionFinder(
@@ -24,12 +29,22 @@ ARLPlayerController::ARLPlayerController()
 		TEXT("/Game/ReflectionLab/Input/Actions/IA_MoveLeft.IA_MoveLeft"));
 	static ConstructorHelpers::FObjectFinder<UInputAction> MoveRightActionFinder(
 		TEXT("/Game/ReflectionLab/Input/Actions/IA_MoveRight.IA_MoveRight"));
+	static ConstructorHelpers::FObjectFinder<UInputAction> ReflectActionFinder(
+		TEXT("/Game/ReflectionLab/Input/Actions/IA_Reflect.IA_Reflect"));
 
 	DefaultMappingContext = MappingContextFinder.Object;
 	MoveForwardAction = MoveForwardActionFinder.Object;
 	MoveBackwardAction = MoveBackwardActionFinder.Object;
 	MoveLeftAction = MoveLeftActionFinder.Object;
 	MoveRightAction = MoveRightActionFinder.Object;
+	ReflectAction = ReflectActionFinder.Object;
+}
+
+void ARLPlayerController::PlayerTick(float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+
+	UpdateAimRotation();
 }
 
 void ARLPlayerController::BeginPlay()
@@ -85,6 +100,15 @@ void ARLPlayerController::SetupInputComponent()
 		EnhancedInputComponent->BindAction(
 			MoveRightAction, ETriggerEvent::Triggered, this, &ARLPlayerController::MoveRight);
 	}
+
+	if (ReflectAction)
+	{
+		EnhancedInputComponent->BindAction(
+			ReflectAction,
+			ETriggerEvent::Started,
+			this,
+			&ThisClass::ActivateParry);
+	}
 }
 
 void ARLPlayerController::MoveForward()
@@ -125,5 +149,47 @@ void ARLPlayerController::Move(const FVector2D& Direction)
 
 	ControlledPawn->AddMovementInput(ForwardDirection, Direction.Y);
 	ControlledPawn->AddMovementInput(RightDirection, Direction.X);
+}
+
+void ARLPlayerController::ActivateParry()
+{
+	if (ARLPlayerCharacter* PlayerCharacter = Cast<ARLPlayerCharacter>(GetPawn()))
+	{
+		PlayerCharacter->StartParry();
+	}
+}
+
+void ARLPlayerController::UpdateAimRotation()
+{
+	APawn* ControlledPawn = GetPawn();
+	if (!IsLocalController() || !ControlledPawn)
+	{
+		return;
+	}
+
+	FVector MouseWorldOrigin;
+	FVector MouseWorldDirection;
+	if (!DeprojectMousePositionToWorld(MouseWorldOrigin, MouseWorldDirection))
+	{
+		return;
+	}
+
+	if (FMath::IsNearlyZero(FVector::DotProduct(MouseWorldDirection, FVector::UpVector)))
+	{
+		return;
+	}
+
+	const FPlane PlayerPlane(ControlledPawn->GetActorLocation(), FVector::UpVector);
+	const FVector AimLocation = FMath::LinePlaneIntersection(
+		MouseWorldOrigin,
+		MouseWorldOrigin + MouseWorldDirection * 100000.0f,
+		PlayerPlane);
+
+	FVector AimDirection = AimLocation - ControlledPawn->GetActorLocation();
+	AimDirection.Z = 0.0f;
+	if (!AimDirection.IsNearlyZero())
+	{
+		SetControlRotation(AimDirection.Rotation());
+	}
 }
 

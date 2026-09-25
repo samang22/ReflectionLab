@@ -24,6 +24,15 @@ public:
 		AActor* NewOwner,
 		APawn* NewInstigator);
 
+	UFUNCTION(BlueprintCallable, Category = "Projectile")
+	bool Reflect(
+		AActor* NewOwner,
+		APawn* NewInstigator,
+		const FVector& NewDirection);
+
+	UFUNCTION(BlueprintPure, Category = "Projectile")
+	bool IsReflected() const { return bIsReflected; }
+
 	void ReturnToPool();
 
 protected:
@@ -59,6 +68,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile", meta = (ClampMin = "0.0"))
 	float DamageAmount = 1.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Movement", meta = (ClampMin = "1.0"))
+	float ProjectileSpeed = 400.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile", meta = (ClampMin = "0.1"))
 	float LifeSeconds = 5.0f;
 
@@ -71,4 +83,5 @@ private:
 
 	FTimerHandle LifetimeTimerHandle;
 	bool bIsActive = false;
+	bool bIsReflected = false;
 };

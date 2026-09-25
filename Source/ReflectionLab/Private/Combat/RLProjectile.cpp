@@ -35,8 +35,8 @@ ARLProjectile::ARLProjectile()
 
 	ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovement"));
 	ProjectileMovement->UpdatedComponent = CollisionComponent;
-	ProjectileMovement->InitialSpeed = 1200.0f;
-	ProjectileMovement->MaxSpeed = 1200.0f;
+	ProjectileMovement->InitialSpeed = ProjectileSpeed;
+	ProjectileMovement->MaxSpeed = ProjectileSpeed;
 	ProjectileMovement->bRotationFollowsVelocity = true;
 	ProjectileMovement->bShouldBounce = false;
 	ProjectileMovement->ProjectileGravityScale = 0.0f;
@@ -63,6 +63,7 @@ void ARLProjectile::ActivateProjectile(
 	AActor* NewOwner,
 	APawn* NewInstigator)
 {
+	bIsReflected = false;
 	SetOwner(NewOwner);
 	SetInstigator(NewInstigator);
 	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
@@ -85,9 +86,11 @@ void ARLProjectile::ActivateProjectile(
 	CollisionComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 
 	ProjectileMovement->StopMovementImmediately();
+	ProjectileMovement->InitialSpeed = ProjectileSpeed;
+	ProjectileMovement->MaxSpeed = ProjectileSpeed;
 	ProjectileMovement->Activate(true);
 	ProjectileMovement->Velocity =
-		GetActorForwardVector() * ProjectileMovement->InitialSpeed;
+		GetActorForwardVector() * ProjectileSpeed;
 	ProjectileMovement->UpdateComponentVelocity();
 
 	bIsActive = true;
@@ -97,6 +100,49 @@ void ARLProjectile::ActivateProjectile(
 		&ThisClass::ReturnToPool,
 		FMath::Max(0.1f, LifeSeconds),
 		false);
+}
+
+bool ARLProjectile::Reflect(
+	AActor* NewOwner,
+	APawn* NewInstigator,
+	const FVector& NewDirection)
+{
+	if (!bIsActive || !NewOwner || !NewInstigator || NewDirection.IsNearlyZero())
+	{
+		return false;
+	}
+
+	if (AActor* PreviousOwner = GetOwner())
+	{
+		if (UPrimitiveComponent* PreviousOwnerRoot =
+			Cast<UPrimitiveComponent>(PreviousOwner->GetRootComponent()))
+		{
+			PreviousOwnerRoot->IgnoreActorWhenMoving(this, false);
+		}
+	}
+
+	SetOwner(NewOwner);
+	SetInstigator(NewInstigator);
+
+	CollisionComponent->ClearMoveIgnoreActors();
+	CollisionComponent->IgnoreActorWhenMoving(NewOwner, true);
+	if (UPrimitiveComponent* NewOwnerRoot =
+		Cast<UPrimitiveComponent>(NewOwner->GetRootComponent()))
+	{
+		NewOwnerRoot->IgnoreActorWhenMoving(this, true);
+	}
+
+	const FVector ReflectedDirection = NewDirection.GetSafeNormal();
+	SetActorRotation(ReflectedDirection.Rotation());
+	ProjectileMovement->StopMovementImmediately();
+	ProjectileMovement->InitialSpeed = ProjectileSpeed;
+	ProjectileMovement->MaxSpeed = ProjectileSpeed;
+	ProjectileMovement->Velocity = ReflectedDirection * ProjectileSpeed;
+	ProjectileMovement->Activate(true);
+	ProjectileMovement->UpdateComponentVelocity();
+	bIsReflected = true;
+
+	return true;
 }
 
 void ARLProjectile::ReturnToPool()
@@ -122,6 +168,7 @@ void ARLProjectile::ReturnToPool()
 void ARLProjectile::DeactivateForPool()
 {
 	bIsActive = false;
+	bIsReflected = false;
 	GetWorldTimerManager().ClearTimer(LifetimeTimerHandle);
 
 	if (AActor* OwningActor = GetOwner())

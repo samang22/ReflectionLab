@@ -57,7 +57,7 @@ protected:
 	int32 ShotsPerBurst = 1;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Combat", meta = (ClampMin = "0.01"))
-	float TimeBetweenShots = 0.15f;
+	float TimeBetweenShots = 0.3f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Combat", meta = (ClampMin = "0.0"))
 	float InitialFireDelay = 1.0f;
