@@ -33,6 +33,12 @@ ARLProjectile::ARLProjectile()
 	ProjectileMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ProjectileMesh->SetCanEverAffectNavigation(false);
 
+	ReflectedTrailMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ReflectedTrailMesh"));
+	ReflectedTrailMesh->SetupAttachment(CollisionComponent);
+	ReflectedTrailMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ReflectedTrailMesh->SetCanEverAffectNavigation(false);
+	ReflectedTrailMesh->SetVisibility(false, true);
+
 	ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovement"));
 	ProjectileMovement->UpdatedComponent = CollisionComponent;
 	ProjectileMovement->InitialSpeed = ProjectileSpeed;
@@ -47,6 +53,10 @@ ARLProjectile::ARLProjectile()
 void ARLProjectile::BeginPlay()
 {
 	Super::BeginPlay();
+
+	ReflectedTrailMesh->SetStaticMesh(ProjectileMesh->GetStaticMesh());
+	ReflectedTrailMesh->SetRelativeLocation(FVector(ReflectedTrailOffset, 0.0f, 0.0f));
+	ReflectedTrailMesh->SetRelativeScale3D(ReflectedTrailScale);
 
 	DeactivateForPool();
 }
@@ -64,6 +74,7 @@ void ARLProjectile::ActivateProjectile(
 	APawn* NewInstigator)
 {
 	bIsReflected = false;
+	UpdateProjectileMaterial();
 	SetOwner(NewOwner);
 	SetInstigator(NewInstigator);
 	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
@@ -133,14 +144,25 @@ bool ARLProjectile::Reflect(
 	}
 
 	const FVector ReflectedDirection = NewDirection.GetSafeNormal();
+	const float ReflectedSpeed = ProjectileSpeed * FMath::Max(1.0f, ReflectedSpeedMultiplier);
 	SetActorRotation(ReflectedDirection.Rotation());
 	ProjectileMovement->StopMovementImmediately();
-	ProjectileMovement->InitialSpeed = ProjectileSpeed;
-	ProjectileMovement->MaxSpeed = ProjectileSpeed;
-	ProjectileMovement->Velocity = ReflectedDirection * ProjectileSpeed;
+	ProjectileMovement->InitialSpeed = ReflectedSpeed;
+	ProjectileMovement->MaxSpeed = ReflectedSpeed;
+	ProjectileMovement->Velocity = ReflectedDirection * ReflectedSpeed;
 	ProjectileMovement->Activate(true);
 	ProjectileMovement->UpdateComponentVelocity();
 	bIsReflected = true;
+	UpdateProjectileMaterial();
+
+	// A reflected projectile starts a fresh lifetime so it has enough time to
+	// travel back toward an enemy before being returned to the pool.
+	GetWorldTimerManager().SetTimer(
+		LifetimeTimerHandle,
+		this,
+		&ThisClass::ReturnToPool,
+		FMath::Max(0.1f, LifeSeconds),
+		false);
 
 	return true;
 }
@@ -184,10 +206,32 @@ void ARLProjectile::DeactivateForPool()
 	ProjectileMovement->Deactivate();
 	CollisionComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	CollisionComponent->ClearMoveIgnoreActors();
+	ReflectedTrailMesh->SetVisibility(false, true);
 
 	SetActorHiddenInGame(true);
 	SetOwner(nullptr);
 	SetInstigator(nullptr);
+}
+
+void ARLProjectile::UpdateProjectileMaterial()
+{
+	UMaterialInterface* Material = bIsReflected
+		? ReflectedMaterial.Get()
+		: HostileMaterial.Get();
+
+	if (ProjectileMesh && Material)
+	{
+		ProjectileMesh->SetMaterial(0, Material);
+	}
+
+	if (ReflectedTrailMesh)
+	{
+		if (ReflectedMaterial)
+		{
+			ReflectedTrailMesh->SetMaterial(0, ReflectedMaterial);
+		}
+		ReflectedTrailMesh->SetVisibility(bIsReflected, true);
+	}
 }
 
 void ARLProjectile::HandleProjectileHit(

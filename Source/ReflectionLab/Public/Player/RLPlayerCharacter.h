@@ -7,7 +7,12 @@
 #include "RLPlayerCharacter.generated.h"
 
 class UCameraComponent;
+class UDecalComponent;
 class UAnimMontage;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
+class URLParryTuningDataAsset;
+class URLPlayerStatsDataAsset;
 class USoundBase;
 class USphereComponent;
 class USpringArmComponent;
@@ -49,6 +54,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Player|Health")
 	bool IsDead() const { return CurrentHealth <= 0.0f; }
 
+	UFUNCTION(BlueprintPure, Category = "Player|Hit Recovery")
+	bool IsInHitRecovery() const { return bHitRecoveryActive; }
+
 	UPROPERTY(BlueprintAssignable, Category = "Player|Health")
 	FRLPlayerHealthChangedSignature OnHealthChanged;
 
@@ -76,16 +84,33 @@ public:
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void OnConstruction(const FTransform& Transform) override;
 
 	UFUNCTION(BlueprintNativeEvent, Category = "Player|Health")
 	void Die();
 	virtual void Die_Implementation();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Health", meta = (ClampMin = "1.0"))
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Player|Health")
 	float MaxHealth = 3.0f;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Player|Health")
 	float CurrentHealth = 0.0f;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Player|Hit Recovery")
+	float HitRecoveryDuration = 0.6f;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Player|Hit Recovery")
+	float HitRecoveryMovementSpeedMultiplier = 0.45f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Config")
+	TObjectPtr<URLPlayerStatsDataAsset> PlayerStatsData;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Hit Recovery|Feedback")
+	TObjectPtr<UMaterialInterface> HitFlashMaterial;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Hit Recovery|Feedback", meta = (ClampMin = "0.0"))
+	float HitFlashInterval = 0.08f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USpringArmComponent> CameraBoom;
@@ -96,32 +121,41 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Parry", meta = (AllowPrivateAccess = "true", DisplayName = "Parry Detection Zone"))
 	TObjectPtr<USphereComponent> ReflectionZone;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Parry|Indicator", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UDecalComponent> ParryRangeIndicator;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Indicator", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UMaterialInterface> ParryRangeIndicatorMaterial;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Indicator", meta = (AllowPrivateAccess = "true"))
+	bool bShowParryRangeIndicator = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Indicator", meta = (AllowPrivateAccess = "true"))
+	FLinearColor ParryAvailableIndicatorColor = FLinearColor(0.05f, 1.0f, 0.15f, 1.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Indicator", meta = (AllowPrivateAccess = "true"))
+	FLinearColor ParryCooldownIndicatorColor = FLinearColor(1.0f, 0.05f, 0.03f, 1.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Indicator", meta = (AllowPrivateAccess = "true"))
+	FLinearColor ParrySuccessIndicatorColor = FLinearColor(0.02f, 0.45f, 1.0f, 1.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Indicator", meta = (ClampMin = "0.0", AllowPrivateAccess = "true"))
+	float ParrySuccessIndicatorDuration = 0.18f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Animation", meta = (AllowPrivateAccess = "true", DisplayName = "Parry Montage"))
 	TObjectPtr<UAnimMontage> ParryMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Animation", meta = (AllowPrivateAccess = "true", DisplayName = "Mirrored Parry Montage"))
+	TObjectPtr<UAnimMontage> MirroredParryMontage;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Feedback", meta = (AllowPrivateAccess = "true", DisplayName = "Parry Impact Sound"))
 	TObjectPtr<USoundBase> ParryImpactSound;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Timing", meta = (ClampMin = "0.0", DisplayName = "Failed Parry Cooldown"))
-	float ReflectionCooldown = 0.5f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Timing", meta = (ClampMin = "0.0"))
-	float SuccessfulParryCooldown = 0.12f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Chain", meta = (ClampMin = "0.0"))
-	float ParryChainGracePeriod = 0.8f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Config", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<URLParryTuningDataAsset> ParryTuningData;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Parry|Chain")
 	int32 ParryChainCount = 0;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Detection", meta = (ClampMin = "1.0", DisplayName = "Parry Range"))
-	float ReflectionRange = 110.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Detection", meta = (ClampMin = "0.0", ClampMax = "180.0", DisplayName = "Parry Half Angle"))
-	float ReflectionHalfAngleDegrees = 50.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Detection", meta = (ClampMin = "1", DisplayName = "Max Parries Per Activation"))
-	int32 MaxReflectionsPerActivation = 1;
 
 public:
 	// Called every frame
@@ -131,6 +165,19 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 private:
+	void ApplyPlayerStats();
+	void ApplyParryTuning();
+	void UpdateParryRangeIndicator();
+	void UpdateParryIndicatorColor();
+	void ShowParrySuccessIndicator();
+	void ClearParrySuccessIndicator();
+	void TriggerParryHitStop();
+	void RestoreTimeDilation();
+	void BeginHitRecovery();
+	void EndHitRecovery();
+	void StartHitFlash();
+	void ToggleHitFlash();
+	void StopHitFlash();
 	void UpdateParry();
 	bool TryParryProjectile(ARLProjectile* Projectile);
 	void EndParry(bool bSucceeded);
@@ -140,9 +187,37 @@ private:
 	FTimerHandle ParryAttemptTimerHandle;
 	FTimerHandle ParryCooldownTimerHandle;
 	FTimerHandle ParryChainResetTimerHandle;
+	FTimerHandle ParrySuccessIndicatorTimerHandle;
+	FTimerHandle ParryHitStopTimerHandle;
+	FTimerHandle HitRecoveryTimerHandle;
+	FTimerHandle HitFlashTimerHandle;
 
-	int32 ParriesThisActivation = 0;
+	float ReflectionCooldown = 0.5f;
+	float SuccessfulParryCooldown = 0.03f;
+	float ParryChainGracePeriod = 1.0f;
+	float ReflectionRange = 140.0f;
+	float ReflectionHalfAngleDegrees = 50.0f;
+	float ParryIndicatorIdleOpacity = 0.18f;
+	float ParryIndicatorActiveOpacity = 0.38f;
+	float ParryIndicatorSuccessOpacity = 0.55f;
+	float ParryIndicatorUnavailableOpacity = 0.22f;
+	float ParryImpactSoundVolume = 0.65f;
+	float ParryHitStopDuration = 0.04f;
+	float ParryHitStopTimeDilation = 0.1f;
+	float PreHitRecoveryMaxWalkSpeed = 0.0f;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> ParryRangeIndicatorMaterialInstance;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> PreviousOverlayMaterial;
+
 	bool bParryAttemptInProgress = false;
 	bool bParryActive = false;
 	bool bParryOnCooldown = false;
+	bool bPlayMirroredParryNext = false;
+	bool bShowingParrySuccessIndicator = false;
+	bool bParryHitStopActive = false;
+	bool bHitRecoveryActive = false;
+	bool bHitFlashVisible = false;
 };

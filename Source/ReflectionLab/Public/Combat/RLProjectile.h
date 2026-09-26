@@ -9,6 +9,7 @@
 class UProjectileMovementComponent;
 class USphereComponent;
 class UStaticMeshComponent;
+class UMaterialInterface;
 class URLProjectilePoolSubsystem;
 
 UCLASS()
@@ -62,6 +63,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projectile")
 	TObjectPtr<UStaticMeshComponent> ProjectileMesh;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projectile|Visuals")
+	TObjectPtr<UStaticMeshComponent> ReflectedTrailMesh;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projectile")
 	TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
 
@@ -71,13 +75,29 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Movement", meta = (ClampMin = "1.0"))
 	float ProjectileSpeed = 400.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Movement", meta = (ClampMin = "1.0"))
+	float ReflectedSpeedMultiplier = 1.5f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile", meta = (ClampMin = "0.1"))
 	float LifeSeconds = 5.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Visuals")
+	TObjectPtr<UMaterialInterface> HostileMaterial;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Visuals")
+	TObjectPtr<UMaterialInterface> ReflectedMaterial;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Visuals")
+	FVector ReflectedTrailScale = FVector(0.8f, 0.08f, 0.08f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Visuals")
+	float ReflectedTrailOffset = -50.0f;
 
 private:
 	friend class URLProjectilePoolSubsystem;
 
 	void DeactivateForPool();
+	void UpdateProjectileMaterial();
 	bool ShouldIgnoreActor(const AActor* OtherActor) const;
 	void ApplyDamageAndReturn(AActor* OtherActor);
 

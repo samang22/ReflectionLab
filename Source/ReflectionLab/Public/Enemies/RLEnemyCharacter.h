@@ -3,11 +3,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/DataTable.h"
 #include "GameFramework/Character.h"
 #include "RLEnemyCharacter.generated.h"
 
 class USceneComponent;
 class ARLProjectile;
+class URLEnemyPoolSubsystem;
 
 UCLASS()
 class REFLECTIONLAB_API ARLEnemyCharacter : public ACharacter
@@ -23,8 +25,17 @@ public:
 		class AController* EventInstigator,
 		AActor* DamageCauser) override;
 
+	UFUNCTION(BlueprintPure, Category = "Enemy|Pool")
+	bool IsPoolActive() const { return bIsPoolActive; }
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Pool")
+	void ReturnToPool();
+
 protected:
 	virtual void BeginPlay() override;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Config", meta = (RowType = "/Script/ReflectionLab.RLEnemyCombatRow"))
+	FDataTableRowHandle CombatConfig;
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Combat")
 	void StartFiring();
@@ -35,9 +46,6 @@ protected:
 	virtual void Fire();
 	virtual void Die();
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Health", meta = (ClampMin = "1.0"))
-	float MaxHealth = 1.0f;
-
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Enemy|Health")
 	float CurrentHealth = 0.0f;
 
@@ -47,29 +55,26 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Combat")
 	TSubclassOf<ARLProjectile> ProjectileClass;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Combat", meta = (ClampMin = "0"))
-	int32 ProjectilePoolPrewarmCount = 16;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Combat", meta = (ClampMin = "0.1"))
-	float AttackInterval = 2.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Combat", meta = (ClampMin = "1"))
-	int32 ShotsPerBurst = 1;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Combat", meta = (ClampMin = "0.01"))
-	float TimeBetweenShots = 0.3f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Combat", meta = (ClampMin = "0.0"))
-	float InitialFireDelay = 1.0f;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Combat")
 	bool bAutoStartFiring = true;
 
 private:
+	friend class URLEnemyPoolSubsystem;
+
+	void ApplyCombatConfig();
+	void ActivateFromPool(const FTransform& SpawnTransform);
+	void DeactivateForPool();
 	void BeginBurst();
 	void FireNextShot();
 
 	FTimerHandle AttackTimerHandle;
 	FTimerHandle BurstTimerHandle;
+	float MaxHealth = 1.0f;
+	int32 ProjectilePoolPrewarmCount = 16;
+	float AttackInterval = 3.0f;
+	int32 ShotsPerBurst = 1;
+	float TimeBetweenShots = 0.5f;
+	float InitialFireDelay = 1.0f;
 	int32 RemainingShotsInBurst = 0;
+	bool bIsPoolActive = true;
 };
