@@ -75,6 +75,11 @@ private:
 	int32 ShotsPerBurst = 1;
 	float TimeBetweenShots = 0.5f;
 	float InitialFireDelay = 1.0f;
+	int32 ExplosiveShotInterval = 5;
+	int32 RallyShotInterval = 3;
+	int32 RallyRelayCount = 2;
+	float RallySpeedMultiplierPerRelay = 1.35f;
 	int32 RemainingShotsInBurst = 0;
+	int32 ShotsFiredSinceActivation = 0;
 	bool bIsPoolActive = true;
 };

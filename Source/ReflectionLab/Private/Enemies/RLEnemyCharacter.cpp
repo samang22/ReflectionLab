@@ -5,6 +5,7 @@
 #include "Enemies/RLEnemyPoolSubsystem.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Data/RLEnemyCombatRow.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
@@ -15,6 +16,7 @@
 ARLEnemyCharacter::ARLEnemyCharacter()
 {
 	PrimaryActorTick.bCanEverTick = false;
+	GetMesh()->SetReceivesDecals(false);
 
 	MuzzlePoint = CreateDefaultSubobject<USceneComponent>(TEXT("MuzzlePoint"));
 	MuzzlePoint->SetupAttachment(GetRootComponent());
@@ -69,6 +71,10 @@ void ARLEnemyCharacter::ApplyCombatConfig()
 	ShotsPerBurst = FMath::Max(1, Config->ShotsPerBurst);
 	TimeBetweenShots = FMath::Max(0.01f, Config->TimeBetweenShots);
 	InitialFireDelay = FMath::Max(0.0f, Config->InitialFireDelay);
+	ExplosiveShotInterval = FMath::Max(0, Config->ExplosiveShotInterval);
+	RallyShotInterval = FMath::Max(0, Config->RallyShotInterval);
+	RallyRelayCount = FMath::Max(1, Config->RallyRelayCount);
+	RallySpeedMultiplierPerRelay = FMath::Max(1.0f, Config->RallySpeedMultiplierPerRelay);
 }
 
 float ARLEnemyCharacter::TakeDamage(
@@ -172,7 +178,7 @@ void ARLEnemyCharacter::Fire()
 		return;
 	}
 
-	const APawn* TargetPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	APawn* TargetPawn = UGameplayStatics::GetPlayerPawn(this, 0);
 	if (!TargetPawn)
 	{
 		return;
@@ -186,11 +192,29 @@ void ARLEnemyCharacter::Fire()
 	if (URLProjectilePoolSubsystem* PoolSubsystem =
 		GetWorld()->GetSubsystem<URLProjectilePoolSubsystem>())
 	{
-		PoolSubsystem->AcquireProjectile(
+		++ShotsFiredSinceActivation;
+		const bool bShouldFireExplosive = ExplosiveShotInterval > 0 &&
+			ShotsFiredSinceActivation % ExplosiveShotInterval == 0;
+		const bool bShouldFireRally = !bShouldFireExplosive &&
+			RallyShotInterval > 0 &&
+			ShotsFiredSinceActivation % RallyShotInterval == 0;
+
+		ARLProjectile* Projectile = PoolSubsystem->AcquireProjectile(
 			ProjectileClass,
 			SpawnTransform,
 			this,
 			this);
+		if (Projectile && bShouldFireExplosive)
+		{
+			Projectile->ConfigureAsExplosive();
+		}
+		else if (Projectile && bShouldFireRally)
+		{
+			Projectile->ConfigureAsRally(
+				TargetPawn,
+				RallyRelayCount,
+				RallySpeedMultiplierPerRelay);
+		}
 	}
 }
 
@@ -239,6 +263,7 @@ void ARLEnemyCharacter::ActivateFromPool(const FTransform& SpawnTransform)
 
 	bIsPoolActive = true;
 	CurrentHealth = MaxHealth;
+	ShotsFiredSinceActivation = 0;
 
 	if (bAutoStartFiring)
 	{
@@ -251,6 +276,7 @@ void ARLEnemyCharacter::DeactivateForPool()
 	StopFiring();
 	bIsPoolActive = false;
 	CurrentHealth = 0.0f;
+	ShotsFiredSinceActivation = 0;
 
 	if (AController* EnemyController = GetController())
 	{

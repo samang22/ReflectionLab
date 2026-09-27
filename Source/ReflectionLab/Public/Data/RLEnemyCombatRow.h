@@ -26,4 +26,16 @@ struct REFLECTIONLAB_API FRLEnemyCombatRow : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Combat", meta = (ClampMin = "0.0"))
 	float InitialFireDelay = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Combat|Special Projectiles", meta = (ClampMin = "0"))
+	int32 ExplosiveShotInterval = 5;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Combat|Special Projectiles", meta = (ClampMin = "0"))
+	int32 RallyShotInterval = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Combat|Special Projectiles", meta = (ClampMin = "1"))
+	int32 RallyRelayCount = 2;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Combat|Special Projectiles", meta = (ClampMin = "1.0"))
+	float RallySpeedMultiplierPerRelay = 1.35f;
 };

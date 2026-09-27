@@ -8,6 +8,7 @@
 
 class UInputAction;
 class UInputMappingContext;
+class URLParryComboWidget;
 
 UCLASS()
 class REFLECTIONLAB_API ARLPlayerController : public APlayerController
@@ -16,6 +17,8 @@ class REFLECTIONLAB_API ARLPlayerController : public APlayerController
 
 public:
 	ARLPlayerController();
+	virtual void OnPossess(APawn* InPawn) override;
+	virtual void OnUnPossess() override;
 
 protected:
 	virtual void BeginPlay() override;
@@ -30,6 +33,7 @@ private:
 	void Move(const FVector2D& Direction);
 	void ActivateParry();
 	void UpdateAimRotation();
+	void CreateOrBindParryComboWidget();
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
@@ -48,4 +52,7 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputAction> ReflectAction;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URLParryComboWidget> ParryComboWidget;
 };

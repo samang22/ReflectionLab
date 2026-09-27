@@ -4,6 +4,7 @@
 
 #include "Camera/CameraComponent.h"
 #include "Combat/RLProjectile.h"
+#include "Combat/RLProjectilePoolSubsystem.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/DecalComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -41,6 +42,7 @@ ARLPlayerCharacter::ARLPlayerCharacter()
 	GetCharacterMovement()->bOrientRotationToMovement = false;
 	GetCharacterMovement()->bUseControllerDesiredRotation = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
+	GetMesh()->SetReceivesDecals(false);
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
@@ -136,8 +138,50 @@ void ARLPlayerCharacter::ApplyParryTuning()
 
 	ReflectionCooldown = FMath::Max(0.0f, ParryTuningData->FailedParryCooldown);
 	SuccessfulParryCooldown = FMath::Max(0.0f, ParryTuningData->SuccessfulParryCooldown);
-	ParryChainGracePeriod = FMath::Max(0.0f, ParryTuningData->ParryChainGracePeriod);
+	PerfectSplitProjectileCount = FMath::Clamp(
+		ParryTuningData->PerfectSplitProjectileCount,
+		1,
+		8);
+	PerfectSplitAngleDegrees = FMath::Clamp(
+		ParryTuningData->PerfectSplitAngleDegrees,
+		0.0f,
+		90.0f);
+	PerfectHitStopDurationMultiplier = FMath::Max(
+		1.0f,
+		ParryTuningData->PerfectHitStopDurationMultiplier);
+	BasePierceCount = FMath::Max(0, ParryTuningData->BasePierceCount);
+	MaxReflectedSpeedMultiplier = FMath::Max(
+		1.0f,
+		ParryTuningData->MaxReflectedSpeedMultiplier);
+	CloseRangeThreshold = FMath::Max(0.0f, ParryTuningData->CloseRangeThreshold);
+	CloseRangePierceCount = FMath::Max(0, ParryTuningData->CloseRangePierceCount);
+	CloseRangeProjectileScale = FMath::Max(1.0f, ParryTuningData->CloseRangeProjectileScale);
+	ComboSpeedMilestone = FMath::Max(1, ParryTuningData->ComboSpeedMilestone);
+	ComboExtraProjectileMilestone = FMath::Max(
+		ComboSpeedMilestone,
+		ParryTuningData->ComboExtraProjectileMilestone);
+	ComboExtraProjectileSpreadAngle = FMath::Clamp(
+		ParryTuningData->ComboExtraProjectileSpreadAngle,
+		0.0f,
+		90.0f);
+	OverdriveComboThreshold = FMath::Max(
+		ComboExtraProjectileMilestone,
+		ParryTuningData->OverdriveComboThreshold);
+	OverdriveProjectileCount = FMath::Clamp(ParryTuningData->OverdriveProjectileCount, 1, 16);
+	OverdriveSpreadAngleDegrees = FMath::Clamp(
+		ParryTuningData->OverdriveSpreadAngleDegrees,
+		0.0f,
+		180.0f);
+	OverdriveProjectileScale = FMath::Max(1.0f, ParryTuningData->OverdriveProjectileScale);
+	OverdrivePierceCount = FMath::Max(0, ParryTuningData->OverdrivePierceCount);
+	OverdriveHitStopDurationMultiplier = FMath::Max(
+		1.0f,
+		ParryTuningData->OverdriveHitStopDurationMultiplier);
 	ReflectionRange = FMath::Max(1.0f, ParryTuningData->ParryRange);
+	PerfectParryOuterBandWidth = FMath::Clamp(
+		ParryTuningData->PerfectParryOuterBandWidth,
+		0.0f,
+		ReflectionRange);
 	ReflectionHalfAngleDegrees = FMath::Clamp(
 		ParryTuningData->ParryHalfAngleDegrees,
 		0.0f,
@@ -150,6 +194,14 @@ void ARLPlayerCharacter::ApplyParryTuning()
 		0.0f,
 		1.0f);
 	ParryImpactSoundVolume = FMath::Clamp(ParryTuningData->ImpactSoundVolume, 0.0f, 1.0f);
+	ParrySwingSound = ParryTuningData->SwingSound;
+	ParrySwingSoundVolume = FMath::Clamp(ParryTuningData->SwingSoundVolume, 0.0f, 1.0f);
+	ParryComboImpactSounds = ParryTuningData->ComboImpactSounds;
+	ParryComboImpactSoundVolumes.Reset(ParryTuningData->ComboImpactSoundVolumes.Num());
+	for (const float Volume : ParryTuningData->ComboImpactSoundVolumes)
+	{
+		ParryComboImpactSoundVolumes.Add(FMath::Clamp(Volume, 0.0f, 2.0f));
+	}
 	ParryHitStopDuration = FMath::Max(0.0f, ParryTuningData->HitStopDuration);
 	ParryHitStopTimeDilation = FMath::Clamp(ParryTuningData->HitStopTimeDilation, 0.01f, 1.0f);
 }
@@ -177,6 +229,11 @@ void ARLPlayerCharacter::UpdateParryRangeIndicator()
 		ParryRangeIndicatorMaterialInstance->SetScalarParameterValue(
 			TEXT("ConeSlope"),
 			FMath::Tan(FMath::DegreesToRadians(ReflectionHalfAngleDegrees)));
+		const float PerfectBandInnerRadiusUv = 0.5f *
+			(1.0f - PerfectParryOuterBandWidth / ReflectionRange);
+		ParryRangeIndicatorMaterialInstance->SetScalarParameterValue(
+			TEXT("PerfectBandInnerRadiusUV"),
+			PerfectBandInnerRadiusUv);
 		UpdateParryIndicatorColor();
 	}
 }
@@ -193,9 +250,19 @@ void ARLPlayerCharacter::UpdateParryIndicatorColor()
 		: (bShowingParrySuccessIndicator
 			? ParrySuccessIndicatorColor
 			: (bParryOnCooldown ? ParryCooldownIndicatorColor : ParryAvailableIndicatorColor));
+	const FLinearColor PerfectIndicatorColor = bHitRecoveryActive
+		? PerfectParryCooldownIndicatorColor
+		: (bShowingParrySuccessIndicator
+			? PerfectParrySuccessIndicatorColor
+			: (bParryOnCooldown
+				? PerfectParryCooldownIndicatorColor
+				: PerfectParryAvailableIndicatorColor));
 	ParryRangeIndicatorMaterialInstance->SetVectorParameterValue(
 		TEXT("IndicatorColor"),
 		IndicatorColor);
+	ParryRangeIndicatorMaterialInstance->SetVectorParameterValue(
+		TEXT("PerfectIndicatorColor"),
+		PerfectIndicatorColor);
 
 	const float IndicatorOpacity = bShowingParrySuccessIndicator
 		? ParryIndicatorSuccessOpacity
@@ -236,7 +303,7 @@ void ARLPlayerCharacter::ClearParrySuccessIndicator()
 	UpdateParryIndicatorColor();
 }
 
-void ARLPlayerCharacter::TriggerParryHitStop()
+void ARLPlayerCharacter::TriggerParryHitStop(bool bPerfectParry, bool bOverdrive)
 {
 	UWorld* World = GetWorld();
 	if (!World || ParryHitStopDuration <= 0.0f || ParryHitStopTimeDilation >= 1.0f)
@@ -246,12 +313,16 @@ void ARLPlayerCharacter::TriggerParryHitStop()
 
 	bParryHitStopActive = true;
 	UGameplayStatics::SetGlobalTimeDilation(World, ParryHitStopTimeDilation);
+	const float DurationMultiplier = bOverdrive
+		? OverdriveHitStopDurationMultiplier
+		: (bPerfectParry ? PerfectHitStopDurationMultiplier : 1.0f);
+	const float EffectiveHitStopDuration = ParryHitStopDuration * DurationMultiplier;
 	GetWorldTimerManager().ClearTimer(ParryHitStopTimerHandle);
 	GetWorldTimerManager().SetTimer(
 		ParryHitStopTimerHandle,
 		this,
 		&ThisClass::RestoreTimeDilation,
-		FMath::Max(KINDA_SMALL_NUMBER, ParryHitStopDuration * ParryHitStopTimeDilation),
+		FMath::Max(KINDA_SMALL_NUMBER, EffectiveHitStopDuration * ParryHitStopTimeDilation),
 		false);
 }
 
@@ -327,6 +398,10 @@ void ARLPlayerCharacter::BeginHitRecovery()
 	if (bParryAttemptInProgress || bParryActive)
 	{
 		EndParry(false);
+	}
+	else
+	{
+		ResetParryChain();
 	}
 	StopAnimMontage();
 
@@ -436,6 +511,10 @@ void ARLPlayerCharacter::Die_Implementation()
 	{
 		EndParry(false);
 	}
+	else
+	{
+		ResetParryChain();
+	}
 
 	GetCharacterMovement()->DisableMovement();
 	SetActorEnableCollision(false);
@@ -473,6 +552,11 @@ void ARLPlayerCharacter::StartParry()
 		return;
 	}
 
+	if (DetonateExplosiveOnParryAttempt())
+	{
+		return;
+	}
+
 	// Alternate once per successful parry attempt. This is intentionally separate
 	// from ParryChainCount because one swing can reflect multiple projectiles.
 	UAnimMontage* MontageToPlay = ParryMontage;
@@ -489,6 +573,7 @@ void ARLPlayerCharacter::StartParry()
 	}
 
 	bParryAttemptInProgress = true;
+	PlayParrySwingSound();
 	UpdateParryIndicatorColor();
 
 	// A notify state normally ends the attempt. This timer prevents a missing or
@@ -503,7 +588,7 @@ void ARLPlayerCharacter::StartParry()
 
 void ARLPlayerCharacter::BeginParryWindow()
 {
-	if (IsDead() || bHitRecoveryActive || !bParryAttemptInProgress || bParryActive)
+	if (!GetWorld() || IsDead() || bHitRecoveryActive || !bParryAttemptInProgress || bParryActive)
 	{
 		return;
 	}
@@ -543,76 +628,332 @@ void ARLPlayerCharacter::UpdateParry()
 		FCollisionShape::MakeSphere(ReflectionRange),
 		QueryParams);
 
-	bool bParriedAnyProjectile = false;
+	int32 ParriedProjectileCount = 0;
+	bool bPerfectParry = false;
+	bool bCloseRangeParry = false;
+	FVector ParrySoundLocation = GetActorLocation();
+	const int32 ResultingCombo = ParryChainCount + 1;
+	const bool bOverdrive = ResultingCombo >= OverdriveComboThreshold;
 	for (const FOverlapResult& Overlap : Overlaps)
 	{
 		if (ARLProjectile* Projectile = Cast<ARLProjectile>(Overlap.GetActor()))
 		{
-			bParriedAnyProjectile |= TryParryProjectile(Projectile);
+			bool bProjectilePerfectParry = false;
+			bool bProjectileCloseRangeParry = false;
+			if (TryParryProjectile(
+				Projectile,
+				ResultingCombo,
+				bProjectilePerfectParry,
+				bProjectileCloseRangeParry))
+			{
+				if (ParriedProjectileCount == 0)
+				{
+					ParrySoundLocation = Projectile->GetActorLocation();
+				}
+				++ParriedProjectileCount;
+				bPerfectParry |= bProjectilePerfectParry;
+				bCloseRangeParry |= bProjectileCloseRangeParry;
+			}
 		}
 	}
 
-	if (bParriedAnyProjectile)
+	if (ParriedProjectileCount > 0)
 	{
-		TriggerParryHitStop();
+		RegisterSuccessfulParry(
+			ParriedProjectileCount,
+			bPerfectParry,
+			bCloseRangeParry,
+			bOverdrive);
+		PlayParryImpactSound(ParrySoundLocation, ResultingCombo);
+		TriggerParryHitStop(bPerfectParry, bOverdrive);
 		EndParry(true);
+		if (bOverdrive)
+		{
+			ConsumeParryCombo();
+		}
 	}
 }
 
-bool ARLPlayerCharacter::TryParryProjectile(ARLProjectile* Projectile)
+bool ARLPlayerCharacter::IsProjectileWithinParryArc(const ARLProjectile* Projectile) const
 {
-	if (!IsValid(Projectile) || Projectile->IsReflected())
+	if (!IsValid(Projectile))
 	{
 		return false;
 	}
 
-	const FVector DirectionToProjectile =
-		(Projectile->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+	const FVector OffsetToProjectile = Projectile->GetActorLocation() - GetActorLocation();
+	if (OffsetToProjectile.SizeSquared2D() > FMath::Square(ReflectionRange))
+	{
+		return false;
+	}
+
+	const FVector DirectionToProjectile = OffsetToProjectile.GetSafeNormal2D();
 	const FVector ForwardDirection = GetActorForwardVector().GetSafeNormal2D();
 	const float MinimumForwardDot =
 		FMath::Cos(FMath::DegreesToRadians(ReflectionHalfAngleDegrees));
+	return FVector::DotProduct(ForwardDirection, DirectionToProjectile) >= MinimumForwardDot;
+}
 
-	if (FVector::DotProduct(ForwardDirection, DirectionToProjectile) < MinimumForwardDot)
+bool ARLPlayerCharacter::DetonateExplosiveOnParryAttempt()
+{
+	UWorld* World = GetWorld();
+	if (!World)
 	{
 		return false;
 	}
 
-	const FVector ParryDirection = GetActorForwardVector().GetSafeNormal();
-	if (!Projectile->Reflect(this, this, ParryDirection))
-	{
-		return false;
-	}
+	FCollisionObjectQueryParams ObjectQueryParams;
+	ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PlayerParryExplosiveCheck), false, this);
+	TArray<FOverlapResult> Overlaps;
+	World->OverlapMultiByObjectType(
+		Overlaps,
+		GetActorLocation(),
+		FQuat::Identity,
+		ObjectQueryParams,
+		FCollisionShape::MakeSphere(ReflectionRange),
+		QueryParams);
 
-	if (ParryImpactSound)
+	ARLProjectile* ClosestExplosive = nullptr;
+	float ClosestDistanceSquared = TNumericLimits<float>::Max();
+	for (const FOverlapResult& Overlap : Overlaps)
 	{
-		UGameplayStatics::PlaySoundAtLocation(
-			this,
-			ParryImpactSound,
+		ARLProjectile* Projectile = Cast<ARLProjectile>(Overlap.GetActor());
+		if (!Projectile ||
+			!Projectile->IsExplosive() ||
+			Projectile->IsReflected() ||
+			!IsProjectileWithinParryArc(Projectile))
+		{
+			continue;
+		}
+
+		const float DistanceSquared = FVector::DistSquared2D(
 			Projectile->GetActorLocation(),
-			FRotator::ZeroRotator,
-			ParryImpactSoundVolume);
+			GetActorLocation());
+		if (DistanceSquared < ClosestDistanceSquared)
+		{
+			ClosestDistanceSquared = DistanceSquared;
+			ClosestExplosive = Projectile;
+		}
 	}
 
+	if (!ClosestExplosive)
+	{
+		return false;
+	}
+
+	UE_LOG(LogTemp, Display, TEXT("Parry attempt immediately triggered an explosive projectile."));
+	return ClosestExplosive->Detonate();
+}
+
+bool ARLPlayerCharacter::TryParryProjectile(
+	ARLProjectile* Projectile,
+	int32 ResultingCombo,
+	bool& bOutPerfectParry,
+	bool& bOutCloseRangeParry)
+{
+	bOutPerfectParry = false;
+	bOutCloseRangeParry = false;
+	if (!IsValid(Projectile) || Projectile->IsReflected() || !IsProjectileWithinParryArc(Projectile))
+	{
+		return false;
+	}
+
+	const float DistanceToProjectile = FVector::Dist2D(
+		Projectile->GetActorLocation(),
+		GetActorLocation());
+
+	if (Projectile->IsExplosive())
+	{
+		UE_LOG(LogTemp, Display, TEXT("Parry attempt triggered an explosive projectile."));
+		Projectile->Detonate();
+		return false;
+	}
+
+	if (!Projectile->CanBeReflected())
+	{
+		return false;
+	}
+
+	const float PerfectBandInnerRadius = FMath::Max(
+		0.0f,
+		ReflectionRange - PerfectParryOuterBandWidth);
+	const bool bPerfectParry = PerfectParryOuterBandWidth > 0.0f &&
+		DistanceToProjectile >= PerfectBandInnerRadius &&
+		DistanceToProjectile <= ReflectionRange;
+	const bool bCloseRangeParry = CloseRangeThreshold > 0.0f &&
+		DistanceToProjectile <= CloseRangeThreshold;
+	const bool bOverdrive = ResultingCombo >= OverdriveComboThreshold;
+	const bool bMaximumSpeed = bCloseRangeParry ||
+		ResultingCombo >= ComboSpeedMilestone ||
+		bOverdrive;
+
+	const float SpeedMultiplier = bMaximumSpeed
+		? MaxReflectedSpeedMultiplier
+		: Projectile->GetBaseReflectedSpeedMultiplier();
+
+	FRLProjectileReflectionParams ReflectionParams;
+	ReflectionParams.SpeedMultiplier = SpeedMultiplier;
+	ReflectionParams.VisualScaleMultiplier = bOverdrive
+		? OverdriveProjectileScale
+		: (bCloseRangeParry ? CloseRangeProjectileScale : 1.0f);
+	ReflectionParams.PierceCount = bOverdrive
+		? OverdrivePierceCount
+		: (bCloseRangeParry ? CloseRangePierceCount : BasePierceCount);
+	ReflectionParams.ReflectionChain = ResultingCombo;
+	ReflectionParams.bPerfectParry = bPerfectParry;
+	ReflectionParams.bCloseRangeParry = bCloseRangeParry;
+	ReflectionParams.bOverdrive = bOverdrive;
+
+	int32 SplitCount = bPerfectParry ? PerfectSplitProjectileCount : 1;
+	float SplitSpreadAngle = bPerfectParry ? PerfectSplitAngleDegrees : 0.0f;
+	if (ResultingCombo >= ComboExtraProjectileMilestone)
+	{
+		++SplitCount;
+		if (SplitSpreadAngle <= 0.0f)
+		{
+			SplitSpreadAngle = ComboExtraProjectileSpreadAngle;
+		}
+	}
+	if (bOverdrive)
+	{
+		SplitCount = OverdriveProjectileCount;
+		SplitSpreadAngle = OverdriveSpreadAngleDegrees;
+	}
+	TArray<FVector> SplitDirections;
+	SplitDirections.Reserve(SplitCount);
+	const FVector ParryDirection = GetActorForwardVector().GetSafeNormal();
+	for (int32 SplitIndex = 0; SplitIndex < SplitCount; ++SplitIndex)
+	{
+		const float SplitAlpha = SplitCount > 1
+			? static_cast<float>(SplitIndex) / static_cast<float>(SplitCount - 1)
+			: 0.5f;
+		const float SplitAngle = FMath::Lerp(
+			-SplitSpreadAngle * 0.5f,
+			SplitSpreadAngle * 0.5f,
+			SplitAlpha);
+		SplitDirections.Add(ParryDirection.RotateAngleAxis(SplitAngle, FVector::UpVector));
+	}
+
+	if (!Projectile->Reflect(this, this, SplitDirections[0], ReflectionParams))
+	{
+		return false;
+	}
+	SpawnAdditionalReflectedProjectiles(Projectile, SplitDirections, ReflectionParams);
+	bOutPerfectParry = bPerfectParry;
+	bOutCloseRangeParry = bCloseRangeParry;
+
+	return true;
+}
+
+void ARLPlayerCharacter::PlayParrySwingSound() const
+{
+	if (!ParrySwingSound)
+	{
+		return;
+	}
+
+	UGameplayStatics::PlaySoundAtLocation(
+		this,
+		ParrySwingSound,
+		GetActorLocation(),
+		FRotator::ZeroRotator,
+		ParrySwingSoundVolume);
+}
+
+void ARLPlayerCharacter::PlayParryImpactSound(
+	const FVector& SoundLocation,
+	int32 ResultingCombo) const
+{
+	USoundBase* SoundToPlay = ParryImpactSound;
+	float VolumeMultiplier = ParryImpactSoundVolume;
+	const int32 ComboSoundIndex = ResultingCombo - 1;
+	if (ParryComboImpactSounds.IsValidIndex(ComboSoundIndex) &&
+		ParryComboImpactSounds[ComboSoundIndex])
+	{
+		SoundToPlay = ParryComboImpactSounds[ComboSoundIndex];
+		if (ParryComboImpactSoundVolumes.IsValidIndex(ComboSoundIndex))
+		{
+			VolumeMultiplier = ParryComboImpactSoundVolumes[ComboSoundIndex];
+		}
+	}
+
+	if (!SoundToPlay)
+	{
+		return;
+	}
+
+	UGameplayStatics::PlaySoundAtLocation(
+		this,
+		SoundToPlay,
+		SoundLocation,
+		FRotator::ZeroRotator,
+		VolumeMultiplier);
+}
+
+void ARLPlayerCharacter::RegisterSuccessfulParry(
+	int32 MultiParryCount,
+	bool bPerfectParry,
+	bool bCloseRangeParry,
+	bool bOverdrive)
+{
 	++ParryChainCount;
 	OnParryChainChanged.Broadcast(ParryChainCount);
-
-	GetWorldTimerManager().ClearTimer(ParryChainResetTimerHandle);
-	if (ParryChainGracePeriod > 0.0f)
-	{
-		GetWorldTimerManager().SetTimer(
-			ParryChainResetTimerHandle,
-			this,
-			&ThisClass::ResetParryChain,
-			ParryChainGracePeriod,
-			false);
-	}
+	OnParryComboChanged.Broadcast(
+		ParryChainCount,
+		FMath::Max(1, MultiParryCount),
+		bPerfectParry,
+		bCloseRangeParry);
 
 	UE_LOG(
 		LogTemp,
 		Display,
-		TEXT("Projectile parried. Chain: %d"),
-		ParryChainCount);
-	return true;
+		TEXT("Parry combo: %d, Multi: %d, Perfect: %s, Close: %s, Overdrive: %s"),
+		ParryChainCount,
+		MultiParryCount,
+		bPerfectParry ? TEXT("true") : TEXT("false"),
+		bCloseRangeParry ? TEXT("true") : TEXT("false"),
+		bOverdrive ? TEXT("true") : TEXT("false"));
+}
+
+void ARLPlayerCharacter::SpawnAdditionalReflectedProjectiles(
+	ARLProjectile* SourceProjectile,
+	const TArray<FVector>& SplitDirections,
+	const FRLProjectileReflectionParams& ReflectionParams)
+{
+	if (!IsValid(SourceProjectile) || SplitDirections.Num() <= 1)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	URLProjectilePoolSubsystem* PoolSubsystem = World
+		? World->GetSubsystem<URLProjectilePoolSubsystem>()
+		: nullptr;
+	if (!PoolSubsystem)
+	{
+		return;
+	}
+
+	const FVector SpawnLocation = SourceProjectile->GetActorLocation();
+	for (int32 SplitIndex = 1; SplitIndex < SplitDirections.Num(); ++SplitIndex)
+	{
+		const FVector SplitDirection = SplitDirections[SplitIndex].GetSafeNormal();
+		const FTransform SpawnTransform(SplitDirection.Rotation(), SpawnLocation);
+		ARLProjectile* SplitProjectile = PoolSubsystem->AcquireProjectile(
+			SourceProjectile->GetClass(),
+			SpawnTransform,
+			this,
+			this);
+		if (!SplitProjectile ||
+			!SplitProjectile->Reflect(this, this, SplitDirection, ReflectionParams))
+		{
+			if (SplitProjectile)
+			{
+				SplitProjectile->ReturnToPool();
+			}
+		}
+	}
 }
 
 void ARLPlayerCharacter::EndParry(bool bSucceeded)
@@ -679,7 +1020,6 @@ void ARLPlayerCharacter::ResetParryCooldown()
 
 void ARLPlayerCharacter::ResetParryChain()
 {
-	GetWorldTimerManager().ClearTimer(ParryChainResetTimerHandle);
 	bPlayMirroredParryNext = false;
 	if (ParryChainCount == 0)
 	{
@@ -688,5 +1028,19 @@ void ARLPlayerCharacter::ResetParryChain()
 
 	ParryChainCount = 0;
 	OnParryChainChanged.Broadcast(ParryChainCount);
+	OnParryComboChanged.Broadcast(0, 0, false, false);
 	UE_LOG(LogTemp, Display, TEXT("Parry chain reset."));
+}
+
+void ARLPlayerCharacter::ConsumeParryCombo()
+{
+	if (ParryChainCount == 0)
+	{
+		return;
+	}
+
+	ParryChainCount = 0;
+	OnParryChainChanged.Broadcast(ParryChainCount);
+	OnParryComboChanged.Broadcast(0, 0, false, false);
+	UE_LOG(LogTemp, Display, TEXT("Parry combo consumed by overdrive."));
 }

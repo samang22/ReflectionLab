@@ -1,0 +1,18 @@
+---
+description: Keep Unreal Engine validation reliable while minimizing Codex usage and long editor logs
+alwaysApply: true
+---
+
+# Unreal Validation Budget
+
+- Continue to follow `Search -> Modify -> Execute -> Verify`, but use the smallest check that can validate the change.
+- By default, Codex performs focused source inspection, `git diff --check`, and an incremental `ReflectionLabEditor` C++ build.
+- The user performs PIE gameplay, visual, animation, timing, collision-feel, and balance verification. Provide a short, concrete PIE checklist after relevant changes.
+- Do not launch or restart Unreal Editor unless the user asks, or the requested task cannot be completed without it.
+- Do not run `CompileAllBlueprints`, full map checks, full test suites, or other high-output commandlets for routine internal C++ logic or tuning changes.
+- Run broader validation only when justified by reflected API or asset structure changes, such as `UFUNCTION` signatures, `UPROPERTY`/`USTRUCT` schemas, native component changes, Blueprint parent changes, Data Asset schemas, or build configuration changes. State the reason briefly before running it.
+- For Data Asset or editor-only tuning, avoid rebuilding when no compiled code changed; let the user validate the result in PIE.
+- Batch related source changes before building instead of rebuilding after every small edit.
+- Keep command output compact: filter for errors and warnings, show only relevant tail output, and summarize successful logs rather than returning them in full.
+- If a behavior cannot be verified without interactive PIE, mark it as awaiting user verification instead of escalating automatically to expensive UI automation.
+- A direct user request for deeper verification overrides this budget.

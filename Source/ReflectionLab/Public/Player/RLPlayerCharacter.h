@@ -30,6 +30,17 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	int32,
 	ParryChainCount);
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
+	FRLParryComboChangedSignature,
+	int32,
+	ComboCount,
+	int32,
+	MultiParryCount,
+	bool,
+	bPerfectParry,
+	bool,
+	bCloseRangeParry);
+
 UCLASS()
 class REFLECTIONLAB_API ARLPlayerCharacter : public ACharacter
 {
@@ -78,8 +89,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Parry")
 	int32 GetParryChainCount() const { return ParryChainCount; }
 
+	UFUNCTION(BlueprintPure, Category = "Parry|Combo")
+	int32 GetParryComboCount() const { return ParryChainCount; }
+
 	UPROPERTY(BlueprintAssignable, Category = "Parry")
 	FRLParryChainChangedSignature OnParryChainChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Parry|Combo")
+	FRLParryComboChangedSignature OnParryComboChanged;
 
 protected:
 	// Called when the game starts or when spawned
@@ -134,10 +151,19 @@ protected:
 	FLinearColor ParryAvailableIndicatorColor = FLinearColor(0.05f, 1.0f, 0.15f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Indicator", meta = (AllowPrivateAccess = "true"))
+	FLinearColor PerfectParryAvailableIndicatorColor = FLinearColor(0.05f, 1.0f, 0.45f, 1.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Indicator", meta = (AllowPrivateAccess = "true"))
 	FLinearColor ParryCooldownIndicatorColor = FLinearColor(1.0f, 0.05f, 0.03f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Indicator", meta = (AllowPrivateAccess = "true"))
+	FLinearColor PerfectParryCooldownIndicatorColor = FLinearColor(1.0f, 0.25f, 0.03f, 1.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Indicator", meta = (AllowPrivateAccess = "true"))
 	FLinearColor ParrySuccessIndicatorColor = FLinearColor(0.02f, 0.45f, 1.0f, 1.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Indicator", meta = (AllowPrivateAccess = "true"))
+	FLinearColor PerfectParrySuccessIndicatorColor = FLinearColor(0.02f, 0.75f, 1.0f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Indicator", meta = (ClampMin = "0.0", AllowPrivateAccess = "true"))
 	float ParrySuccessIndicatorDuration = 0.18f;
@@ -150,6 +176,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Feedback", meta = (AllowPrivateAccess = "true", DisplayName = "Parry Impact Sound"))
 	TObjectPtr<USoundBase> ParryImpactSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Feedback", meta = (AllowPrivateAccess = "true", DisplayName = "Parry Swing Sound"))
+	TObjectPtr<USoundBase> ParrySwingSound;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Config", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<URLParryTuningDataAsset> ParryTuningData;
@@ -171,7 +200,9 @@ private:
 	void UpdateParryIndicatorColor();
 	void ShowParrySuccessIndicator();
 	void ClearParrySuccessIndicator();
-	void TriggerParryHitStop();
+	void PlayParrySwingSound() const;
+	void PlayParryImpactSound(const FVector& SoundLocation, int32 ResultingCombo) const;
+	void TriggerParryHitStop(bool bPerfectParry, bool bOverdrive);
 	void RestoreTimeDilation();
 	void BeginHitRecovery();
 	void EndHitRecovery();
@@ -179,14 +210,29 @@ private:
 	void ToggleHitFlash();
 	void StopHitFlash();
 	void UpdateParry();
-	bool TryParryProjectile(ARLProjectile* Projectile);
+	bool IsProjectileWithinParryArc(const ARLProjectile* Projectile) const;
+	bool DetonateExplosiveOnParryAttempt();
+	bool TryParryProjectile(
+		ARLProjectile* Projectile,
+		int32 ResultingCombo,
+		bool& bOutPerfectParry,
+		bool& bOutCloseRangeParry);
+	void RegisterSuccessfulParry(
+		int32 MultiParryCount,
+		bool bPerfectParry,
+		bool bCloseRangeParry,
+		bool bOverdrive);
+	void SpawnAdditionalReflectedProjectiles(
+		ARLProjectile* SourceProjectile,
+		const TArray<FVector>& SplitDirections,
+		const struct FRLProjectileReflectionParams& ReflectionParams);
 	void EndParry(bool bSucceeded);
 	void ResetParryCooldown();
 	void ResetParryChain();
+	void ConsumeParryCombo();
 
 	FTimerHandle ParryAttemptTimerHandle;
 	FTimerHandle ParryCooldownTimerHandle;
-	FTimerHandle ParryChainResetTimerHandle;
 	FTimerHandle ParrySuccessIndicatorTimerHandle;
 	FTimerHandle ParryHitStopTimerHandle;
 	FTimerHandle HitRecoveryTimerHandle;
@@ -194,7 +240,24 @@ private:
 
 	float ReflectionCooldown = 0.5f;
 	float SuccessfulParryCooldown = 0.03f;
-	float ParryChainGracePeriod = 1.0f;
+	float PerfectParryOuterBandWidth = 30.0f;
+	int32 PerfectSplitProjectileCount = 3;
+	float PerfectSplitAngleDegrees = 40.0f;
+	float PerfectHitStopDurationMultiplier = 1.75f;
+	int32 BasePierceCount = 0;
+	float MaxReflectedSpeedMultiplier = 2.0f;
+	float CloseRangeThreshold = 55.0f;
+	int32 CloseRangePierceCount = 3;
+	float CloseRangeProjectileScale = 1.7f;
+	int32 ComboSpeedMilestone = 3;
+	int32 ComboExtraProjectileMilestone = 5;
+	float ComboExtraProjectileSpreadAngle = 18.0f;
+	int32 OverdriveComboThreshold = 8;
+	int32 OverdriveProjectileCount = 7;
+	float OverdriveSpreadAngleDegrees = 100.0f;
+	float OverdriveProjectileScale = 2.0f;
+	int32 OverdrivePierceCount = 3;
+	float OverdriveHitStopDurationMultiplier = 2.5f;
 	float ReflectionRange = 140.0f;
 	float ReflectionHalfAngleDegrees = 50.0f;
 	float ParryIndicatorIdleOpacity = 0.18f;
@@ -202,10 +265,12 @@ private:
 	float ParryIndicatorSuccessOpacity = 0.55f;
 	float ParryIndicatorUnavailableOpacity = 0.22f;
 	float ParryImpactSoundVolume = 0.65f;
+	float ParrySwingSoundVolume = 0.45f;
+	TArray<TObjectPtr<USoundBase>> ParryComboImpactSounds;
+	TArray<float> ParryComboImpactSoundVolumes;
 	float ParryHitStopDuration = 0.04f;
 	float ParryHitStopTimeDilation = 0.1f;
 	float PreHitRecoveryMaxWalkSpeed = 0.0f;
-
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> ParryRangeIndicatorMaterialInstance;
 

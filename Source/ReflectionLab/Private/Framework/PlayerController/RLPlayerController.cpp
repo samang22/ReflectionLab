@@ -12,6 +12,7 @@
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "Player/RLPlayerCharacter.h"
+#include "UI/RLParryComboWidget.h"
 #include "UObject/ConstructorHelpers.h"
 
 ARLPlayerController::ARLPlayerController()
@@ -63,6 +64,47 @@ void ARLPlayerController::BeginPlay()
 		{
 			InputSubsystem->AddMappingContext(DefaultMappingContext, 0);
 		}
+	}
+
+	CreateOrBindParryComboWidget();
+}
+
+void ARLPlayerController::OnPossess(APawn* InPawn)
+{
+	Super::OnPossess(InPawn);
+	CreateOrBindParryComboWidget();
+}
+
+void ARLPlayerController::OnUnPossess()
+{
+	if (ParryComboWidget)
+	{
+		ParryComboWidget->BindToPlayer(nullptr);
+	}
+	Super::OnUnPossess();
+}
+
+void ARLPlayerController::CreateOrBindParryComboWidget()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (!ParryComboWidget)
+	{
+		ParryComboWidget = CreateWidget<URLParryComboWidget>(
+			this,
+			URLParryComboWidget::StaticClass());
+		if (ParryComboWidget)
+		{
+			ParryComboWidget->AddToViewport(20);
+		}
+	}
+
+	if (ParryComboWidget)
+	{
+		ParryComboWidget->BindToPlayer(Cast<ARLPlayerCharacter>(GetPawn()));
 	}
 }
 
