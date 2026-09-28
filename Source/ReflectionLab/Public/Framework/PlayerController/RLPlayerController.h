@@ -9,6 +9,8 @@
 class UInputAction;
 class UInputMappingContext;
 class URLParryComboWidget;
+class URLPlayerHealthWidget;
+class URLRunStatusWidget;
 
 UCLASS()
 class REFLECTIONLAB_API ARLPlayerController : public APlayerController
@@ -33,7 +35,10 @@ private:
 	void Move(const FVector2D& Direction);
 	void ActivateParry();
 	void UpdateAimRotation();
+	bool IsGameplayInputAllowed() const;
 	void CreateOrBindParryComboWidget();
+	void CreateOrBindPlayerHealthWidget();
+	void CreateOrBindRunStatusWidget();
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> DefaultMappingContext;
@@ -55,4 +60,10 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<URLParryComboWidget> ParryComboWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URLPlayerHealthWidget> PlayerHealthWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URLRunStatusWidget> RunStatusWidget;
 };

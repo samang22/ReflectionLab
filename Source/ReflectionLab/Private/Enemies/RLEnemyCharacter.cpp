@@ -1,5 +1,6 @@
 #include "Enemies/RLEnemyCharacter.h"
 
+#include "Combat/RLExplosionVisual.h"
 #include "Combat/RLProjectile.h"
 #include "Combat/RLProjectilePoolSubsystem.h"
 #include "Enemies/RLEnemyPoolSubsystem.h"
@@ -8,13 +9,28 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Data/RLEnemyCombatRow.h"
 #include "Engine/World.h"
+#include "Engine/StaticMesh.h"
 #include "GameFramework/Controller.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInterface.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Sound/SoundBase.h"
 #include "TimerManager.h"
+#include "UObject/ConstructorHelpers.h"
 
 ARLEnemyCharacter::ARLEnemyCharacter()
 {
+	static ConstructorHelpers::FObjectFinder<USoundBase> HitSoundFinder(
+		TEXT("/Game/ReflectionLab/Audio/SFX/Combat/EnemyHit/SFX_EnemyHit.SFX_EnemyHit"));
+	HitSound = HitSoundFinder.Object;
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> DeathEffectShardMeshFinder(
+		TEXT("/Engine/BasicShapes/Cube.Cube"));
+	DeathEffectShardMesh = DeathEffectShardMeshFinder.Object;
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> DeathEffectShardMaterialFinder(
+		TEXT("/Game/ReflectionLab/Art/Materials/Projectiles/"
+			 "MI_Projectile_Hostile.MI_Projectile_Hostile"));
+	DeathEffectShardMaterial = DeathEffectShardMaterialFinder.Object;
+
 	PrimaryActorTick.bCanEverTick = false;
 	GetMesh()->SetReceivesDecals(false);
 
@@ -27,6 +43,7 @@ void ARLEnemyCharacter::BeginPlay()
 	Super::BeginPlay();
 
 	ApplyCombatConfig();
+	CacheBaseCombatValues();
 	CurrentHealth = MaxHealth;
 
 	if (ProjectileClass)
@@ -40,6 +57,36 @@ void ARLEnemyCharacter::BeginPlay()
 
 	if (bIsPoolActive && bAutoStartFiring)
 	{
+		StartFiring();
+	}
+}
+
+void ARLEnemyCharacter::CacheBaseCombatValues()
+{
+	BaseAttackInterval = FMath::Max(0.1f, AttackInterval);
+	BaseShotsPerBurst = FMath::Max(1, ShotsPerBurst);
+	BaseTimeBetweenShots = FMath::Max(0.01f, TimeBetweenShots);
+}
+
+void ARLEnemyCharacter::ApplyDifficultyPhase(const FRLDifficultyPhase& DifficultyPhase)
+{
+	AttackInterval = BaseAttackInterval *
+		FMath::Max(0.1f, DifficultyPhase.AttackIntervalMultiplier);
+	ShotsPerBurst = DifficultyPhase.ShotsPerBurstOverride > 0
+		? DifficultyPhase.ShotsPerBurstOverride
+		: BaseShotsPerBurst;
+	TimeBetweenShots = BaseTimeBetweenShots *
+		FMath::Max(0.1f, DifficultyPhase.TimeBetweenShotsMultiplier);
+	ExplosiveShotInterval = FMath::Max(0, DifficultyPhase.ExplosiveShotInterval);
+	RallyShotInterval = FMath::Max(0, DifficultyPhase.RallyShotInterval);
+	RallyRelayCount = FMath::Max(1, DifficultyPhase.RallyRelayCount);
+	RallySpeedMultiplierPerRelay = FMath::Max(
+		1.0f,
+		DifficultyPhase.RallySpeedMultiplierPerRelay);
+
+	if (bIsPoolActive && bAutoStartFiring)
+	{
+		StopFiring();
 		StartFiring();
 	}
 }
@@ -100,6 +147,17 @@ float ARLEnemyCharacter::TakeDamage(
 	}
 
 	CurrentHealth = FMath::Max(0.0f, CurrentHealth - AppliedDamage);
+	if (HitSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(
+			this,
+			HitSound,
+			GetActorLocation(),
+			FMath::Max(0.0f, HitSoundVolume),
+			FMath::FRandRange(
+				FMath::Min(HitSoundPitchMin, HitSoundPitchMax),
+				FMath::Max(HitSoundPitchMin, HitSoundPitchMax)));
+	}
 
 	if (CurrentHealth <= 0.0f)
 	{
@@ -220,7 +278,51 @@ void ARLEnemyCharacter::Fire()
 
 void ARLEnemyCharacter::Die()
 {
+	SpawnDeathEffect();
 	ReturnToPool();
+}
+
+void ARLEnemyCharacter::SpawnDeathEffect()
+{
+	UWorld* World = GetWorld();
+	if (!World || !DeathEffectShardMesh || !DeathEffectShardMaterial)
+	{
+		return;
+	}
+
+	FVector GroundLocation = GetActorLocation();
+	FHitResult GroundHit;
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(EnemyDeathEffectGroundTrace), false, this);
+	const FVector TraceStart = GroundLocation + FVector(0.0f, 0.0f, 200.0f);
+	const FVector TraceEnd = GroundLocation - FVector(0.0f, 0.0f, 600.0f);
+	if (World->LineTraceSingleByChannel(
+		GroundHit,
+		TraceStart,
+		TraceEnd,
+		ECC_Visibility,
+		QueryParams))
+	{
+		GroundLocation = GroundHit.ImpactPoint;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARLExplosionVisual* DeathEffect = World->SpawnActor<ARLExplosionVisual>(
+		ARLExplosionVisual::StaticClass(),
+		GroundLocation,
+		FRotator::ZeroRotator,
+		SpawnParameters);
+	if (DeathEffect)
+	{
+		DeathEffect->Initialize(
+			DeathEffectShardMesh,
+			DeathEffectShardMaterial,
+			DeathEffectShardScale,
+			FMath::Max(1.0f, DeathEffectRadius),
+			DeathEffectColor,
+			false);
+	}
 }
 
 void ARLEnemyCharacter::ReturnToPool()

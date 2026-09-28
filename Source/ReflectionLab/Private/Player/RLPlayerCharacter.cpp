@@ -13,6 +13,7 @@
 #include "Data/RLPlayerStatsDataAsset.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
+#include "Framework/GameMode/RLGameModeBase.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -28,6 +29,9 @@ ARLPlayerCharacter::ARLPlayerCharacter()
 	static ConstructorHelpers::FObjectFinder<USoundBase> ParryImpactSoundFinder(
 		TEXT("/Game/ReflectionLab/Audio/SFX/Combat/Parry/SC_ParryImpact.SC_ParryImpact"));
 	ParryImpactSound = ParryImpactSoundFinder.Object;
+	static ConstructorHelpers::FObjectFinder<USoundBase> HitSoundFinder(
+		TEXT("/Game/ReflectionLab/Audio/SFX/Combat/PlayerHit/SFX_PlayerHit.SFX_PlayerHit"));
+	HitSound = HitSoundFinder.Object;
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ParryIndicatorMaterialFinder(
 		TEXT("/Game/ReflectionLab/Art/Materials/M_ParryRangeIndicator.M_ParryRangeIndicator"));
 	ParryRangeIndicatorMaterial = ParryIndicatorMaterialFinder.Object;
@@ -153,6 +157,9 @@ void ARLPlayerCharacter::ApplyParryTuning()
 	MaxReflectedSpeedMultiplier = FMath::Max(
 		1.0f,
 		ParryTuningData->MaxReflectedSpeedMultiplier);
+	BaseReflectedProjectileScale = FMath::Max(
+		1.0f,
+		ParryTuningData->BaseReflectedProjectileScale);
 	CloseRangeThreshold = FMath::Max(0.0f, ParryTuningData->CloseRangeThreshold);
 	CloseRangePierceCount = FMath::Max(0, ParryTuningData->CloseRangePierceCount);
 	CloseRangeProjectileScale = FMath::Max(1.0f, ParryTuningData->CloseRangeProjectileScale);
@@ -364,6 +371,17 @@ float ARLPlayerCharacter::TakeDamage(
 
 	CurrentHealth = FMath::Max(0.0f, CurrentHealth - AppliedDamage);
 	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+	if (HitSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(
+			this,
+			HitSound,
+			GetActorLocation(),
+			FMath::Max(0.0f, HitSoundVolume),
+			FMath::FRandRange(
+				FMath::Min(HitSoundPitchMin, HitSoundPitchMax),
+				FMath::Max(HitSoundPitchMin, HitSoundPitchMax)));
+	}
 
 	UE_LOG(
 		LogTemp,
@@ -518,6 +536,12 @@ void ARLPlayerCharacter::Die_Implementation()
 
 	GetCharacterMovement()->DisableMovement();
 	SetActorEnableCollision(false);
+	if (ARLGameModeBase* GameMode = GetWorld()
+		? GetWorld()->GetAuthGameMode<ARLGameModeBase>()
+		: nullptr)
+	{
+		GameMode->NotifyPlayerDied();
+	}
 
 	UE_LOG(LogTemp, Display, TEXT("Player died."));
 }
@@ -796,7 +820,7 @@ bool ARLPlayerCharacter::TryParryProjectile(
 	ReflectionParams.SpeedMultiplier = SpeedMultiplier;
 	ReflectionParams.VisualScaleMultiplier = bOverdrive
 		? OverdriveProjectileScale
-		: (bCloseRangeParry ? CloseRangeProjectileScale : 1.0f);
+		: (bCloseRangeParry ? CloseRangeProjectileScale : BaseReflectedProjectileScale);
 	ReflectionParams.PierceCount = bOverdrive
 		? OverdrivePierceCount
 		: (bCloseRangeParry ? CloseRangePierceCount : BasePierceCount);

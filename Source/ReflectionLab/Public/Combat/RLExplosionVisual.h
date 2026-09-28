@@ -26,7 +26,8 @@ public:
 		UMaterialInterface* ShardMaterial,
 		const FVector& ShardBaseScale,
 		float BlastRadius,
-		const FLinearColor& DecalColor);
+		const FLinearColor& DecalColor,
+		bool bShowGroundDecal = true);
 
 private:
 	UPROPERTY(VisibleAnywhere)

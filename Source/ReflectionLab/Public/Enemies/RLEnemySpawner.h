@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Data/RLDifficultyScheduleDataAsset.h"
 #include "GameFramework/Actor.h"
 #include "RLEnemySpawner.generated.h"
 
@@ -24,6 +25,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Enemy Spawner")
 	ARLEnemyCharacter* SpawnEnemy();
 
+	UFUNCTION(BlueprintCallable, Category = "Enemy Spawner")
+	int32 SpawnBatch(int32 RequestedCount);
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy Spawner|Difficulty")
+	void ApplyDifficultyPhase(const FRLDifficultyPhase& DifficultyPhase);
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy Spawner|Difficulty")
+	void SetMaxAliveEnemies(int32 NewMaxAliveEnemies);
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy Spawner|Difficulty")
+	void SetSpawnInterval(float NewSpawnInterval);
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy Spawner|Difficulty")
+	void SetSpawnDistanceRange(float NewMinimumDistance, float NewMaximumDistance);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -33,6 +49,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy Spawner")
 	TSubclassOf<ARLEnemyCharacter> EnemyClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy Spawner")
+	bool bAutoStartSpawning = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy Spawner", meta = (ClampMin = "0"))
 	int32 PrewarmCount = 8;
@@ -68,4 +87,7 @@ private:
 
 	FTimerHandle SpawnTimerHandle;
 	TSet<TWeakObjectPtr<ARLEnemyCharacter>> ActiveEnemies;
+	FRLDifficultyPhase ActiveDifficultyPhase;
+	int32 CurrentSpawnBatchSize = 1;
+	bool bHasActiveDifficultyPhase = false;
 };

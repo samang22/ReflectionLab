@@ -11,12 +11,15 @@
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Sound/SoundBase.h"
 #include "TimerManager.h"
+#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
 	const FName ProjectileColorParameterName(TEXT("ProjectileColor"));
 	const FName EmissiveIntensityParameterName(TEXT("EmissiveIntensity"));
+	const FName FadeOpacityParameterName(TEXT("FadeOpacity"));
 }
 
 ARLProjectile::ARLProjectile()
@@ -51,6 +54,14 @@ ARLProjectile::ARLProjectile()
 	ProjectileMovement->bShouldBounce = false;
 	ProjectileMovement->ProjectileGravityScale = 0.0f;
 	ProjectileMovement->bAutoActivate = false;
+
+	static ConstructorHelpers::FObjectFinder<USoundBase> ExplosionSoundFinder(
+		TEXT("/Game/ReflectionLab/Audio/SFX/Combat/Explosion/"
+			 "SFX_ExplosiveDetonation.SFX_ExplosiveDetonation"));
+	if (ExplosionSoundFinder.Succeeded())
+	{
+		ExplosionSound = ExplosionSoundFinder.Object;
+	}
 }
 
 void ARLProjectile::BeginPlay()
@@ -73,12 +84,18 @@ void ARLProjectile::Tick(float DeltaTime)
 		return;
 	}
 
+	if (bIsFadingOut)
+	{
+		UpdateFadeOut(DeltaTime);
+		return;
+	}
+
 	if (bIsExplosive)
 	{
 		UpdateExplosive(DeltaTime);
 	}
 
-	if (!bIsActive)
+	if (!bIsActive || bIsFadingOut)
 	{
 		return;
 	}
@@ -109,6 +126,7 @@ void ARLProjectile::ActivateProjectile(
 	SetActorTickEnabled(false);
 	ResetReflectedAfterimages();
 	bIsReflected = false;
+	bIsFadingOut = false;
 	bCanBeReflected = true;
 	bIsExplosive = false;
 	bExplosiveBlinkWarning = false;
@@ -122,12 +140,14 @@ void ARLProjectile::ActivateProjectile(
 	ExplosiveElapsedTime = 0.0f;
 	ExplosiveNextBlinkTime = 0.0f;
 	RallyCurrentSpeed = ProjectileSpeed;
-	RallySpeedMultiplierPerRally = 1.35f;
+	RallySpeedMultiplierPerRally = 1.15f;
 	RallyCount = 0;
 	MaxRallies = 0;
 	RallyTarget.Reset();
 	RallyFinalTarget.Reset();
 	ExplosiveMaterialInstance = nullptr;
+	FadeMaterialInstance = nullptr;
+	FadeOutElapsedTime = 0.0f;
 	ProjectileMesh->SetRelativeScale3D(DefaultProjectileMeshScale);
 	ProjectileMesh->SetVisibility(true, true);
 	CollisionComponent->SetSphereRadius(DefaultCollisionRadius, false);
@@ -223,8 +243,14 @@ bool ARLProjectile::Reflect(
 	bWasPerfectParried = ReflectionParams.bPerfectParry;
 	bWasCloseRangeParried = ReflectionParams.bCloseRangeParry;
 	bWasOverdriveReflected = ReflectionParams.bOverdrive;
+	const float ReflectedScale = FMath::Max(
+		0.1f,
+		ReflectionParams.VisualScaleMultiplier);
 	ProjectileMesh->SetRelativeScale3D(
-		DefaultProjectileMeshScale * FMath::Max(0.1f, ReflectionParams.VisualScaleMultiplier));
+		DefaultProjectileMeshScale * ReflectedScale);
+	CollisionComponent->SetSphereRadius(
+		DefaultCollisionRadius * ReflectedScale,
+		true);
 	UpdateProjectileMaterial();
 	ResetReflectedAfterimages();
 	SetActorTickEnabled(true);
@@ -270,6 +296,12 @@ void ARLProjectile::ConfigureAsExplosive()
 	SetProjectileSpeed(
 		ProjectileSpeed * FMath::Clamp(ExplosiveSpeedMultiplier, 0.1f, 1.0f),
 		GetActorForwardVector());
+	GetWorldTimerManager().SetTimer(
+		LifetimeTimerHandle,
+		this,
+		&ThisClass::ReturnToPool,
+		FMath::Max(LifeSeconds, ExplosiveFuseDuration + 0.5f),
+		false);
 	SetActorTickEnabled(true);
 }
 
@@ -313,6 +345,54 @@ void ARLProjectile::ConfigureAsRally(
 
 void ARLProjectile::ReturnToPool()
 {
+	if (!bIsActive || bIsFadingOut)
+	{
+		return;
+	}
+
+	bIsFadingOut = true;
+	bCanBeReflected = false;
+	FadeOutElapsedTime = 0.0f;
+	GetWorldTimerManager().ClearTimer(LifetimeTimerHandle);
+	CollisionComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ProjectileMovement->StopMovementImmediately();
+	ProjectileMovement->Deactivate();
+	ResetReflectedAfterimages();
+	FadeMaterialInstance = ProjectileMesh
+		? ProjectileMesh->CreateDynamicMaterialInstance(0)
+		: nullptr;
+	if (FadeMaterialInstance)
+	{
+		FadeMaterialInstance->SetScalarParameterValue(FadeOpacityParameterName, 1.0f);
+	}
+	SetActorTickEnabled(true);
+
+	if (FadeOutDuration <= KINDA_SMALL_NUMBER)
+	{
+		CompleteReturnToPool();
+	}
+}
+
+void ARLProjectile::UpdateFadeOut(float DeltaTime)
+{
+	FadeOutElapsedTime += FMath::Max(0.0f, DeltaTime);
+	const float SafeDuration = FMath::Max(KINDA_SMALL_NUMBER, FadeOutDuration);
+	const float FadeAlpha = FMath::Clamp(FadeOutElapsedTime / SafeDuration, 0.0f, 1.0f);
+	if (FadeMaterialInstance)
+	{
+		FadeMaterialInstance->SetScalarParameterValue(
+			FadeOpacityParameterName,
+			1.0f - FadeAlpha);
+	}
+
+	if (FadeAlpha >= 1.0f)
+	{
+		CompleteReturnToPool();
+	}
+}
+
+void ARLProjectile::CompleteReturnToPool()
+{
 	if (!bIsActive)
 	{
 		return;
@@ -334,6 +414,7 @@ void ARLProjectile::ReturnToPool()
 void ARLProjectile::DeactivateForPool()
 {
 	bIsActive = false;
+	bIsFadingOut = false;
 	bIsReflected = false;
 	bCanBeReflected = true;
 	bIsExplosive = false;
@@ -353,6 +434,8 @@ void ARLProjectile::DeactivateForPool()
 	RallyTarget.Reset();
 	RallyFinalTarget.Reset();
 	ExplosiveMaterialInstance = nullptr;
+	FadeMaterialInstance = nullptr;
+	FadeOutElapsedTime = 0.0f;
 	ProjectileMesh->SetRelativeScale3D(DefaultProjectileMeshScale);
 	ProjectileMesh->SetVisibility(true, true);
 	CollisionComponent->SetSphereRadius(DefaultCollisionRadius, false);
@@ -548,6 +631,14 @@ void ARLProjectile::Explode()
 
 	const FVector ExplosionLocation = GetActorLocation();
 	const float BlastRadius = FMath::Max(1.0f, ExplosionRadius);
+	if (ExplosionSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(
+			this,
+			ExplosionSound,
+			ExplosionLocation,
+			FMath::Max(0.0f, ExplosionSoundVolume));
+	}
 	SpawnExplosionVisual(ExplosionLocation, BlastRadius);
 	OnExploded(ExplosionLocation, BlastRadius);
 

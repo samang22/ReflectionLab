@@ -126,6 +126,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Hit Recovery|Feedback")
 	TObjectPtr<UMaterialInterface> HitFlashMaterial;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Hit Recovery|Feedback")
+	TObjectPtr<USoundBase> HitSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Hit Recovery|Feedback", meta = (ClampMin = "0.0"))
+	float HitSoundVolume = 0.8f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Hit Recovery|Feedback", meta = (ClampMin = "0.1"))
+	float HitSoundPitchMin = 0.97f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Hit Recovery|Feedback", meta = (ClampMin = "0.1"))
+	float HitSoundPitchMax = 1.03f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Hit Recovery|Feedback", meta = (ClampMin = "0.0"))
 	float HitFlashInterval = 0.08f;
 
@@ -246,6 +258,7 @@ private:
 	float PerfectHitStopDurationMultiplier = 1.75f;
 	int32 BasePierceCount = 0;
 	float MaxReflectedSpeedMultiplier = 2.0f;
+	float BaseReflectedProjectileScale = 1.35f;
 	float CloseRangeThreshold = 55.0f;
 	int32 CloseRangePierceCount = 3;
 	float CloseRangeProjectileScale = 1.7f;

@@ -11,6 +11,7 @@ class USphereComponent;
 class UStaticMeshComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
+class USoundBase;
 class URLProjectilePoolSubsystem;
 
 USTRUCT(BlueprintType)
@@ -69,6 +70,20 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Projectile|Explosive")
 	bool IsExplosive() const { return bIsExplosive; }
+
+	UFUNCTION(BlueprintPure, Category = "Projectile")
+	bool IsPoolActive() const { return bIsActive; }
+
+	UFUNCTION(BlueprintPure, Category = "Projectile|Explosive")
+	float GetExplosiveFuseRemainingSeconds() const
+	{
+		return bIsExplosive
+			? FMath::Max(0.0f, ExplosiveFuseDuration - ExplosiveElapsedTime)
+			: 0.0f;
+	}
+
+	UFUNCTION(BlueprintPure, Category = "Projectile|Explosive")
+	float GetExplosionRadius() const { return ExplosionRadius; }
 
 	UFUNCTION(BlueprintCallable, Category = "Projectile|Explosive")
 	bool Detonate();
@@ -141,6 +156,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile", meta = (ClampMin = "0.1"))
 	float LifeSeconds = 5.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Visuals", meta = (ClampMin = "0.0"))
+	float FadeOutDuration = 0.2f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Visuals")
 	TObjectPtr<UMaterialInterface> HostileMaterial;
 
@@ -154,13 +172,19 @@ protected:
 	float ExplosiveVisualScale = 2.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive", meta = (ClampMin = "0.1"))
-	float ExplosiveFuseDuration = 2.0f;
+	float ExplosiveFuseDuration = 5.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive", meta = (ClampMin = "1.0"))
 	float ExplosionRadius = 180.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive", meta = (ClampMin = "0.0"))
 	float ExplosionDamage = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive|Audio")
+	TObjectPtr<USoundBase> ExplosionSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive|Audio", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float ExplosionSoundVolume = 0.8f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive", meta = (ClampMin = "0.01"))
 	float ExplosiveBlinkStartInterval = 0.45f;
@@ -207,6 +231,9 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> ExplosiveMaterialInstance;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> FadeMaterialInstance;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Projectile|Explosive")
 	void OnExploded(const FVector& ExplosionLocation, float BlastRadius);
 
@@ -214,6 +241,8 @@ private:
 	friend class URLProjectilePoolSubsystem;
 
 	void DeactivateForPool();
+	void UpdateFadeOut(float DeltaTime);
+	void CompleteReturnToPool();
 	void CreateReflectedAfterimages();
 	void ResetReflectedAfterimages();
 	void UpdateReflectedAfterimages(float DeltaTime);
@@ -237,15 +266,17 @@ private:
 	FVector DefaultProjectileMeshScale = FVector::OneVector;
 	float DefaultCollisionRadius = 16.0f;
 	float ReflectedAfterimageSampleAccumulator = 0.0f;
+	float FadeOutElapsedTime = 0.0f;
 	float ExplosiveElapsedTime = 0.0f;
 	float ExplosiveNextBlinkTime = 0.0f;
 	float RallyCurrentSpeed = 0.0f;
-	float RallySpeedMultiplierPerRally = 1.35f;
+	float RallySpeedMultiplierPerRally = 1.15f;
 	int32 RallyCount = 0;
 	int32 MaxRallies = 0;
 	TWeakObjectPtr<AActor> RallyTarget;
 	TWeakObjectPtr<AActor> RallyFinalTarget;
 	bool bIsActive = false;
+	bool bIsFadingOut = false;
 	bool bIsReflected = false;
 	bool bCanBeReflected = true;
 	bool bIsExplosive = false;

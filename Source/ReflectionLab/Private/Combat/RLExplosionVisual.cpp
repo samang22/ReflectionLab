@@ -71,7 +71,8 @@ void ARLExplosionVisual::Initialize(
 	UMaterialInterface* ShardMaterial,
 	const FVector& ShardBaseScale,
 	float BlastRadius,
-	const FLinearColor& DecalColor)
+	const FLinearColor& DecalColor,
+	bool bShowGroundDecal)
 {
 	CachedBlastRadius = FMath::Max(1.0f, BlastRadius);
 	CachedShardBaseScale = ShardBaseScale;
@@ -88,6 +89,7 @@ void ARLExplosionVisual::Initialize(
 		{
 			continue;
 		}
+		ExplosionDecal->SetVisibility(bShowGroundDecal, true);
 
 		const float DecalRadius = CachedBlastRadius * DecalRadiusMultiplier;
 		ExplosionDecal->DecalSize = FVector(96.0f, DecalRadius, DecalRadius);

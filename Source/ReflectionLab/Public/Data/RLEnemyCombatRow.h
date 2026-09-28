@@ -37,5 +37,5 @@ struct REFLECTIONLAB_API FRLEnemyCombatRow : public FTableRowBase
 	int32 RallyRelayCount = 2;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Combat|Special Projectiles", meta = (ClampMin = "1.0"))
-	float RallySpeedMultiplierPerRelay = 1.35f;
+	float RallySpeedMultiplierPerRelay = 1.15f;
 };

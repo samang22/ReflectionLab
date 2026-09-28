@@ -7,12 +7,16 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/World.h"
+#include "Framework/GameMode/RLGameModeBase.h"
 #include "GameFramework/Pawn.h"
 #include "InputAction.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
 #include "Player/RLPlayerCharacter.h"
 #include "UI/RLParryComboWidget.h"
+#include "UI/RLPlayerHealthWidget.h"
+#include "UI/RLRunStatusWidget.h"
 #include "UObject/ConstructorHelpers.h"
 
 ARLPlayerController::ARLPlayerController()
@@ -67,12 +71,43 @@ void ARLPlayerController::BeginPlay()
 	}
 
 	CreateOrBindParryComboWidget();
+	CreateOrBindPlayerHealthWidget();
+	CreateOrBindRunStatusWidget();
 }
 
 void ARLPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 	CreateOrBindParryComboWidget();
+	CreateOrBindPlayerHealthWidget();
+	CreateOrBindRunStatusWidget();
+}
+
+void ARLPlayerController::CreateOrBindRunStatusWidget()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (!RunStatusWidget)
+	{
+		RunStatusWidget = CreateWidget<URLRunStatusWidget>(
+			this,
+			URLRunStatusWidget::StaticClass());
+		if (RunStatusWidget)
+		{
+			RunStatusWidget->AddToViewport(10);
+		}
+	}
+
+	if (RunStatusWidget)
+	{
+		ARLGameModeBase* GameMode = GetWorld()
+			? GetWorld()->GetAuthGameMode<ARLGameModeBase>()
+			: nullptr;
+		RunStatusWidget->BindToGameMode(GameMode);
+	}
 }
 
 void ARLPlayerController::OnUnPossess()
@@ -81,7 +116,35 @@ void ARLPlayerController::OnUnPossess()
 	{
 		ParryComboWidget->BindToPlayer(nullptr);
 	}
+	if (PlayerHealthWidget)
+	{
+		PlayerHealthWidget->BindToPlayer(nullptr);
+	}
 	Super::OnUnPossess();
+}
+
+void ARLPlayerController::CreateOrBindPlayerHealthWidget()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (!PlayerHealthWidget)
+	{
+		PlayerHealthWidget = CreateWidget<URLPlayerHealthWidget>(
+			this,
+			URLPlayerHealthWidget::StaticClass());
+		if (PlayerHealthWidget)
+		{
+			PlayerHealthWidget->AddToViewport(15);
+		}
+	}
+
+	if (PlayerHealthWidget)
+	{
+		PlayerHealthWidget->BindToPlayer(Cast<ARLPlayerCharacter>(GetPawn()));
+	}
 }
 
 void ARLPlayerController::CreateOrBindParryComboWidget()
@@ -175,6 +238,11 @@ void ARLPlayerController::MoveRight()
 
 void ARLPlayerController::Move(const FVector2D& Direction)
 {
+	if (!IsGameplayInputAllowed())
+	{
+		return;
+	}
+
 	APawn* ControlledPawn = GetPawn();
 	if (!ControlledPawn)
 	{
@@ -195,6 +263,11 @@ void ARLPlayerController::Move(const FVector2D& Direction)
 
 void ARLPlayerController::ActivateParry()
 {
+	if (!IsGameplayInputAllowed())
+	{
+		return;
+	}
+
 	if (ARLPlayerCharacter* PlayerCharacter = Cast<ARLPlayerCharacter>(GetPawn()))
 	{
 		PlayerCharacter->StartParry();
@@ -204,7 +277,7 @@ void ARLPlayerController::ActivateParry()
 void ARLPlayerController::UpdateAimRotation()
 {
 	APawn* ControlledPawn = GetPawn();
-	if (!IsLocalController() || !ControlledPawn)
+	if (!IsLocalController() || !ControlledPawn || !IsGameplayInputAllowed())
 	{
 		return;
 	}
@@ -233,5 +306,13 @@ void ARLPlayerController::UpdateAimRotation()
 	{
 		SetControlRotation(AimDirection.Rotation());
 	}
+}
+
+bool ARLPlayerController::IsGameplayInputAllowed() const
+{
+	const ARLGameModeBase* GameMode = GetWorld()
+		? GetWorld()->GetAuthGameMode<ARLGameModeBase>()
+		: nullptr;
+	return !GameMode || GameMode->GetRunState() == ERLRunState::PlayingRound;
 }
 

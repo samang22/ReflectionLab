@@ -213,7 +213,7 @@ void URLParryComboWidget::BuildWidgetTree()
 		UVerticalBox::StaticClass(),
 		TEXT("ComboContainer"));
 	UCanvasPanelSlot* ContainerSlot = RootCanvas->AddChildToCanvas(ComboContainer);
-	ContainerSlot->SetAnchors(FAnchors(0.5f, 0.12f));
+	ContainerSlot->SetAnchors(FAnchors(0.5f, 0.18f));
 	ContainerSlot->SetAlignment(FVector2D(0.5f, 0.0f));
 	ContainerSlot->SetAutoSize(true);
 

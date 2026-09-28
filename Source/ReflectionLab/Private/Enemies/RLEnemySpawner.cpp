@@ -33,13 +33,16 @@ void ARLEnemySpawner::BeginPlay()
 			FMath::Max(PrewarmCount, MaxAliveEnemies));
 	}
 
-	const int32 EnemiesToSpawn = FMath::Min(InitialEnemyCount, MaxAliveEnemies);
-	for (int32 Index = 0; Index < EnemiesToSpawn; ++Index)
+	if (bAutoStartSpawning)
 	{
-		SpawnEnemy();
-	}
+		const int32 EnemiesToSpawn = FMath::Min(InitialEnemyCount, MaxAliveEnemies);
+		for (int32 Index = 0; Index < EnemiesToSpawn; ++Index)
+		{
+			SpawnEnemy();
+		}
 
-	StartSpawning();
+		StartSpawning();
+	}
 }
 
 void ARLEnemySpawner::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -67,7 +70,7 @@ void ARLEnemySpawner::StartSpawning()
 
 void ARLEnemySpawner::HandleSpawnTimer()
 {
-	SpawnEnemy();
+	SpawnBatch(CurrentSpawnBatchSize);
 }
 
 void ARLEnemySpawner::StopSpawning()
@@ -95,12 +98,88 @@ ARLEnemyCharacter* ARLEnemySpawner::SpawnEnemy()
 		if (ARLEnemyCharacter* Enemy =
 			PoolSubsystem->AcquireEnemy(EnemyClass, SpawnTransform))
 		{
+			if (bHasActiveDifficultyPhase)
+			{
+				Enemy->ApplyDifficultyPhase(ActiveDifficultyPhase);
+			}
 			ActiveEnemies.Add(Enemy);
 			return Enemy;
 		}
 	}
 
 	return nullptr;
+}
+
+int32 ARLEnemySpawner::SpawnBatch(int32 RequestedCount)
+{
+	const int32 SafeRequestedCount = FMath::Max(0, RequestedCount);
+	int32 SpawnedCount = 0;
+	for (int32 SpawnIndex = 0; SpawnIndex < SafeRequestedCount; ++SpawnIndex)
+	{
+		if (!SpawnEnemy())
+		{
+			break;
+		}
+		++SpawnedCount;
+	}
+
+	return SpawnedCount;
+}
+
+void ARLEnemySpawner::ApplyDifficultyPhase(const FRLDifficultyPhase& DifficultyPhase)
+{
+	ActiveDifficultyPhase = DifficultyPhase;
+	bHasActiveDifficultyPhase = true;
+	CurrentSpawnBatchSize = FMath::Max(1, DifficultyPhase.SpawnBatchSize);
+	MaxAliveEnemies = FMath::Max(0, DifficultyPhase.MaxAliveEnemies);
+	MinimumPlayerDistance = FMath::Max(0.0f, DifficultyPhase.MinimumSpawnDistance);
+	SpawnRadius = FMath::Max(
+		MinimumPlayerDistance,
+		DifficultyPhase.MaximumSpawnDistance);
+
+	CleanupInactiveEnemies();
+	for (const TWeakObjectPtr<ARLEnemyCharacter>& EnemyPtr : ActiveEnemies)
+	{
+		if (ARLEnemyCharacter* Enemy = EnemyPtr.Get())
+		{
+			Enemy->ApplyDifficultyPhase(DifficultyPhase);
+		}
+	}
+
+	SetSpawnInterval(DifficultyPhase.SpawnInterval);
+	if (DifficultyPhase.bBreatherPhase || MaxAliveEnemies <= 0)
+	{
+		StopSpawning();
+	}
+	else
+	{
+		StartSpawning();
+	}
+}
+
+void ARLEnemySpawner::SetMaxAliveEnemies(int32 NewMaxAliveEnemies)
+{
+	MaxAliveEnemies = FMath::Max(0, NewMaxAliveEnemies);
+}
+
+void ARLEnemySpawner::SetSpawnInterval(float NewSpawnInterval)
+{
+	const bool bWasSpawning = GetWorld() &&
+		GetWorldTimerManager().IsTimerActive(SpawnTimerHandle);
+	SpawnInterval = FMath::Max(0.1f, NewSpawnInterval);
+	if (bWasSpawning)
+	{
+		StopSpawning();
+		StartSpawning();
+	}
+}
+
+void ARLEnemySpawner::SetSpawnDistanceRange(
+	float NewMinimumDistance,
+	float NewMaximumDistance)
+{
+	MinimumPlayerDistance = FMath::Max(0.0f, NewMinimumDistance);
+	SpawnRadius = FMath::Max(MinimumPlayerDistance, NewMaximumDistance);
 }
 
 void ARLEnemySpawner::CleanupInactiveEnemies()

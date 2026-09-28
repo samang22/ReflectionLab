@@ -36,6 +36,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Reflection", meta = (ClampMin = "1.0"))
 	float MaxReflectedSpeedMultiplier = 2.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Reflection", meta = (ClampMin = "1.0", ClampMax = "4.0"))
+	float BaseReflectedProjectileScale = 1.35f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Close Range", meta = (ClampMin = "0.0"))
 	float CloseRangeThreshold = 55.0f;
 
