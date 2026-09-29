@@ -51,8 +51,8 @@ ARLPlayerCharacter::ARLPlayerCharacter()
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->SetUsingAbsoluteRotation(true);
-	CameraBoom->TargetArmLength = 1300.0f;
-	CameraBoom->SetRelativeRotation(FRotator(-55.0f, 45.0f, 0.0f));
+	CameraBoom->TargetArmLength = 1950.0f;
+	CameraBoom->SetRelativeRotation(FRotator(-75.0f, 45.0f, 0.0f));
 	CameraBoom->bDoCollisionTest = false;
 
 	TopDownCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("TopDownCamera"));
@@ -167,6 +167,13 @@ void ARLPlayerCharacter::ApplyParryTuning()
 	ComboExtraProjectileMilestone = FMath::Max(
 		ComboSpeedMilestone,
 		ParryTuningData->ComboExtraProjectileMilestone);
+	EnhancementStage2Combo = FMath::Max(1, ParryTuningData->EnhancementStage2Combo);
+	EnhancementStage3Combo = FMath::Max(
+		EnhancementStage2Combo,
+		ParryTuningData->EnhancementStage3Combo);
+	EnhancementStage4Combo = FMath::Max(
+		EnhancementStage3Combo,
+		ParryTuningData->EnhancementStage4Combo);
 	ComboExtraProjectileSpreadAngle = FMath::Clamp(
 		ParryTuningData->ComboExtraProjectileSpreadAngle,
 		0.0f,
@@ -174,7 +181,7 @@ void ARLPlayerCharacter::ApplyParryTuning()
 	OverdriveComboThreshold = FMath::Max(
 		ComboExtraProjectileMilestone,
 		ParryTuningData->OverdriveComboThreshold);
-	OverdriveProjectileCount = FMath::Clamp(ParryTuningData->OverdriveProjectileCount, 1, 16);
+	OverdriveProjectileCount = FMath::Clamp(ParryTuningData->OverdriveProjectileCount, 1, 5);
 	OverdriveSpreadAngleDegrees = FMath::Clamp(
 		ParryTuningData->OverdriveSpreadAngleDegrees,
 		0.0f,
@@ -419,6 +426,7 @@ void ARLPlayerCharacter::BeginHitRecovery()
 	}
 	else
 	{
+		DowngradeParryEnhancement();
 		ResetParryChain();
 	}
 	StopAnimMontage();
@@ -657,7 +665,7 @@ void ARLPlayerCharacter::UpdateParry()
 	bool bCloseRangeParry = false;
 	FVector ParrySoundLocation = GetActorLocation();
 	const int32 ResultingCombo = ParryChainCount + 1;
-	const bool bOverdrive = ResultingCombo >= OverdriveComboThreshold;
+	const bool bOverdrive = ParryEnhancementLevel >= 4;
 	for (const FOverlapResult& Overlap : Overlaps)
 	{
 		if (ARLProjectile* Projectile = Cast<ARLProjectile>(Overlap.GetActor()))
@@ -688,12 +696,12 @@ void ARLPlayerCharacter::UpdateParry()
 			bPerfectParry,
 			bCloseRangeParry,
 			bOverdrive);
-		PlayParryImpactSound(ParrySoundLocation, ResultingCombo);
+		PlayParryImpactSound(ParrySoundLocation, ParryEnhancementLevel);
 		TriggerParryHitStop(bPerfectParry, bOverdrive);
 		EndParry(true);
 		if (bOverdrive)
 		{
-			ConsumeParryCombo();
+			ConsumeOverdriveEnhancement();
 		}
 	}
 }
@@ -807,10 +815,12 @@ bool ARLPlayerCharacter::TryParryProjectile(
 		DistanceToProjectile <= ReflectionRange;
 	const bool bCloseRangeParry = CloseRangeThreshold > 0.0f &&
 		DistanceToProjectile <= CloseRangeThreshold;
-	const bool bOverdrive = ResultingCombo >= OverdriveComboThreshold;
-	const bool bMaximumSpeed = bCloseRangeParry ||
-		ResultingCombo >= ComboSpeedMilestone ||
-		bOverdrive;
+	const int32 RewardLevel = ParryEnhancementLevel < 4 &&
+		EnhancementComboProgress + 1 >= GetEnhancementComboRequirement()
+		? ParryEnhancementLevel + 1
+		: ParryEnhancementLevel;
+	const bool bOverdrive = ParryEnhancementLevel >= 4;
+	const bool bMaximumSpeed = bCloseRangeParry || RewardLevel >= 2;
 
 	const float SpeedMultiplier = bMaximumSpeed
 		? MaxReflectedSpeedMultiplier
@@ -831,7 +841,8 @@ bool ARLPlayerCharacter::TryParryProjectile(
 
 	int32 SplitCount = bPerfectParry ? PerfectSplitProjectileCount : 1;
 	float SplitSpreadAngle = bPerfectParry ? PerfectSplitAngleDegrees : 0.0f;
-	if (ResultingCombo >= ComboExtraProjectileMilestone)
+	const bool bGuardProjectile = Projectile->IsGuardProjectile();
+	if (!bGuardProjectile && RewardLevel >= 3)
 	{
 		++SplitCount;
 		if (SplitSpreadAngle <= 0.0f)
@@ -839,10 +850,16 @@ bool ARLPlayerCharacter::TryParryProjectile(
 			SplitSpreadAngle = ComboExtraProjectileSpreadAngle;
 		}
 	}
-	if (bOverdrive)
+	if (!bGuardProjectile && bOverdrive)
 	{
 		SplitCount = OverdriveProjectileCount;
 		SplitSpreadAngle = OverdriveSpreadAngleDegrees;
+	}
+	if (bGuardProjectile)
+	{
+		SplitCount = 1;
+		SplitSpreadAngle = 0.0f;
+		ReflectionParams.PierceCount = 0;
 	}
 	TArray<FVector> SplitDirections;
 	SplitDirections.Reserve(SplitCount);
@@ -887,11 +904,14 @@ void ARLPlayerCharacter::PlayParrySwingSound() const
 
 void ARLPlayerCharacter::PlayParryImpactSound(
 	const FVector& SoundLocation,
-	int32 ResultingCombo) const
+	int32 EnhancementLevel) const
 {
 	USoundBase* SoundToPlay = ParryImpactSound;
 	float VolumeMultiplier = ParryImpactSoundVolume;
-	const int32 ComboSoundIndex = ResultingCombo - 1;
+	// Preserve the authored milestone sounds: old combo 3/5/8 become enhancement stages 2/3/4.
+	static constexpr int32 StageSoundIndices[] = {0, 2, 4, 7};
+	const int32 StageIndex = FMath::Clamp(EnhancementLevel, 1, 4) - 1;
+	const int32 ComboSoundIndex = StageSoundIndices[StageIndex];
 	if (ParryComboImpactSounds.IsValidIndex(ComboSoundIndex) &&
 		ParryComboImpactSounds[ComboSoundIndex])
 	{
@@ -922,10 +942,21 @@ void ARLPlayerCharacter::RegisterSuccessfulParry(
 	bool bOverdrive)
 {
 	++ParryChainCount;
+	if (!bOverdrive)
+	{
+		++EnhancementComboProgress;
+		if (ParryEnhancementLevel < 4 &&
+			EnhancementComboProgress >= GetEnhancementComboRequirement())
+		{
+			SetParryEnhancementLevel(ParryEnhancementLevel + 1);
+			EnhancementComboProgress = 0;
+		}
+	}
 	OnParryChainChanged.Broadcast(ParryChainCount);
 	OnParryComboChanged.Broadcast(
 		ParryChainCount,
 		FMath::Max(1, MultiParryCount),
+		ParryEnhancementLevel,
 		bPerfectParry,
 		bCloseRangeParry);
 
@@ -969,6 +1000,13 @@ void ARLPlayerCharacter::SpawnAdditionalReflectedProjectiles(
 			SpawnTransform,
 			this,
 			this);
+		if (SplitProjectile)
+		{
+			SplitProjectile->InitializeFromDefinition(
+				SourceProjectile->GetProjectileDefinition(),
+				nullptr,
+				false);
+		}
 		if (!SplitProjectile ||
 			!SplitProjectile->Reflect(this, this, SplitDirection, ReflectionParams))
 		{
@@ -993,6 +1031,7 @@ void ARLPlayerCharacter::EndParry(bool bSucceeded)
 
 	if (!bSucceeded)
 	{
+		DowngradeParryEnhancement();
 		ResetParryChain();
 	}
 	else
@@ -1052,19 +1091,56 @@ void ARLPlayerCharacter::ResetParryChain()
 
 	ParryChainCount = 0;
 	OnParryChainChanged.Broadcast(ParryChainCount);
-	OnParryComboChanged.Broadcast(0, 0, false, false);
+	OnParryComboChanged.Broadcast(0, 0, ParryEnhancementLevel, false, false);
 	UE_LOG(LogTemp, Display, TEXT("Parry chain reset."));
 }
 
-void ARLPlayerCharacter::ConsumeParryCombo()
+void ARLPlayerCharacter::ConsumeOverdriveEnhancement()
 {
-	if (ParryChainCount == 0)
+	SetParryEnhancementLevel(3);
+	EnhancementComboProgress = 0;
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Overdrive enhancement consumed; stage reduced to 3 while combo remains %d."),
+		ParryChainCount);
+}
+
+void ARLPlayerCharacter::DowngradeParryEnhancement()
+{
+	SetParryEnhancementLevel(ParryEnhancementLevel - 1);
+	EnhancementComboProgress = 0;
+}
+
+void ARLPlayerCharacter::SetParryEnhancementLevel(int32 NewLevel)
+{
+	const int32 ClampedLevel = FMath::Clamp(NewLevel, 1, 4);
+	if (ParryEnhancementLevel == ClampedLevel)
 	{
 		return;
 	}
 
-	ParryChainCount = 0;
-	OnParryChainChanged.Broadcast(ParryChainCount);
-	OnParryComboChanged.Broadcast(0, 0, false, false);
-	UE_LOG(LogTemp, Display, TEXT("Parry combo consumed by overdrive."));
+	ParryEnhancementLevel = ClampedLevel;
+	OnParryComboChanged.Broadcast(
+		ParryChainCount,
+		0,
+		ParryEnhancementLevel,
+		false,
+		false);
+	UE_LOG(LogTemp, Display, TEXT("Parry enhancement stage: %d"), ParryEnhancementLevel);
+}
+
+int32 ARLPlayerCharacter::GetEnhancementComboRequirement() const
+{
+	switch (ParryEnhancementLevel)
+	{
+	case 1:
+		return FMath::Max(1, EnhancementStage2Combo);
+	case 2:
+		return FMath::Max(1, EnhancementStage3Combo - EnhancementStage2Combo);
+	case 3:
+		return FMath::Max(1, EnhancementStage4Combo - EnhancementStage3Combo);
+	default:
+		return MAX_int32;
+	}
 }

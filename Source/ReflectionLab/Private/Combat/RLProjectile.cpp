@@ -5,6 +5,7 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Data/RLProjectileDefinitionDataAsset.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Enemies/RLEnemyCharacter.h"
@@ -12,11 +13,13 @@
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Sound/SoundBase.h"
+#include "Sound/SoundConcurrency.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace
 {
+	constexpr float GlobalProjectileLifeSeconds = 999.0f;
 	const FName ProjectileColorParameterName(TEXT("ProjectileColor"));
 	const FName EmissiveIntensityParameterName(TEXT("EmissiveIntensity"));
 	const FName FadeOpacityParameterName(TEXT("FadeOpacity"));
@@ -68,6 +71,24 @@ void ARLProjectile::BeginPlay()
 {
 	Super::BeginPlay();
 
+	static USoundConcurrency* SharedExplosionSoundConcurrency = nullptr;
+	if (!SharedExplosionSoundConcurrency)
+	{
+		SharedExplosionSoundConcurrency = NewObject<USoundConcurrency>(
+			GetTransientPackage(),
+			TEXT("RLExplosionSoundConcurrency"));
+		if (SharedExplosionSoundConcurrency)
+		{
+			SharedExplosionSoundConcurrency->AddToRoot();
+			SharedExplosionSoundConcurrency->Concurrency.MaxCount = 3;
+			SharedExplosionSoundConcurrency->Concurrency.bLimitToOwner = false;
+			SharedExplosionSoundConcurrency->Concurrency.ResolutionRule =
+				EMaxConcurrentResolutionRule::StopQuietest;
+			SharedExplosionSoundConcurrency->Concurrency.RetriggerTime = 0.06f;
+		}
+	}
+	ExplosionSoundConcurrency = SharedExplosionSoundConcurrency;
+
 	DefaultProjectileMeshScale = ProjectileMesh->GetRelativeScale3D();
 	DefaultCollisionRadius = CollisionComponent->GetUnscaledSphereRadius();
 	CreateReflectedAfterimages();
@@ -90,6 +111,17 @@ void ARLProjectile::Tick(float DeltaTime)
 		return;
 	}
 
+	if (IsOutsidePlayArea())
+	{
+		UE_LOG(
+			LogTemp,
+			Verbose,
+			TEXT("Projectile %s left the play area and was returned to the pool."),
+			*GetName());
+		ReturnToPool();
+		return;
+	}
+
 	if (bIsExplosive)
 	{
 		UpdateExplosive(DeltaTime);
@@ -98,6 +130,16 @@ void ARLProjectile::Tick(float DeltaTime)
 	if (!bIsActive || bIsFadingOut)
 	{
 		return;
+	}
+
+	if (bIsDelayedExplosive)
+	{
+		UpdateDelayedExplosive(DeltaTime);
+	}
+
+	if (bIsFakeProjectile)
+	{
+		UpdateFake(DeltaTime);
 	}
 
 	if (bIsRallyProjectile)
@@ -123,6 +165,7 @@ void ARLProjectile::ActivateProjectile(
 	AActor* NewOwner,
 	APawn* NewInstigator)
 {
+	LifeSeconds = GlobalProjectileLifeSeconds;
 	SetActorTickEnabled(false);
 	ResetReflectedAfterimages();
 	bIsReflected = false;
@@ -130,6 +173,14 @@ void ARLProjectile::ActivateProjectile(
 	bCanBeReflected = true;
 	bIsExplosive = false;
 	bExplosiveBlinkWarning = false;
+	bIsDelayedExplosive = false;
+	bDelayedExplosivePaused = false;
+	bDelayedExplosiveResumed = false;
+	bIsFakeProjectile = false;
+	bFakeDormant = false;
+	bExplodesOnEnemyImpact = false;
+	bIsGuardProjectile = false;
+	bSplitsOnParry = false;
 	bIsRallyProjectile = false;
 	bRallyFinalShot = false;
 	RemainingPierces = 0;
@@ -139,14 +190,20 @@ void ARLProjectile::ActivateProjectile(
 	bWasOverdriveReflected = false;
 	ExplosiveElapsedTime = 0.0f;
 	ExplosiveNextBlinkTime = 0.0f;
+	DelayedExplosivePauseElapsedTime = 0.0f;
+	FakeDormantElapsedTime = 0.0f;
 	RallyCurrentSpeed = ProjectileSpeed;
 	RallySpeedMultiplierPerRally = 1.15f;
 	RallyCount = 0;
 	MaxRallies = 0;
 	RallyTarget.Reset();
 	RallyFinalTarget.Reset();
+	DelayedExplosiveTarget.Reset();
+	FakeTarget.Reset();
 	ExplosiveMaterialInstance = nullptr;
 	FadeMaterialInstance = nullptr;
+	SpecialMaterialInstance = nullptr;
+	ActiveDefinition = nullptr;
 	FadeOutElapsedTime = 0.0f;
 	ProjectileMesh->SetRelativeScale3D(DefaultProjectileMeshScale);
 	ProjectileMesh->SetVisibility(true, true);
@@ -182,11 +239,126 @@ void ARLProjectile::ActivateProjectile(
 	ProjectileMovement->UpdateComponentVelocity();
 
 	bIsActive = true;
+	SetActorTickEnabled(true);
 	GetWorldTimerManager().SetTimer(
 		LifetimeTimerHandle,
 		this,
 		&ThisClass::ReturnToPool,
 		FMath::Max(0.1f, LifeSeconds),
+		false);
+}
+
+void ARLProjectile::InitializeFromDefinition(
+	URLProjectileDefinitionDataAsset* Definition,
+	AActor* TargetActor,
+	bool bConfigureBehavior)
+{
+	if (!bIsActive || !Definition)
+	{
+		return;
+	}
+
+	ActiveDefinition = Definition;
+	ApplyDefinitionStats(*Definition);
+
+	if (!bConfigureBehavior)
+	{
+		return;
+	}
+
+	switch (Definition->Behavior)
+	{
+	case ERLProjectileBehavior::Explosive:
+		ConfigureAsExplosive();
+		break;
+	case ERLProjectileBehavior::DelayedExplosive:
+		ConfigureAsDelayedExplosive(TargetActor);
+		break;
+	case ERLProjectileBehavior::Fake:
+		ConfigureAsFake(TargetActor);
+		break;
+	case ERLProjectileBehavior::Guard:
+		ConfigureAsGuard();
+		break;
+	case ERLProjectileBehavior::ParrySplit:
+		ConfigureAsParrySplit();
+		break;
+	case ERLProjectileBehavior::Rally:
+		ConfigureAsRally(
+			TargetActor,
+			Definition->RallyRelayCount,
+			Definition->RallySpeedMultiplierPerRelay);
+		break;
+	case ERLProjectileBehavior::Normal:
+	default:
+		break;
+	}
+}
+
+void ARLProjectile::ApplyDefinitionStats(
+	const URLProjectileDefinitionDataAsset& Definition)
+{
+	DamageAmount = FMath::Max(0.0f, Definition.DamageAmount);
+	ProjectileSpeed = FMath::Max(1.0f, Definition.ProjectileSpeed);
+	ReflectedSpeedMultiplier = FMath::Max(1.0f, Definition.ReflectedSpeedMultiplier);
+	// Projectile definitions share one long safety lifetime. Escaped projectiles
+	// are recycled by the play-area bounds check instead of short per-type timers.
+	LifeSeconds = GlobalProjectileLifeSeconds;
+	FadeOutDuration = FMath::Max(0.0f, Definition.FadeOutDuration);
+	HostileMaterial = Definition.HostileMaterial;
+	ReflectedMaterial = Definition.ReflectedMaterial;
+	bExplodesOnEnemyImpact = Definition.bExplodesOnEnemyImpact;
+
+	ExplosiveSpeedMultiplier = FMath::Clamp(Definition.ExplosiveSpeedMultiplier, 0.1f, 1.0f);
+	ExplosiveVisualScale = FMath::Max(1.0f, Definition.ExplosiveVisualScale);
+	ExplosiveFuseDuration = FMath::Max(0.1f, Definition.ExplosiveFuseDuration);
+	const URLProjectileDefinitionDataAsset& ExplosionDefinition =
+		Definition.EnemyImpactExplosionDefinition
+			? *Definition.EnemyImpactExplosionDefinition
+			: Definition;
+	ExplosionRadius = FMath::Max(1.0f, ExplosionDefinition.ExplosionRadius);
+	ExplosionDamage = FMath::Max(0.0f, ExplosionDefinition.ExplosionDamage);
+	ExplosionSound = ExplosionDefinition.ExplosionSound;
+	ExplosionSoundVolume = FMath::Clamp(
+		ExplosionDefinition.ExplosionSoundVolume,
+		0.0f,
+		2.0f);
+	ExplosiveBlinkStartInterval = FMath::Max(0.01f, Definition.ExplosiveBlinkStartInterval);
+	ExplosiveBlinkEndInterval = FMath::Max(0.01f, Definition.ExplosiveBlinkEndInterval);
+	ExplosiveBaseColor = Definition.ExplosiveBaseColor;
+	ExplosiveDecalColor = ExplosionDefinition.ExplosiveDecalColor;
+	ExplosiveWarningColor = Definition.ExplosiveWarningColor;
+	ExplosiveBaseEmissiveIntensity = FMath::Max(0.0f, Definition.ExplosiveBaseEmissiveIntensity);
+	ExplosiveWarningEmissiveIntensity = FMath::Max(0.0f, Definition.ExplosiveWarningEmissiveIntensity);
+
+	DelayedExplosiveTriggerDistance = FMath::Max(1.0f, Definition.DelayedExplosiveTriggerDistance);
+	DelayedExplosivePauseDuration = FMath::Max(0.0f, Definition.DelayedExplosivePauseDuration);
+	DelayedExplosiveResumeSpeedMultiplier = FMath::Max(0.1f, Definition.DelayedExplosiveResumeSpeedMultiplier);
+	FakeTriggerDistance = FMath::Max(1.0f, Definition.FakeTriggerDistance);
+	FakeRevealDelay = FMath::Max(0.0f, Definition.FakeRevealDelay);
+	FakeRealSpeedMultiplier = FMath::Max(0.1f, Definition.FakeRealSpeedMultiplier);
+	FakeColor = Definition.FakeColor;
+	FakeOpacity = FMath::Clamp(Definition.FakeOpacity, 0.0f, 1.0f);
+	GuardColor = Definition.GuardColor;
+	ParrySplitColor = Definition.ParrySplitColor;
+	ParrySplitFragmentCount = FMath::Clamp(Definition.ParrySplitFragmentCount, 1, 6);
+	ParrySplitSpreadAngle = FMath::Clamp(Definition.ParrySplitSpreadAngle, 0.0f, 180.0f);
+	ParrySplitFragmentSpeedMultiplier = FMath::Max(0.1f, Definition.ParrySplitFragmentSpeedMultiplier);
+	ParrySplitFragmentScale = FMath::Clamp(Definition.ParrySplitFragmentScale, 0.1f, 1.0f);
+	RallyVisualScale = FMath::Max(1.0f, Definition.RallyVisualScale);
+	RallyMaxSpeedMultiplier = FMath::Max(1.0f, Definition.RallyMaxSpeedMultiplier);
+	RallyArrivalRadius = FMath::Max(1.0f, Definition.RallyArrivalRadius);
+
+	const float VisualScale = FMath::Max(0.1f, Definition.VisualScale);
+	ProjectileMesh->SetRelativeScale3D(DefaultProjectileMeshScale * VisualScale);
+	CollisionComponent->SetSphereRadius(DefaultCollisionRadius * VisualScale, false);
+	UpdateProjectileMaterial();
+	SetProjectileSpeed(ProjectileSpeed, GetActorForwardVector());
+	GetWorldTimerManager().SetTimer(
+		LifetimeTimerHandle,
+		this,
+		&ThisClass::ReturnToPool,
+		LifeSeconds,
 		false);
 }
 
@@ -200,6 +372,9 @@ bool ARLProjectile::Reflect(
 	{
 		return false;
 	}
+	AActor* OriginalOwner = GetOwner();
+	APawn* OriginalInstigator = GetInstigator();
+	const bool bShouldSpawnParryFragments = bSplitsOnParry;
 
 	if (AActor* PreviousOwner = GetOwner())
 	{
@@ -243,6 +418,7 @@ bool ARLProjectile::Reflect(
 	bWasPerfectParried = ReflectionParams.bPerfectParry;
 	bWasCloseRangeParried = ReflectionParams.bCloseRangeParry;
 	bWasOverdriveReflected = ReflectionParams.bOverdrive;
+	bSplitsOnParry = false;
 	const float ReflectedScale = FMath::Max(
 		0.1f,
 		ReflectionParams.VisualScaleMultiplier);
@@ -263,6 +439,10 @@ bool ARLProjectile::Reflect(
 		&ThisClass::ReturnToPool,
 		FMath::Max(0.1f, LifeSeconds),
 		false);
+	if (bShouldSpawnParryFragments)
+	{
+		SpawnParrySplitFragments(OriginalOwner, OriginalInstigator, NewOwner);
+	}
 
 	return true;
 }
@@ -276,6 +456,10 @@ void ARLProjectile::ConfigureAsExplosive()
 
 	bCanBeReflected = false;
 	bIsExplosive = true;
+	bIsDelayedExplosive = false;
+	bIsFakeProjectile = false;
+	bIsGuardProjectile = false;
+	bSplitsOnParry = false;
 	bIsRallyProjectile = false;
 	bRallyFinalShot = false;
 	RallyTarget.Reset();
@@ -305,6 +489,76 @@ void ARLProjectile::ConfigureAsExplosive()
 	SetActorTickEnabled(true);
 }
 
+void ARLProjectile::ConfigureAsDelayedExplosive(AActor* TargetActor)
+{
+	if (!bIsActive || !IsValid(TargetActor))
+	{
+		return;
+	}
+
+	ConfigureAsExplosive();
+	bIsDelayedExplosive = true;
+	bDelayedExplosivePaused = false;
+	bDelayedExplosiveResumed = false;
+	DelayedExplosivePauseElapsedTime = 0.0f;
+	DelayedExplosiveTarget = TargetActor;
+}
+
+void ARLProjectile::ConfigureAsFake(AActor* TargetActor)
+{
+	if (!bIsActive || !IsValid(TargetActor))
+	{
+		return;
+	}
+
+	bCanBeReflected = false;
+	bIsExplosive = false;
+	bIsDelayedExplosive = false;
+	bIsFakeProjectile = true;
+	bFakeDormant = false;
+	bIsGuardProjectile = false;
+	bSplitsOnParry = false;
+	bIsRallyProjectile = false;
+	FakeDormantElapsedTime = 0.0f;
+	FakeTarget = TargetActor;
+	UpdateProjectileMaterial();
+	SetActorTickEnabled(true);
+}
+
+void ARLProjectile::ConfigureAsGuard()
+{
+	if (!bIsActive)
+	{
+		return;
+	}
+
+	bCanBeReflected = true;
+	bIsExplosive = false;
+	bIsDelayedExplosive = false;
+	bIsFakeProjectile = false;
+	bIsGuardProjectile = true;
+	bSplitsOnParry = false;
+	bIsRallyProjectile = false;
+	UpdateProjectileMaterial();
+}
+
+void ARLProjectile::ConfigureAsParrySplit()
+{
+	if (!bIsActive)
+	{
+		return;
+	}
+
+	bCanBeReflected = true;
+	bIsExplosive = false;
+	bIsDelayedExplosive = false;
+	bIsFakeProjectile = false;
+	bIsGuardProjectile = false;
+	bSplitsOnParry = true;
+	bIsRallyProjectile = false;
+	UpdateProjectileMaterial();
+}
+
 bool ARLProjectile::Detonate()
 {
 	if (!bIsActive || !bIsExplosive)
@@ -328,6 +582,10 @@ void ARLProjectile::ConfigureAsRally(
 
 	bCanBeReflected = true;
 	bIsExplosive = false;
+	bIsDelayedExplosive = false;
+	bIsFakeProjectile = false;
+	bIsGuardProjectile = false;
+	bSplitsOnParry = false;
 	bIsRallyProjectile = true;
 	bRallyFinalShot = false;
 	RallyCount = 0;
@@ -419,6 +677,14 @@ void ARLProjectile::DeactivateForPool()
 	bCanBeReflected = true;
 	bIsExplosive = false;
 	bExplosiveBlinkWarning = false;
+	bIsDelayedExplosive = false;
+	bDelayedExplosivePaused = false;
+	bDelayedExplosiveResumed = false;
+	bIsFakeProjectile = false;
+	bFakeDormant = false;
+	bExplodesOnEnemyImpact = false;
+	bIsGuardProjectile = false;
+	bSplitsOnParry = false;
 	bIsRallyProjectile = false;
 	bRallyFinalShot = false;
 	RemainingPierces = 0;
@@ -428,13 +694,19 @@ void ARLProjectile::DeactivateForPool()
 	bWasOverdriveReflected = false;
 	ExplosiveElapsedTime = 0.0f;
 	ExplosiveNextBlinkTime = 0.0f;
+	DelayedExplosivePauseElapsedTime = 0.0f;
+	FakeDormantElapsedTime = 0.0f;
 	RallyCurrentSpeed = 0.0f;
 	RallyCount = 0;
 	MaxRallies = 0;
 	RallyTarget.Reset();
 	RallyFinalTarget.Reset();
+	DelayedExplosiveTarget.Reset();
+	FakeTarget.Reset();
 	ExplosiveMaterialInstance = nullptr;
 	FadeMaterialInstance = nullptr;
+	SpecialMaterialInstance = nullptr;
+	ActiveDefinition = nullptr;
 	FadeOutElapsedTime = 0.0f;
 	ProjectileMesh->SetRelativeScale3D(DefaultProjectileMeshScale);
 	ProjectileMesh->SetVisibility(true, true);
@@ -570,6 +842,19 @@ void ARLProjectile::UpdateProjectileMaterial()
 	{
 		ProjectileMesh->SetMaterial(0, Material);
 	}
+	SpecialMaterialInstance = nullptr;
+	if (bIsGuardProjectile)
+	{
+		ApplySpecialColor(GuardColor, 18.0f);
+	}
+	else if (bSplitsOnParry)
+	{
+		ApplySpecialColor(ParrySplitColor, 22.0f);
+	}
+	else if (bIsFakeProjectile)
+	{
+		ApplySpecialColor(FakeColor, 5.0f, FakeOpacity);
+	}
 
 	for (UStaticMeshComponent* AfterimageMesh : ReflectedAfterimageMeshes)
 	{
@@ -578,6 +863,31 @@ void ARLProjectile::UpdateProjectileMaterial()
 			AfterimageMesh->SetMaterial(0, ReflectedMaterial);
 		}
 	}
+}
+
+void ARLProjectile::ApplySpecialColor(
+	const FLinearColor& Color,
+	float EmissiveIntensity,
+	float Opacity)
+{
+	if (!ProjectileMesh)
+	{
+		return;
+	}
+
+	SpecialMaterialInstance = ProjectileMesh->CreateDynamicMaterialInstance(0);
+	if (!SpecialMaterialInstance)
+	{
+		return;
+	}
+
+	SpecialMaterialInstance->SetVectorParameterValue(ProjectileColorParameterName, Color);
+	SpecialMaterialInstance->SetScalarParameterValue(
+		EmissiveIntensityParameterName,
+		FMath::Max(0.0f, EmissiveIntensity));
+	SpecialMaterialInstance->SetScalarParameterValue(
+		FadeOpacityParameterName,
+		FMath::Clamp(Opacity, 0.0f, 1.0f));
 }
 
 void ARLProjectile::UpdateExplosive(float DeltaTime)
@@ -622,9 +932,186 @@ void ARLProjectile::ApplyExplosiveBlinkColor(bool bUseWarningColor)
 			: FMath::Max(0.0f, ExplosiveBaseEmissiveIntensity));
 }
 
+void ARLProjectile::UpdateDelayedExplosive(float DeltaTime)
+{
+	if (!bIsDelayedExplosive || bDelayedExplosiveResumed)
+	{
+		return;
+	}
+
+	AActor* TargetActor = DelayedExplosiveTarget.Get();
+	if (!IsValid(TargetActor))
+	{
+		bIsDelayedExplosive = false;
+		return;
+	}
+
+	if (!bDelayedExplosivePaused)
+	{
+		if (FVector::DistSquared2D(GetActorLocation(), TargetActor->GetActorLocation()) >
+			FMath::Square(FMath::Max(1.0f, DelayedExplosiveTriggerDistance)))
+		{
+			return;
+		}
+
+		bDelayedExplosivePaused = true;
+		DelayedExplosivePauseElapsedTime = 0.0f;
+		ProjectileMovement->StopMovementImmediately();
+		ProjectileMovement->Deactivate();
+		return;
+	}
+
+	DelayedExplosivePauseElapsedTime += FMath::Max(0.0f, DeltaTime);
+	if (DelayedExplosivePauseElapsedTime < FMath::Max(0.0f, DelayedExplosivePauseDuration))
+	{
+		return;
+	}
+
+	bDelayedExplosivePaused = false;
+	bDelayedExplosiveResumed = true;
+	const FVector ResumeDirection =
+		(TargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal();
+	SetProjectileSpeed(
+		ProjectileSpeed * FMath::Max(0.1f, DelayedExplosiveResumeSpeedMultiplier),
+		ResumeDirection);
+}
+
+void ARLProjectile::UpdateFake(float DeltaTime)
+{
+	AActor* TargetActor = FakeTarget.Get();
+	if (!IsValid(TargetActor))
+	{
+		ReturnToPool();
+		return;
+	}
+
+	if (!bFakeDormant)
+	{
+		if (FVector::DistSquared2D(GetActorLocation(), TargetActor->GetActorLocation()) >
+			FMath::Square(FMath::Max(1.0f, FakeTriggerDistance)))
+		{
+			return;
+		}
+
+		bFakeDormant = true;
+		FakeDormantElapsedTime = 0.0f;
+		ProjectileMovement->StopMovementImmediately();
+		ProjectileMovement->Deactivate();
+		CollisionComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		ProjectileMesh->SetVisibility(false, true);
+		return;
+	}
+
+	FakeDormantElapsedTime += FMath::Max(0.0f, DeltaTime);
+	if (FakeDormantElapsedTime >= FMath::Max(0.0f, FakeRevealDelay))
+	{
+		RevealFakeProjectile();
+	}
+}
+
+void ARLProjectile::RevealFakeProjectile()
+{
+	AActor* TargetActor = FakeTarget.Get();
+	if (!IsValid(TargetActor))
+	{
+		ReturnToPool();
+		return;
+	}
+
+	bIsFakeProjectile = false;
+	bFakeDormant = false;
+	bCanBeReflected = true;
+	FakeDormantElapsedTime = 0.0f;
+	ProjectileMesh->SetVisibility(true, true);
+	CollisionComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	UpdateProjectileMaterial();
+	const FVector RealShotDirection =
+		(TargetActor->GetActorLocation() - GetActorLocation()).GetSafeNormal();
+	SetProjectileSpeed(
+		ProjectileSpeed * FMath::Max(0.1f, FakeRealSpeedMultiplier),
+		RealShotDirection);
+	GetWorldTimerManager().SetTimer(
+		LifetimeTimerHandle,
+		this,
+		&ThisClass::ReturnToPool,
+		FMath::Max(0.1f, LifeSeconds),
+		false);
+	FakeTarget.Reset();
+}
+
+void ARLProjectile::SpawnParrySplitFragments(
+	AActor* OriginalOwner,
+	APawn* OriginalInstigator,
+	AActor* PlayerActor)
+{
+	UWorld* World = GetWorld();
+	if (!World || !IsValid(PlayerActor))
+	{
+		return;
+	}
+
+	URLProjectilePoolSubsystem* PoolSubsystem =
+		World->GetSubsystem<URLProjectilePoolSubsystem>();
+	if (!PoolSubsystem)
+	{
+		return;
+	}
+
+	const int32 FragmentCount = FMath::Clamp(ParrySplitFragmentCount, 1, 6);
+	const FVector DirectionToPlayer =
+		(PlayerActor->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+	if (DirectionToPlayer.IsNearlyZero())
+	{
+		return;
+	}
+
+	for (int32 FragmentIndex = 0; FragmentIndex < FragmentCount; ++FragmentIndex)
+	{
+		const float FragmentAlpha = FragmentCount > 1
+			? static_cast<float>(FragmentIndex) / static_cast<float>(FragmentCount - 1)
+			: 0.5f;
+		const float FragmentAngle = FMath::Lerp(
+			-ParrySplitSpreadAngle * 0.5f,
+			ParrySplitSpreadAngle * 0.5f,
+			FragmentAlpha);
+		const FVector FragmentDirection = DirectionToPlayer.RotateAngleAxis(
+			FragmentAngle,
+			FVector::UpVector);
+		const FTransform FragmentTransform(
+			FragmentDirection.Rotation(),
+			GetActorLocation() + FragmentDirection * (DefaultCollisionRadius + 4.0f));
+		if (ARLProjectile* Fragment = PoolSubsystem->AcquireProjectile(
+			GetClass(),
+			FragmentTransform,
+			OriginalOwner,
+			OriginalInstigator))
+		{
+			Fragment->InitializeFromDefinition(ActiveDefinition, nullptr, false);
+			Fragment->ConfigureAsSplitFragment(
+				ParrySplitFragmentSpeedMultiplier,
+				ParrySplitFragmentScale);
+		}
+	}
+}
+
+void ARLProjectile::ConfigureAsSplitFragment(float SpeedMultiplier, float VisualScale)
+{
+	const float SafeScale = FMath::Clamp(VisualScale, 0.1f, 1.0f);
+	ProjectileMesh->SetRelativeScale3D(DefaultProjectileMeshScale * SafeScale);
+	CollisionComponent->SetSphereRadius(DefaultCollisionRadius * SafeScale, true);
+	SetProjectileSpeed(
+		ProjectileSpeed * FMath::Max(0.1f, SpeedMultiplier),
+		GetActorForwardVector());
+}
+
 void ARLProjectile::Explode()
 {
-	if (!bIsActive)
+	TriggerExplosion(true, false);
+}
+
+void ARLProjectile::TriggerExplosion(bool bDamagePlayer, bool bDamageEnemies)
+{
+	if (!bIsActive || bIsFadingOut)
 	{
 		return;
 	}
@@ -637,17 +1124,48 @@ void ARLProjectile::Explode()
 			this,
 			ExplosionSound,
 			ExplosionLocation,
-			FMath::Max(0.0f, ExplosionSoundVolume));
+			FRotator::ZeroRotator,
+			FMath::Max(0.0f, ExplosionSoundVolume),
+			1.0f,
+			0.0f,
+			nullptr,
+			ExplosionSoundConcurrency,
+			this);
 	}
 	SpawnExplosionVisual(ExplosionLocation, BlastRadius);
 	OnExploded(ExplosionLocation, BlastRadius);
 
-	if (APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0))
+	if (bDamagePlayer)
 	{
-		if (FVector::Dist(PlayerPawn->GetActorLocation(), ExplosionLocation) <= BlastRadius)
+		if (APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0))
 		{
+			if (FVector::DistSquared(PlayerPawn->GetActorLocation(), ExplosionLocation) <=
+				FMath::Square(BlastRadius))
+			{
+				UGameplayStatics::ApplyDamage(
+					PlayerPawn,
+					FMath::Max(0.0f, ExplosionDamage),
+					GetInstigatorController(),
+					this,
+					UDamageType::StaticClass());
+			}
+		}
+	}
+
+	if (bDamageEnemies)
+	{
+		for (TActorIterator<ARLEnemyCharacter> Iterator(GetWorld()); Iterator; ++Iterator)
+		{
+			ARLEnemyCharacter* Enemy = *Iterator;
+			if (!IsValid(Enemy) || !Enemy->IsPoolActive() ||
+				FVector::DistSquared(Enemy->GetActorLocation(), ExplosionLocation) >
+				FMath::Square(BlastRadius))
+			{
+				continue;
+			}
+
 			UGameplayStatics::ApplyDamage(
-				PlayerPawn,
+				Enemy,
 				FMath::Max(0.0f, ExplosionDamage),
 				GetInstigatorController(),
 				this,
@@ -658,9 +1176,11 @@ void ARLProjectile::Explode()
 	UE_LOG(
 		LogTemp,
 		Display,
-		TEXT("Explosive projectile detonated at %s with radius %.1f."),
+		TEXT("Projectile explosion at %s with radius %.1f. PlayerDamage=%s EnemyDamage=%s"),
 		*ExplosionLocation.ToCompactString(),
-		BlastRadius);
+		BlastRadius,
+		bDamagePlayer ? TEXT("true") : TEXT("false"),
+		bDamageEnemies ? TEXT("true") : TEXT("false"));
 	ReturnToPool();
 }
 
@@ -868,6 +1388,15 @@ void ARLProjectile::SetProjectileSpeed(float NewSpeed, const FVector& Direction)
 	ProjectileMovement->UpdateComponentVelocity();
 }
 
+bool ARLProjectile::IsOutsidePlayArea() const
+{
+	const FVector Location = GetActorLocation();
+	return FMath::Abs(Location.X - PlayAreaCenter.X) >
+			FMath::Max(1.0f, PlayAreaHalfExtent.X) ||
+		FMath::Abs(Location.Y - PlayAreaCenter.Y) >
+			FMath::Max(1.0f, PlayAreaHalfExtent.Y);
+}
+
 void ARLProjectile::HandleProjectileHit(
 	UPrimitiveComponent* HitComponent,
 	AActor* OtherActor,
@@ -893,6 +1422,11 @@ void ARLProjectile::HandleProjectileHit(
 	}
 
 	if (ShouldIgnoreActor(OtherActor))
+	{
+		return;
+	}
+
+	if (TryExplodeOnEnemyContact(OtherActor))
 	{
 		return;
 	}
@@ -936,6 +1470,11 @@ void ARLProjectile::HandleProjectileOverlap(
 		return;
 	}
 
+	if (TryExplodeOnEnemyContact(OtherActor))
+	{
+		return;
+	}
+
 	if (bIsExplosive)
 	{
 		Explode();
@@ -961,6 +1500,18 @@ bool ARLProjectile::TryDetonateOnPlayerContact(AActor* OtherActor)
 	return Detonate();
 }
 
+bool ARLProjectile::TryExplodeOnEnemyContact(AActor* OtherActor)
+{
+	if (!bExplodesOnEnemyImpact || !bIsReflected ||
+		!IsValid(OtherActor) || !OtherActor->IsA<ARLEnemyCharacter>())
+	{
+		return false;
+	}
+
+	TriggerExplosion(false, true);
+	return true;
+}
+
 bool ARLProjectile::ShouldIgnoreActor(const AActor* OtherActor) const
 {
 	if (!OtherActor || OtherActor == this || OtherActor == GetOwner())
@@ -976,19 +1527,32 @@ bool ARLProjectile::ShouldIgnoreActor(const AActor* OtherActor) const
 
 void ARLProjectile::ApplyDamageAndReturn(AActor* OtherActor)
 {
+	ARLEnemyCharacter* HitEnemy = Cast<ARLEnemyCharacter>(OtherActor);
+	if (bIsReflected && HitEnemy && HitEnemy->TryAbsorbReflectedProjectile())
+	{
+		ReturnToPool();
+		return;
+	}
+
+	if (bIsGuardProjectile && bIsReflected && HitEnemy)
+	{
+		ReturnToPool();
+		return;
+	}
+
 	const bool bPiercesEnemy = bIsReflected &&
 		OtherActor &&
 		OtherActor->IsA<ARLEnemyCharacter>() &&
 		RemainingPierces > 0;
 
-	UGameplayStatics::ApplyDamage(
+	const float AppliedDamage = UGameplayStatics::ApplyDamage(
 		OtherActor,
 		DamageAmount,
 		GetInstigatorController(),
 		this,
 		UDamageType::StaticClass());
 
-	if (bPiercesEnemy)
+	if (bPiercesEnemy && AppliedDamage > 0.0f)
 	{
 		--RemainingPierces;
 		return;

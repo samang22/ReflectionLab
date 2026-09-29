@@ -60,9 +60,23 @@ void URLParryComboWidget::BindToPlayer(ARLPlayerCharacter* PlayerCharacter)
 void URLParryComboWidget::HandleParryComboChanged(
 	int32 ComboCount,
 	int32 MultiParryCount,
+	int32 EnhancementLevel,
 	bool bPerfectParry,
 	bool bCloseRangeParry)
 {
+	if (EnhancementText)
+	{
+		EnhancementText->SetVisibility(ESlateVisibility::HitTestInvisible);
+		EnhancementText->SetText(FText::FromString(
+			FString::Printf(TEXT("POWER STAGE %d"), FMath::Clamp(EnhancementLevel, 1, 4))));
+		EnhancementText->SetColorAndOpacity(
+			EnhancementLevel >= 4
+				? FLinearColor(1.0f, 0.55f, 0.05f)
+				: EnhancementLevel >= 3
+					? FLinearColor(0.5f, 0.85f, 1.0f)
+					: FLinearColor(0.75f, 0.75f, 0.85f));
+	}
+
 	if (ComboCount <= 0)
 	{
 		if (DisplayedComboCount <= 0)
@@ -71,19 +85,15 @@ void URLParryComboWidget::HandleParryComboChanged(
 			return;
 		}
 
-		const bool bOverdriveConsumed = DisplayedComboCount >= 8;
 		DisplayedComboCount = 0;
-		ComboBreakTimeRemaining = bOverdriveConsumed ? 0.9f : 0.65f;
+		ComboBreakTimeRemaining = 0.65f;
 		PopTimeRemaining = 0.12f;
 		SetVisibility(ESlateVisibility::HitTestInvisible);
 		if (FeedbackText)
 		{
-			FeedbackText->SetText(FText::FromString(
-				bOverdriveConsumed ? TEXT("OVERDRIVE!") : TEXT("COMBO BREAK")));
+			FeedbackText->SetText(FText::FromString(TEXT("COMBO BREAK")));
 			FeedbackText->SetColorAndOpacity(
-				bOverdriveConsumed
-					? FLinearColor(1.0f, 0.65f, 0.05f)
-					: FLinearColor(1.0f, 0.12f, 0.05f));
+				FLinearColor(1.0f, 0.12f, 0.05f));
 			FeedbackText->SetVisibility(ESlateVisibility::HitTestInvisible);
 		}
 		if (ComboText)
@@ -149,29 +159,36 @@ void URLParryComboWidget::HandleParryComboChanged(
 		ComboText->SetColorAndOpacity(ComboColor);
 	}
 
-	UpdateMilestoneProgress(ComboCount);
+	UpdateMilestoneProgress(ComboCount, EnhancementLevel);
 }
 
-void URLParryComboWidget::UpdateMilestoneProgress(int32 ComboCount)
+void URLParryComboWidget::UpdateMilestoneProgress(int32 ComboCount, int32 EnhancementLevel)
 {
 	int32 PreviousMilestone = 0;
 	int32 NextMilestone = 3;
-	if (ComboCount > 5)
+	if (EnhancementLevel >= 4)
 	{
-		PreviousMilestone = 5;
-		NextMilestone = 8;
+		PreviousMilestone = 9;
+		NextMilestone = 9;
 	}
-	else if (ComboCount > 3)
+	else if (EnhancementLevel >= 3)
+	{
+		PreviousMilestone = 6;
+		NextMilestone = 9;
+	}
+	else if (EnhancementLevel >= 2)
 	{
 		PreviousMilestone = 3;
-		NextMilestone = 5;
+		NextMilestone = 6;
 	}
 
-	const bool bReachedFinalMilestone = ComboCount >= 8;
+	const bool bReachedFinalMilestone = EnhancementLevel >= 4;
 	const float Progress = bReachedFinalMilestone
 		? 1.0f
-		: static_cast<float>(ComboCount - PreviousMilestone) /
-			static_cast<float>(NextMilestone - PreviousMilestone);
+		: NextMilestone == PreviousMilestone
+			? 1.0f
+			: static_cast<float>(ComboCount - PreviousMilestone) /
+				static_cast<float>(NextMilestone - PreviousMilestone);
 	if (ComboProgressBar)
 	{
 		ComboProgressBar->SetVisibility(ESlateVisibility::HitTestInvisible);
@@ -183,7 +200,7 @@ void URLParryComboWidget::UpdateMilestoneProgress(int32 ComboCount)
 		MilestoneText->SetVisibility(ESlateVisibility::HitTestInvisible);
 		if (bReachedFinalMilestone)
 		{
-			MilestoneText->SetText(FText::FromString(TEXT("MAX STREAK")));
+			MilestoneText->SetText(FText::FromString(TEXT("OVERDRIVE READY")));
 		}
 		else if (ComboCount == NextMilestone)
 		{
@@ -229,6 +246,19 @@ void URLParryComboWidget::BuildWidgetTree()
 	FeedbackText->SetFont(FeedbackFont);
 	UVerticalBoxSlot* FeedbackSlot = ComboContainer->AddChildToVerticalBox(FeedbackText);
 	FeedbackSlot->SetHorizontalAlignment(HAlign_Center);
+
+	EnhancementText = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(),
+		TEXT("EnhancementText"));
+	EnhancementText->SetJustification(ETextJustify::Center);
+	EnhancementText->SetShadowOffset(FVector2D(2.0f, 2.0f));
+	EnhancementText->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f));
+	FSlateFontInfo EnhancementFont = EnhancementText->GetFont();
+	EnhancementFont.Size = 22;
+	EnhancementText->SetFont(EnhancementFont);
+	UVerticalBoxSlot* EnhancementSlot = ComboContainer->AddChildToVerticalBox(EnhancementText);
+	EnhancementSlot->SetHorizontalAlignment(HAlign_Center);
+	EnhancementSlot->SetPadding(FMargin(0.0f, 2.0f, 0.0f, 2.0f));
 
 	ComboText = WidgetTree->ConstructWidget<UTextBlock>(
 		UTextBlock::StaticClass(),

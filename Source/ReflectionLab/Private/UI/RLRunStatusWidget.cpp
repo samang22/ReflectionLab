@@ -34,7 +34,7 @@ void URLRunStatusWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 		RoundClearMessageRemaining - InDeltaTime);
 	StartMessageRemaining = FMath::Max(0.0f, StartMessageRemaining - InDeltaTime);
 	UpdateTimerText();
-	UpdatePhaseText();
+	UpdateWaveText();
 	UpdateStateText();
 	UpdateExplosiveWarning(InDeltaTime);
 }
@@ -46,9 +46,9 @@ void URLRunStatusWidget::BindToGameMode(ARLGameModeBase* GameMode)
 		BoundGameMode->OnRunStateChanged.RemoveDynamic(
 			this,
 			&ThisClass::HandleRunStateChanged);
-		BoundGameMode->OnDifficultyPhaseChanged.RemoveDynamic(
+		BoundGameMode->OnWaveChanged.RemoveDynamic(
 			this,
-			&ThisClass::HandleDifficultyPhaseChanged);
+			&ThisClass::HandleWaveChanged);
 	}
 
 	BoundGameMode = GameMode;
@@ -57,9 +57,9 @@ void URLRunStatusWidget::BindToGameMode(ARLGameModeBase* GameMode)
 		BoundGameMode->OnRunStateChanged.AddUniqueDynamic(
 			this,
 			&ThisClass::HandleRunStateChanged);
-		BoundGameMode->OnDifficultyPhaseChanged.AddUniqueDynamic(
+		BoundGameMode->OnWaveChanged.AddUniqueDynamic(
 			this,
-			&ThisClass::HandleDifficultyPhaseChanged);
+			&ThisClass::HandleWaveChanged);
 	}
 
 	RefreshDisplay();
@@ -81,17 +81,17 @@ void URLRunStatusWidget::HandleRunStateChanged(
 	UpdateInputMode();
 }
 
-void URLRunStatusWidget::HandleDifficultyPhaseChanged(
+void URLRunStatusWidget::HandleWaveChanged(
 	int32 RoundIndex,
-	int32 PhaseIndex,
-	FName PhaseName)
+	int32 WaveIndex,
+	FName WaveName)
 {
 	(void)RoundIndex;
-	(void)PhaseIndex;
-	(void)PhaseName;
+	(void)WaveIndex;
+	(void)WaveName;
 	if (PhaseText)
 	{
-		UpdatePhaseText();
+		UpdateWaveText();
 	}
 }
 
@@ -219,12 +219,12 @@ void URLRunStatusWidget::BuildWidgetTree()
 	RestartButton = WidgetTree->ConstructWidget<UButton>(
 		UButton::StaticClass(),
 		TEXT("RestartButton"));
-	UTextBlock* RestartLabel = WidgetTree->ConstructWidget<UTextBlock>(
+	RestartButtonLabel = WidgetTree->ConstructWidget<UTextBlock>(
 		UTextBlock::StaticClass(),
 		TEXT("RestartLabel"));
-	RestartLabel->SetText(FText::FromString(TEXT("RETRY")));
-	RestartLabel->SetJustification(ETextJustify::Center);
-	RestartButton->AddChild(RestartLabel);
+	RestartButtonLabel->SetText(FText::FromString(TEXT("RETRY")));
+	RestartButtonLabel->SetJustification(ETextJustify::Center);
+	RestartButton->AddChild(RestartButtonLabel);
 	RestartButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRestartClicked);
 	UVerticalBoxSlot* RestartSlot = ResultsContainer->AddChildToVerticalBox(RestartButton);
 	RestartSlot->SetHorizontalAlignment(HAlign_Fill);
@@ -255,23 +255,25 @@ void URLRunStatusWidget::RefreshDisplay()
 
 	const ERLRunState RunState = BoundGameMode->GetRunState();
 	const bool bShowingResults =
+		RunState == ERLRunState::TutorialCompleted ||
 		RunState == ERLRunState::RunCompleted || RunState == ERLRunState::GameOver;
 	SetVisibility(bShowingResults
 		? ESlateVisibility::Visible
 		: ESlateVisibility::HitTestInvisible);
-	const int32 RoundIndex = BoundGameMode->GetCurrentRoundIndex();
 	const int32 RoundCount = BoundGameMode->GetRoundCount();
 	if (RoundText)
 	{
-		RoundText->SetText(FText::FromString(FString::Printf(
-			TEXT("ROUND %d / %d"),
-			FMath::Max(0, RoundIndex) + 1,
-			FMath::Max(1, RoundCount))));
+		RoundText->SetText(BoundGameMode->IsCurrentRoundTutorial()
+			? FText::FromString(TEXT("TUTORIAL"))
+			: FText::FromString(FString::Printf(
+				TEXT("ROUND %d / %d"),
+				FMath::Max(1, BoundGameMode->GetCurrentRoundNumber()),
+				FMath::Max(1, RoundCount))));
 	}
 
 	if (PhaseText)
 	{
-		UpdatePhaseText();
+		UpdateWaveText();
 	}
 
 	UpdateTimerText();
@@ -283,7 +285,14 @@ void URLRunStatusWidget::HandleRestartClicked()
 {
 	if (BoundGameMode)
 	{
-		BoundGameMode->RestartRun();
+		if (BoundGameMode->GetRunState() == ERLRunState::TutorialCompleted)
+		{
+			BoundGameMode->StartMainGame();
+		}
+		else
+		{
+			BoundGameMode->RestartRun();
+		}
 	}
 }
 
@@ -304,6 +313,7 @@ void URLRunStatusWidget::UpdateResultsPanel()
 
 	const ERLRunState RunState = BoundGameMode->GetRunState();
 	const bool bShowingResults =
+		RunState == ERLRunState::TutorialCompleted ||
 		RunState == ERLRunState::RunCompleted || RunState == ERLRunState::GameOver;
 	ResultsContainer->SetVisibility(
 		bShowingResults ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
@@ -312,12 +322,27 @@ void URLRunStatusWidget::UpdateResultsPanel()
 		return;
 	}
 
-	ResultsText->SetText(FText::FromString(FString::Printf(
-		TEXT("ROUNDS  %d / %d\nTIME  %s\nBEST COMBO  %d"),
-		BoundGameMode->GetRoundsCleared(),
-		BoundGameMode->GetRoundCount(),
-		*FormatTime(BoundGameMode->GetTotalRunElapsedSeconds()).ToString(),
-		BoundGameMode->GetBestParryCombo())));
+	if (RunState == ERLRunState::TutorialCompleted)
+	{
+		ResultsText->SetText(FText::FromString(TEXT(
+			"TUTORIAL COMPLETE\nStart the main run or return to the main menu.")));
+		if (RestartButtonLabel)
+		{
+			RestartButtonLabel->SetText(FText::FromString(TEXT("START GAME")));
+		}
+	}
+	else
+	{
+		ResultsText->SetText(FText::FromString(FString::Printf(
+			TEXT("ROUNDS  %d / %d\nBEST COMBO  %d"),
+			BoundGameMode->GetRoundsCleared(),
+			BoundGameMode->GetRoundCount(),
+			BoundGameMode->GetBestParryCombo())));
+		if (RestartButtonLabel)
+		{
+			RestartButtonLabel->SetText(FText::FromString(TEXT("RETRY")));
+		}
+	}
 	MainMenuButton->SetIsEnabled(BoundGameMode->CanReturnToMainMenu());
 }
 
@@ -330,10 +355,10 @@ void URLRunStatusWidget::UpdateInputMode()
 	}
 
 	const ERLRunState RunState = BoundGameMode->GetRunState();
-	if (RunState == ERLRunState::RunCompleted || RunState == ERLRunState::GameOver)
+	if (RunState == ERLRunState::TutorialCompleted ||
+		RunState == ERLRunState::RunCompleted || RunState == ERLRunState::GameOver)
 	{
 		FInputModeUIOnly InputMode;
-		InputMode.SetWidgetToFocus(TakeWidget());
 		PlayerController->SetInputMode(InputMode);
 		PlayerController->bShowMouseCursor = true;
 	}
@@ -347,27 +372,19 @@ void URLRunStatusWidget::UpdateTimerText()
 	}
 
 	const ERLRunState RunState = BoundGameMode->GetRunState();
-	if (RunState == ERLRunState::Countdown ||
-		RunState == ERLRunState::Waiting ||
-		RunState == ERLRunState::RunCompleted ||
-		RunState == ERLRunState::GameOver)
+	if (RunState != ERLRunState::PlayingRound)
 	{
 		TimerText->SetVisibility(ESlateVisibility::Collapsed);
 		return;
 	}
 
 	TimerText->SetVisibility(ESlateVisibility::HitTestInvisible);
-	if (RunState == ERLRunState::Intermission)
-	{
-		const float Remaining = BoundGameMode->GetIntermissionRemainingSeconds();
-		TimerText->SetText(FormatTime(Remaining));
-		return;
-	}
-
-	TimerText->SetText(FormatTime(BoundGameMode->GetRoundRemainingSeconds()));
+	TimerText->SetText(FText::FromString(FString::Printf(
+		TEXT("ENEMIES  %d"),
+		BoundGameMode->GetRemainingEnemyCount())));
 }
 
-void URLRunStatusWidget::UpdatePhaseText()
+void URLRunStatusWidget::UpdateWaveText()
 {
 	if (!BoundGameMode || !PhaseText || !NextPhaseText)
 	{
@@ -380,10 +397,10 @@ void URLRunStatusWidget::UpdatePhaseText()
 		return;
 	}
 
-	const int32 PhaseIndex = BoundGameMode->GetCurrentPhaseIndex();
-	const int32 PhaseCount = BoundGameMode->GetCurrentPhaseCount();
-	const FName PhaseName = BoundGameMode->GetCurrentPhaseName();
-	if (PhaseIndex == INDEX_NONE || PhaseCount <= 0)
+	const int32 WaveIndex = BoundGameMode->GetCurrentWaveIndex();
+	const int32 WaveCount = BoundGameMode->GetCurrentWaveCount();
+	const FName WaveName = BoundGameMode->GetCurrentWaveName();
+	if (WaveIndex == INDEX_NONE || WaveCount <= 0)
 	{
 		PhaseText->SetText(FText::GetEmpty());
 		NextPhaseText->SetVisibility(ESlateVisibility::Collapsed);
@@ -391,23 +408,11 @@ void URLRunStatusWidget::UpdatePhaseText()
 	}
 
 	PhaseText->SetText(FText::FromString(FString::Printf(
-		TEXT("PHASE %d / %d  %s"),
-		PhaseIndex + 1,
-		PhaseCount,
-		*PhaseName.ToString())));
-
-	const float NextPhaseRemaining = BoundGameMode->GetNextPhaseRemainingSeconds();
-	if (NextPhaseRemaining < 0.0f)
-	{
-		NextPhaseText->SetText(FText::FromString(TEXT("FINAL PHASE")));
-	}
-	else
-	{
-		NextPhaseText->SetText(FText::FromString(FString::Printf(
-			TEXT("NEXT PHASE IN %s"),
-			*FormatTime(NextPhaseRemaining).ToString())));
-	}
-	NextPhaseText->SetVisibility(ESlateVisibility::HitTestInvisible);
+		TEXT("WAVE %d / %d  %s"),
+		WaveIndex + 1,
+		WaveCount,
+		*WaveName.ToString())));
+	NextPhaseText->SetVisibility(ESlateVisibility::Collapsed);
 }
 
 void URLRunStatusWidget::UpdateStateText()
@@ -453,7 +458,9 @@ void URLRunStatusWidget::UpdateStateText()
 		if (RoundClearMessageRemaining > 0.0f)
 		{
 			SetStateMessage(
-				FText::FromString(TEXT("ROUND CLEAR")),
+				FText::FromString(BoundGameMode->IsCurrentRoundTutorial()
+					? TEXT("TUTORIAL COMPLETE")
+					: TEXT("ROUND CLEAR")),
 				FLinearColor(0.1f, 0.9f, 1.0f),
 				72);
 		}
@@ -466,6 +473,12 @@ void URLRunStatusWidget::UpdateStateText()
 				FLinearColor(1.0f, 0.75f, 0.15f),
 				48);
 		}
+		break;
+	case ERLRunState::TutorialCompleted:
+		SetStateMessage(
+			FText::FromString(TEXT("TUTORIAL COMPLETE")),
+			FLinearColor(0.1f, 0.9f, 1.0f),
+			64);
 		break;
 	case ERLRunState::RunCompleted:
 		SetStateMessage(

@@ -11,7 +11,9 @@
 class USceneComponent;
 class USoundBase;
 class UMaterialInterface;
+class UMaterialInstanceDynamic;
 class UStaticMesh;
+class UStaticMeshComponent;
 class ARLProjectile;
 class URLEnemyPoolSubsystem;
 
@@ -37,6 +39,29 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Difficulty")
 	void ApplyDifficultyPhase(const FRLDifficultyPhase& DifficultyPhase);
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Wave")
+	void ApplyWaveDefinition(const FRLWaveDefinition& WaveDefinition);
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Shield")
+	void SetShieldEmitter(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Shield")
+	bool IsShieldEmitterActive() const { return bShieldEmitterActive; }
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Tutorial")
+	void SetTutorialMovementLocked(bool bLocked);
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Tutorial")
+	void SetTutorialCombatControlled(bool bControlled);
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Tutorial")
+	void SetTutorialInvulnerable(bool bInvulnerable);
+
+	UFUNCTION(BlueprintCallable, Category = "Enemy|Tutorial")
+	bool FireTutorialProjectile(URLProjectileDefinitionDataAsset* ProjectileDefinition);
+
+	bool TryAbsorbReflectedProjectile();
 
 protected:
 	virtual void BeginPlay() override;
@@ -64,6 +89,18 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Combat")
 	bool bAutoStartFiring = true;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Shield")
+	TObjectPtr<UStaticMeshComponent> ShieldVisual;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Shield", meta = (ClampMin = "1.0"))
+	float ShieldProtectionRadius = 500.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Shield", meta = (ClampMin = "1.0"))
+	float ShieldVisualRadius = 99.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Shield")
+	FLinearColor ShieldColor = FLinearColor(0.05f, 0.55f, 1.0f, 1.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Feedback")
 	TObjectPtr<USoundBase> HitSound;
@@ -98,10 +135,17 @@ private:
 	void ApplyCombatConfig();
 	void CacheBaseCombatValues();
 	void SpawnDeathEffect();
+	bool IsProtectedByShield() const;
+	void UpdateShieldVisual();
 	void ActivateFromPool(const FTransform& SpawnTransform);
 	void DeactivateForPool();
 	void BeginBurst();
 	void FireNextShot();
+	bool SpawnProjectile(
+		URLProjectileDefinitionDataAsset* ProjectileDefinition,
+		ERLShotPattern ShotPattern = ERLShotPattern::Single,
+		float CrossLateralOffset = 90.0f,
+		float CrossTargetOffset = 110.0f);
 
 	FTimerHandle AttackTimerHandle;
 	FTimerHandle BurstTimerHandle;
@@ -111,14 +155,23 @@ private:
 	int32 ShotsPerBurst = 1;
 	float TimeBetweenShots = 0.5f;
 	float InitialFireDelay = 1.0f;
-	int32 ExplosiveShotInterval = 5;
-	int32 RallyShotInterval = 3;
-	int32 RallyRelayCount = 2;
-	float RallySpeedMultiplierPerRelay = 1.15f;
 	float BaseAttackInterval = 3.0f;
 	int32 BaseShotsPerBurst = 1;
 	float BaseTimeBetweenShots = 0.5f;
 	int32 RemainingShotsInBurst = 0;
 	int32 ShotsFiredSinceActivation = 0;
 	bool bIsPoolActive = true;
+	bool bShieldEmitterActive = false;
+	bool bTutorialMovementLocked = false;
+	bool bTutorialCombatControlled = false;
+	bool bTutorialInvulnerable = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URLProjectileDefinitionDataAsset> DefaultProjectileDefinition;
+
+	UPROPERTY(Transient)
+	TArray<FRLProjectileSpawnRule> ProjectileRules;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> ShieldMaterialInstance;
 };

@@ -1,12 +1,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Data/RLProjectileDefinitionDataAsset.h"
 #include "GameFramework/GameModeBase.h"
 #include "RLGameModeBase.generated.h"
 
 class ARLEnemySpawner;
+class ARLEnemyCharacter;
 class URLRunDefinitionDataAsset;
 struct FRLDifficultyPhase;
+struct FRLWaveDefinition;
 struct FRLRoundDefinition;
 
 UENUM(BlueprintType)
@@ -16,6 +19,7 @@ enum class ERLRunState : uint8
 	Countdown,
 	PlayingRound,
 	Intermission,
+	TutorialCompleted,
 	RunCompleted,
 	GameOver,
 };
@@ -36,6 +40,15 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
 	FName,
 	PhaseName);
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(
+	FRLWaveChangedSignature,
+	int32,
+	RoundIndex,
+	int32,
+	WaveIndex,
+	FName,
+	WaveName);
+
 UCLASS()
 class REFLECTIONLAB_API ARLGameModeBase : public AGameModeBase
 {
@@ -43,6 +56,10 @@ class REFLECTIONLAB_API ARLGameModeBase : public AGameModeBase
 
 public:
 	ARLGameModeBase();
+	virtual void InitGame(
+		const FString& MapName,
+		const FString& Options,
+		FString& ErrorMessage) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Run")
 	void StartRun();
@@ -57,6 +74,9 @@ public:
 	void ReturnToMainMenu();
 
 	UFUNCTION(BlueprintCallable, Category = "Run")
+	void StartMainGame();
+
+	UFUNCTION(BlueprintCallable, Category = "Run")
 	void NotifyPlayerDied();
 
 	UFUNCTION(BlueprintPure, Category = "Run")
@@ -67,6 +87,27 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Run")
 	int32 GetRoundCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Run")
+	int32 GetCurrentRoundNumber() const;
+
+	UFUNCTION(BlueprintPure, Category = "Run")
+	bool IsCurrentRoundTutorial() const;
+
+	UFUNCTION(BlueprintCallable, Category = "Run|Tutorial")
+	void SetTutorialEnemyMovementLocked(bool bLocked);
+
+	UFUNCTION(BlueprintPure, Category = "Run|Tutorial")
+	bool IsTutorialEnemyMovementLocked() const
+	{
+		return bTutorialEnemyMovementLocked;
+	}
+
+	UFUNCTION(BlueprintCallable, Category = "Run|Tutorial")
+	bool RequestTutorialProjectile(ERLProjectileBehavior ProjectileBehavior);
+
+	UFUNCTION(BlueprintCallable, Category = "Run|Tutorial")
+	void CompleteTutorialCombatIntroduction();
 
 	UFUNCTION(BlueprintPure, Category = "Run")
 	int32 GetCurrentPhaseIndex() const { return CurrentPhaseIndex; }
@@ -92,6 +133,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Run")
 	FName GetCurrentPhaseName() const { return CurrentPhaseName; }
 
+	UFUNCTION(BlueprintPure, Category = "Run|Wave")
+	int32 GetCurrentWaveIndex() const { return CurrentWaveIndex; }
+
+	UFUNCTION(BlueprintPure, Category = "Run|Wave")
+	int32 GetCurrentWaveCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Run|Wave")
+	FName GetCurrentWaveName() const { return CurrentWaveName; }
+
+	UFUNCTION(BlueprintPure, Category = "Run|Wave")
+	int32 GetRemainingEnemyCount() const;
+
 	UFUNCTION(BlueprintPure, Category = "Run|Results")
 	float GetTotalRunElapsedSeconds() const;
 
@@ -110,6 +163,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Run")
 	FRLDifficultyPhaseChangedSignature OnDifficultyPhaseChanged;
 
+	UPROPERTY(BlueprintAssignable, Category = "Run|Wave")
+	FRLWaveChangedSignature OnWaveChanged;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -126,7 +182,7 @@ protected:
 	float RoundCountdownDuration = 3.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Navigation")
-	FName MainMenuLevelName = NAME_None;
+	FName MainMenuLevelName = TEXT("MainMenu");
 
 private:
 	UFUNCTION()
@@ -136,9 +192,12 @@ private:
 	void FinishRoundCountdown();
 	void StartRound(int32 RoundIndex);
 	void UpdateRound();
+	void BeginWave(int32 WaveIndex);
 	void FinishRound();
 	void FinishIntermission();
 	void ApplyDifficultyPhase(const FRLDifficultyPhase& DifficultyPhase, int32 PhaseIndex);
+	void ApplyWaveDefinition(const FRLWaveDefinition& WaveDefinition, int32 WaveIndex);
+	void ClearActiveProjectiles();
 	void CacheEnemySpawners();
 	void StopEnemySpawners();
 	void CleanupRoundActors(const FRLRoundDefinition& RoundDefinition);
@@ -146,6 +205,10 @@ private:
 	void ResetRunRecord();
 	void SetRunState(ERLRunState NewState);
 	const FRLRoundDefinition* GetCurrentRoundDefinition() const;
+	int32 ResolveStartingRoundIndex() const;
+	ARLEnemyCharacter* GetTutorialEnemy() const;
+	URLProjectileDefinitionDataAsset* FindTutorialProjectileDefinition(
+		ERLProjectileBehavior ProjectileBehavior) const;
 
 	UPROPERTY(Transient)
 	TArray<TWeakObjectPtr<ARLEnemySpawner>> EnemySpawners;
@@ -156,6 +219,7 @@ private:
 	ERLRunState RunState = ERLRunState::Waiting;
 	int32 CurrentRoundIndex = INDEX_NONE;
 	int32 CurrentPhaseIndex = INDEX_NONE;
+	int32 CurrentWaveIndex = INDEX_NONE;
 	float RoundStartTimeSeconds = 0.0f;
 	float RoundElapsedSeconds = 0.0f;
 	float IntermissionEndTimeSeconds = 0.0f;
@@ -165,4 +229,10 @@ private:
 	int32 RoundsCleared = 0;
 	int32 BestParryCombo = 0;
 	FName CurrentPhaseName = NAME_None;
+	FName CurrentWaveName = NAME_None;
+	float NextWaveStartTimeSeconds = 0.0f;
+	bool bWaveTransitionPending = false;
+	bool bTutorialEnemyMovementLocked = false;
+	bool bTutorialOnlyMode = false;
+	TWeakObjectPtr<ARLEnemyCharacter> TutorialEnemy;
 };

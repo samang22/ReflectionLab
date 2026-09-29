@@ -31,6 +31,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Enemy Spawner|Difficulty")
 	void ApplyDifficultyPhase(const FRLDifficultyPhase& DifficultyPhase);
 
+	UFUNCTION(BlueprintCallable, Category = "Enemy Spawner|Wave")
+	void ConfigureWave(const FRLWaveDefinition& WaveDefinition);
+
 	UFUNCTION(BlueprintCallable, Category = "Enemy Spawner|Difficulty")
 	void SetMaxAliveEnemies(int32 NewMaxAliveEnemies);
 
@@ -88,6 +91,9 @@ private:
 	FTimerHandle SpawnTimerHandle;
 	TSet<TWeakObjectPtr<ARLEnemyCharacter>> ActiveEnemies;
 	FRLDifficultyPhase ActiveDifficultyPhase;
+	FRLWaveDefinition ActiveWaveDefinition;
 	int32 CurrentSpawnBatchSize = 1;
+	int32 SpawnSequenceCount = 0;
 	bool bHasActiveDifficultyPhase = false;
+	bool bHasActiveWaveDefinition = false;
 };

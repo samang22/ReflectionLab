@@ -30,12 +30,14 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 	int32,
 	ParryChainCount);
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(
 	FRLParryComboChangedSignature,
 	int32,
 	ComboCount,
 	int32,
 	MultiParryCount,
+	int32,
+	EnhancementLevel,
 	bool,
 	bPerfectParry,
 	bool,
@@ -91,6 +93,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Parry|Combo")
 	int32 GetParryComboCount() const { return ParryChainCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Parry|Enhancement")
+	int32 GetParryEnhancementLevel() const { return ParryEnhancementLevel; }
 
 	UPROPERTY(BlueprintAssignable, Category = "Parry")
 	FRLParryChainChangedSignature OnParryChainChanged;
@@ -198,6 +203,12 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Parry|Chain")
 	int32 ParryChainCount = 0;
 
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Parry|Enhancement")
+	int32 ParryEnhancementLevel = 1;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Parry|Enhancement")
+	int32 EnhancementComboProgress = 0;
+
 public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
@@ -213,7 +224,7 @@ private:
 	void ShowParrySuccessIndicator();
 	void ClearParrySuccessIndicator();
 	void PlayParrySwingSound() const;
-	void PlayParryImpactSound(const FVector& SoundLocation, int32 ResultingCombo) const;
+	void PlayParryImpactSound(const FVector& SoundLocation, int32 EnhancementLevel) const;
 	void TriggerParryHitStop(bool bPerfectParry, bool bOverdrive);
 	void RestoreTimeDilation();
 	void BeginHitRecovery();
@@ -241,7 +252,10 @@ private:
 	void EndParry(bool bSucceeded);
 	void ResetParryCooldown();
 	void ResetParryChain();
-	void ConsumeParryCombo();
+	void ConsumeOverdriveEnhancement();
+	void DowngradeParryEnhancement();
+	void SetParryEnhancementLevel(int32 NewLevel);
+	int32 GetEnhancementComboRequirement() const;
 
 	FTimerHandle ParryAttemptTimerHandle;
 	FTimerHandle ParryCooldownTimerHandle;
@@ -264,9 +278,12 @@ private:
 	float CloseRangeProjectileScale = 1.7f;
 	int32 ComboSpeedMilestone = 3;
 	int32 ComboExtraProjectileMilestone = 5;
+	int32 EnhancementStage2Combo = 3;
+	int32 EnhancementStage3Combo = 6;
+	int32 EnhancementStage4Combo = 9;
 	float ComboExtraProjectileSpreadAngle = 18.0f;
 	int32 OverdriveComboThreshold = 8;
-	int32 OverdriveProjectileCount = 7;
+	int32 OverdriveProjectileCount = 5;
 	float OverdriveSpreadAngleDegrees = 100.0f;
 	float OverdriveProjectileScale = 2.0f;
 	int32 OverdrivePierceCount = 3;

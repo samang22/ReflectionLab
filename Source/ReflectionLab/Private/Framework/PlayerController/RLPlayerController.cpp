@@ -4,20 +4,27 @@
 #include "Framework/PlayerController/RLPlayerController.h"
 
 #include "Camera/PlayerCameraManager.h"
+#include "Combat/RLProjectile.h"
+#include "Data/RLProjectileDefinitionDataAsset.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "Framework/GameMode/RLGameModeBase.h"
 #include "GameFramework/Pawn.h"
 #include "InputAction.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
+#include "Kismet/GameplayStatics.h"
 #include "Player/RLPlayerCharacter.h"
 #include "UI/RLParryComboWidget.h"
 #include "UI/RLPlayerHealthWidget.h"
 #include "UI/RLRunStatusWidget.h"
+#include "UI/RLTutorialPromptWidget.h"
 #include "UObject/ConstructorHelpers.h"
+
+#define LOCTEXT_NAMESPACE "ReflectionLabTutorial"
 
 ARLPlayerController::ARLPlayerController()
 {
@@ -50,37 +57,83 @@ void ARLPlayerController::PlayerTick(float DeltaTime)
 	Super::PlayerTick(DeltaTime);
 
 	UpdateAimRotation();
+	UpdateTutorial();
 }
 
 void ARLPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (!IsLocalController() || !DefaultMappingContext)
+	if (!IsLocalController())
 	{
 		return;
 	}
+	RestoreGameplayInputMode();
 
-	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	if (DefaultMappingContext)
 	{
-		if (UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
-			ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer))
+		if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
 		{
-			InputSubsystem->AddMappingContext(DefaultMappingContext, 0);
+			if (UEnhancedInputLocalPlayerSubsystem* InputSubsystem =
+				ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(LocalPlayer))
+			{
+				InputSubsystem->AddMappingContext(DefaultMappingContext, 0);
+			}
 		}
 	}
 
 	CreateOrBindParryComboWidget();
 	CreateOrBindPlayerHealthWidget();
 	CreateOrBindRunStatusWidget();
+	CreateOrBindTutorialPromptWidget();
 }
 
 void ARLPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
+	RestoreGameplayInputMode();
 	CreateOrBindParryComboWidget();
 	CreateOrBindPlayerHealthWidget();
 	CreateOrBindRunStatusWidget();
+	CreateOrBindTutorialPromptWidget();
+}
+
+void ARLPlayerController::RestoreGameplayInputMode()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	ResetIgnoreMoveInput();
+	ResetIgnoreLookInput();
+	FInputModeGameAndUI InputMode;
+	InputMode.SetHideCursorDuringCapture(false);
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	SetInputMode(InputMode);
+	bShowMouseCursor = true;
+	UE_LOG(LogTemp, Display, TEXT("Gameplay input mode restored for RLPlayerController."));
+}
+
+void ARLPlayerController::CreateOrBindTutorialPromptWidget()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (!TutorialPromptWidget)
+	{
+		TutorialPromptWidget = CreateWidget<URLTutorialPromptWidget>(
+			this, URLTutorialPromptWidget::StaticClass());
+		if (TutorialPromptWidget)
+		{
+			TutorialPromptWidget->AddToViewport(100);
+			TutorialPromptWidget->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+
+	BindTutorialPlayer(Cast<ARLPlayerCharacter>(GetPawn()));
 }
 
 void ARLPlayerController::CreateOrBindRunStatusWidget()
@@ -112,6 +165,11 @@ void ARLPlayerController::CreateOrBindRunStatusWidget()
 
 void ARLPlayerController::OnUnPossess()
 {
+	if (bTutorialPromptVisible)
+	{
+		DismissTutorialPrompt();
+	}
+	BindTutorialPlayer(nullptr);
 	if (ParryComboWidget)
 	{
 		ParryComboWidget->BindToPlayer(nullptr);
@@ -259,6 +317,11 @@ void ARLPlayerController::Move(const FVector2D& Direction)
 
 	ControlledPawn->AddMovementInput(ForwardDirection, Direction.Y);
 	ControlledPawn->AddMovementInput(RightDirection, Direction.X);
+	if (TutorialStage == ERLTutorialStage::WaitingForMovement)
+	{
+		TutorialStage = ERLTutorialStage::WaitingForNormalProjectile;
+		NextTutorialProjectileRequestTimeSeconds = 0.0f;
+	}
 }
 
 void ARLPlayerController::ActivateParry()
@@ -308,11 +371,327 @@ void ARLPlayerController::UpdateAimRotation()
 	}
 }
 
+void ARLPlayerController::BindTutorialPlayer(ARLPlayerCharacter* PlayerCharacter)
+{
+	if (TutorialBoundPlayer)
+	{
+		TutorialBoundPlayer->OnParryComboChanged.RemoveDynamic(
+			this, &ThisClass::HandleTutorialParryComboChanged);
+	}
+
+	TutorialBoundPlayer = PlayerCharacter;
+	if (TutorialBoundPlayer)
+	{
+		TutorialBoundPlayer->OnParryComboChanged.AddUniqueDynamic(
+			this, &ThisClass::HandleTutorialParryComboChanged);
+	}
+}
+
+void ARLPlayerController::UpdateTutorial()
+{
+	if (!bTutorialPromptsEnabled || bTutorialPromptVisible || !GetWorld())
+	{
+		return;
+	}
+
+	ARLGameModeBase* GameMode = GetWorld()->GetAuthGameMode<ARLGameModeBase>();
+	if (!GameMode || !GameMode->IsCurrentRoundTutorial() ||
+		GameMode->GetRunState() != ERLRunState::PlayingRound)
+	{
+		return;
+	}
+
+	if (TutorialStage == ERLTutorialStage::WaitingForTutorial)
+	{
+		ShowTutorialPrompt(
+			LOCTEXT("MovementTitle", "MOVE & AIM"),
+			LOCTEXT(
+				"MovementBody",
+				"Use WASD to move. Your character faces the mouse cursor.\nMove once after closing this message to continue."),
+			ERLTutorialStage::WaitingForMovement);
+		return;
+	}
+
+	if (TutorialStage == ERLTutorialStage::WaitingForSuccessfulParry &&
+		TutorialBoundPlayer && TutorialBoundPlayer->GetParryComboCount() > 0)
+	{
+		UE_LOG(
+			LogTemp,
+			Display,
+			TEXT("Tutorial advanced after polling a successful parry."));
+		ShowPerfectParryTutorial();
+		return;
+	}
+
+	if (TutorialStage == ERLTutorialStage::WaitingForExplosiveResolution)
+	{
+		if (!HasActiveTutorialProjectile(ERLProjectileBehavior::Explosive))
+		{
+			TutorialStage = ERLTutorialStage::WaitingForGuardProjectile;
+			NextTutorialProjectileRequestTimeSeconds = 0.0f;
+			UE_LOG(
+				LogTemp,
+				Display,
+				TEXT("Tutorial explosive resolved; guard projectile stage started."));
+		}
+		else
+		{
+			return;
+		}
+	}
+
+	UpdateTutorialProjectileRequest(*GameMode);
+
+	if (TutorialStage != ERLTutorialStage::WaitingForNormalProjectile &&
+		TutorialStage != ERLTutorialStage::WaitingForExplosiveProjectile &&
+		TutorialStage != ERLTutorialStage::WaitingForGuardProjectile)
+	{
+		return;
+	}
+
+	const APawn* ControlledPawn = GetPawn();
+	if (!ControlledPawn)
+	{
+		return;
+	}
+
+	const float NormalDistanceSquared = FMath::Square(TutorialNormalProjectileTriggerDistance);
+	const float SpecialDistanceSquared = FMath::Square(
+		FMath::Min(TutorialSpecialProjectileTriggerDistance, 650.0f));
+	for (TActorIterator<ARLProjectile> Iterator(GetWorld()); Iterator; ++Iterator)
+	{
+		const ARLProjectile* Projectile = *Iterator;
+		if (!Projectile->IsPoolActive() || Projectile->IsReflected())
+		{
+			continue;
+		}
+
+		const float DistanceSquared = FVector::DistSquared2D(
+			Projectile->GetActorLocation(), ControlledPawn->GetActorLocation());
+		if (TutorialStage == ERLTutorialStage::WaitingForNormalProjectile &&
+			Projectile->CanBeReflected() && !Projectile->IsExplosive() &&
+			!Projectile->IsGuardProjectile() && DistanceSquared <= NormalDistanceSquared)
+		{
+			GameMode->SetTutorialEnemyMovementLocked(false);
+			ShowTutorialPrompt(
+				LOCTEXT("ParryTitle", "PARRY"),
+				LOCTEXT(
+					"ParryBody",
+					"Press Left Mouse Button to reflect projectiles in front of you.\nThe inner zone is a normal parry; the outer ring is a perfect parry."),
+				ERLTutorialStage::WaitingForSuccessfulParry);
+			return;
+		}
+
+		if (TutorialStage == ERLTutorialStage::WaitingForExplosiveProjectile &&
+			Projectile->IsExplosive() && DistanceSquared <= SpecialDistanceSquared)
+		{
+			ShowTutorialPrompt(
+				LOCTEXT("ExplosiveTitle", "EXPLOSIVE — DODGE"),
+				LOCTEXT(
+					"ExplosiveBody",
+					"Large red blinking projectiles explode immediately if you try to parry them.\nUse WASD to leave the marked blast area."),
+				ERLTutorialStage::WaitingForExplosiveResolution);
+			return;
+		}
+
+		if (TutorialStage == ERLTutorialStage::WaitingForGuardProjectile &&
+			Projectile->IsGuardProjectile() && DistanceSquared <= SpecialDistanceSquared)
+		{
+			ShowTutorialPrompt(
+				LOCTEXT("GuardTitle", "GUARD SHOT"),
+				LOCTEXT(
+					"GuardBody",
+					"You can parry this projectile, but it cannot damage enemies.\nUse it defensively to keep your combo alive."),
+				ERLTutorialStage::WaitingForCombo);
+			return;
+		}
+	}
+}
+
+void ARLPlayerController::UpdateTutorialProjectileRequest(ARLGameModeBase& GameMode)
+{
+	ERLProjectileBehavior RequestedBehavior;
+	switch (TutorialStage)
+	{
+	case ERLTutorialStage::WaitingForNormalProjectile:
+	case ERLTutorialStage::WaitingForSuccessfulParry:
+		RequestedBehavior = ERLProjectileBehavior::Normal;
+		break;
+	case ERLTutorialStage::WaitingForExplosiveProjectile:
+		RequestedBehavior = ERLProjectileBehavior::Explosive;
+		break;
+	case ERLTutorialStage::WaitingForGuardProjectile:
+	case ERLTutorialStage::WaitingForCombo:
+		RequestedBehavior = ERLProjectileBehavior::Guard;
+		break;
+	default:
+		return;
+	}
+
+	if (HasActiveTutorialProjectile(RequestedBehavior))
+	{
+		return;
+	}
+
+	const float CurrentTimeSeconds = GetWorld()->GetTimeSeconds();
+	if (CurrentTimeSeconds < NextTutorialProjectileRequestTimeSeconds)
+	{
+		return;
+	}
+
+	if (GameMode.RequestTutorialProjectile(RequestedBehavior))
+	{
+		NextTutorialProjectileRequestTimeSeconds = CurrentTimeSeconds + 0.75f;
+	}
+	else
+	{
+		NextTutorialProjectileRequestTimeSeconds = CurrentTimeSeconds + 0.25f;
+	}
+}
+
+bool ARLPlayerController::HasActiveTutorialProjectile(
+	ERLProjectileBehavior ProjectileBehavior) const
+{
+	if (!GetWorld())
+	{
+		return false;
+	}
+
+	for (TActorIterator<ARLProjectile> Iterator(GetWorld()); Iterator; ++Iterator)
+	{
+		const ARLProjectile* Projectile = *Iterator;
+		const URLProjectileDefinitionDataAsset* Definition =
+			Projectile->GetProjectileDefinition();
+		if (Projectile->IsPoolActive() && !Projectile->IsReflected() && Definition &&
+			Definition->Behavior == ProjectileBehavior)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void ARLPlayerController::ShowTutorialPrompt(
+	const FText& Title,
+	const FText& Body,
+	ERLTutorialStage StageAfterDismiss)
+{
+	if (!TutorialPromptWidget || bTutorialPromptVisible)
+	{
+		return;
+	}
+
+	TutorialStageAfterDismiss = StageAfterDismiss;
+	bTutorialPromptVisible = true;
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Tutorial prompt shown. Current stage: %d, next stage: %d."),
+		static_cast<int32>(TutorialStage),
+		static_cast<int32>(TutorialStageAfterDismiss));
+	TutorialPromptWidget->SetPrompt(Title, Body);
+	TutorialPromptWidget->SetVisibility(ESlateVisibility::Visible);
+
+	FInputModeGameAndUI InputMode;
+	InputMode.SetWidgetToFocus(TutorialPromptWidget->TakeWidget());
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+	bShowMouseCursor = true;
+	if (!UGameplayStatics::SetGamePaused(this, true))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Tutorial prompt could not pause the game."));
+	}
+}
+
+void ARLPlayerController::ShowPerfectParryTutorial()
+{
+	ShowTutorialPrompt(
+		LOCTEXT("PerfectParryTitle", "PERFECT PARRY"),
+		LOCTEXT(
+			"PerfectParryBody",
+			"Parry a projectile in the outer ring to perform a perfect parry.\nA perfect parry splits the reflected shot into three projectiles and covers a wider area."),
+		ERLTutorialStage::WaitingForExplosiveProjectile);
+}
+
+void ARLPlayerController::DismissTutorialPrompt()
+{
+	if (!bTutorialPromptVisible)
+	{
+		return;
+	}
+
+	bTutorialPromptVisible = false;
+	TutorialStage = TutorialStageAfterDismiss;
+	NextTutorialProjectileRequestTimeSeconds = 0.0f;
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Tutorial prompt dismissed. New stage: %d."),
+		static_cast<int32>(TutorialStage));
+	if (TutorialPromptWidget)
+	{
+		TutorialPromptWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	UGameplayStatics::SetGamePaused(this, false);
+	if (TutorialStage == ERLTutorialStage::Complete)
+	{
+		if (ARLGameModeBase* GameMode = GetWorld()
+			? GetWorld()->GetAuthGameMode<ARLGameModeBase>()
+			: nullptr)
+		{
+			GameMode->CompleteTutorialCombatIntroduction();
+		}
+	}
+
+	FInputModeGameAndUI InputMode;
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+	bShowMouseCursor = true;
+}
+
+void ARLPlayerController::HandleTutorialParryComboChanged(
+	int32 ComboCount,
+	int32 MultiParryCount,
+	int32 EnhancementLevel,
+	bool bPerfectParry,
+	bool bCloseRangeParry)
+{
+	(void)MultiParryCount;
+	(void)EnhancementLevel;
+	(void)bPerfectParry;
+	(void)bCloseRangeParry;
+
+	if (ComboCount > 0 &&
+		TutorialStage == ERLTutorialStage::WaitingForSuccessfulParry)
+	{
+		UE_LOG(
+			LogTemp,
+			Display,
+			TEXT("Tutorial advanced from parry success event. Combo: %d."),
+			ComboCount);
+		ShowPerfectParryTutorial();
+		return;
+	}
+
+	if (ComboCount >= 2 && TutorialStage == ERLTutorialStage::WaitingForCombo)
+	{
+		ShowTutorialPrompt(
+			LOCTEXT("ComboTitle", "BUILD THE COMBO"),
+			LOCTEXT(
+				"ComboBody",
+				"Your combo continues until you miss a swing.\nReach 3, 5, and 8 consecutive parries to trigger stronger rewards."),
+			ERLTutorialStage::Complete);
+	}
+}
+
 bool ARLPlayerController::IsGameplayInputAllowed() const
 {
 	const ARLGameModeBase* GameMode = GetWorld()
 		? GetWorld()->GetAuthGameMode<ARLGameModeBase>()
 		: nullptr;
-	return !GameMode || GameMode->GetRunState() == ERLRunState::PlayingRound;
+	return !bTutorialPromptVisible &&
+		(!GameMode || GameMode->GetRunState() == ERLRunState::PlayingRound);
 }
+
+#undef LOCTEXT_NAMESPACE
 

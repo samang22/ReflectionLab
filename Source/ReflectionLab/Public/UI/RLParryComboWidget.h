@@ -25,18 +25,22 @@ private:
 	void HandleParryComboChanged(
 		int32 ComboCount,
 		int32 MultiParryCount,
+		int32 EnhancementLevel,
 		bool bPerfectParry,
 		bool bCloseRangeParry);
 
 	void BuildWidgetTree();
 	void ResetDisplay();
-	void UpdateMilestoneProgress(int32 ComboCount);
+	void UpdateMilestoneProgress(int32 ComboCount, int32 EnhancementLevel);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> FeedbackText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> ComboText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> EnhancementText;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UProgressBar> ComboProgressBar;

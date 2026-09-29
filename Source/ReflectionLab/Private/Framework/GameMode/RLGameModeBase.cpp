@@ -22,6 +22,16 @@ ARLGameModeBase::ARLGameModeBase()
 	}
 }
 
+void ARLGameModeBase::InitGame(
+	const FString& MapName,
+	const FString& Options,
+	FString& ErrorMessage)
+{
+	Super::InitGame(MapName, Options, ErrorMessage);
+	const FString RunMode = UGameplayStatics::ParseOption(Options, TEXT("RunMode"));
+	bTutorialOnlyMode = RunMode.Equals(TEXT("Tutorial"), ESearchCase::IgnoreCase);
+}
+
 void ARLGameModeBase::BeginPlay()
 {
 	Super::BeginPlay();
@@ -46,7 +56,17 @@ void ARLGameModeBase::StartRun()
 	GetWorldTimerManager().ClearTimer(CountdownTimerHandle);
 	ResetRunRecord();
 	BindPlayerStats();
-	BeginRoundCountdown(0);
+	const int32 StartingRoundIndex = ResolveStartingRoundIndex();
+	if (!RunDefinition->Rounds.IsValidIndex(StartingRoundIndex))
+	{
+		UE_LOG(LogTemp, Error, TEXT("RunDefinition has no valid starting round."));
+		return;
+	}
+	if (const FRLRoundDefinition* FirstRound = &RunDefinition->Rounds[StartingRoundIndex])
+	{
+		CleanupRoundActors(*FirstRound);
+	}
+	BeginRoundCountdown(StartingRoundIndex);
 }
 
 void ARLGameModeBase::StopRun()
@@ -55,12 +75,17 @@ void ARLGameModeBase::StopRun()
 	GetWorldTimerManager().ClearTimer(IntermissionTimerHandle);
 	GetWorldTimerManager().ClearTimer(CountdownTimerHandle);
 	StopEnemySpawners();
+	SetTutorialEnemyMovementLocked(false);
 	CurrentRoundIndex = INDEX_NONE;
 	CurrentPhaseIndex = INDEX_NONE;
+	CurrentWaveIndex = INDEX_NONE;
 	RoundElapsedSeconds = 0.0f;
 	IntermissionEndTimeSeconds = 0.0f;
 	CountdownEndTimeSeconds = 0.0f;
 	CurrentPhaseName = NAME_None;
+	CurrentWaveName = NAME_None;
+	bWaveTransitionPending = false;
+	NextWaveStartTimeSeconds = 0.0f;
 	SetRunState(ERLRunState::Waiting);
 }
 
@@ -90,6 +115,20 @@ void ARLGameModeBase::ReturnToMainMenu()
 	}
 
 	UGameplayStatics::OpenLevel(this, MainMenuLevelName);
+}
+
+void ARLGameModeBase::StartMainGame()
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+
+	const FName CurrentLevelName(*UGameplayStatics::GetCurrentLevelName(this, true));
+	if (!CurrentLevelName.IsNone())
+	{
+		UGameplayStatics::OpenLevel(this, CurrentLevelName, true, TEXT("RunMode=Main"));
+	}
 }
 
 void ARLGameModeBase::NotifyPlayerDied()
@@ -133,7 +172,72 @@ float ARLGameModeBase::GetTotalRunElapsedSeconds() const
 
 int32 ARLGameModeBase::GetRoundCount() const
 {
-	return RunDefinition ? RunDefinition->Rounds.Num() : 0;
+	if (!RunDefinition)
+	{
+		return 0;
+	}
+
+	int32 RoundCount = 0;
+	for (const FRLRoundDefinition& RoundDefinition : RunDefinition->Rounds)
+	{
+		if (!RoundDefinition.bIsTutorial)
+		{
+			++RoundCount;
+		}
+	}
+	return RoundCount;
+}
+
+int32 ARLGameModeBase::GetCurrentRoundNumber() const
+{
+	if (!RunDefinition || !RunDefinition->Rounds.IsValidIndex(CurrentRoundIndex))
+	{
+		return 0;
+	}
+
+	int32 RoundNumber = 0;
+	for (int32 Index = 0; Index <= CurrentRoundIndex; ++Index)
+	{
+		if (!RunDefinition->Rounds[Index].bIsTutorial)
+		{
+			++RoundNumber;
+		}
+	}
+	return RoundNumber;
+}
+
+bool ARLGameModeBase::IsCurrentRoundTutorial() const
+{
+	const FRLRoundDefinition* RoundDefinition = GetCurrentRoundDefinition();
+	return RoundDefinition && RoundDefinition->bIsTutorial;
+}
+
+void ARLGameModeBase::SetTutorialEnemyMovementLocked(bool bLocked)
+{
+	if (bTutorialEnemyMovementLocked == bLocked)
+	{
+		return;
+	}
+
+	bTutorialEnemyMovementLocked = bLocked;
+	if (!GetWorld())
+	{
+		return;
+	}
+
+	for (TActorIterator<ARLEnemyCharacter> Iterator(GetWorld()); Iterator; ++Iterator)
+	{
+		if (Iterator->IsPoolActive())
+		{
+			Iterator->SetTutorialMovementLocked(bTutorialEnemyMovementLocked);
+		}
+	}
+
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Tutorial enemy movement lock: %s."),
+		bTutorialEnemyMovementLocked ? TEXT("enabled") : TEXT("disabled"));
 }
 
 int32 ARLGameModeBase::GetCurrentPhaseCount() const
@@ -142,6 +246,37 @@ int32 ARLGameModeBase::GetCurrentPhaseCount() const
 	return RoundDefinition && RoundDefinition->DifficultySchedule
 		? RoundDefinition->DifficultySchedule->Phases.Num()
 		: 0;
+}
+
+int32 ARLGameModeBase::GetCurrentWaveCount() const
+{
+	if (IsCurrentRoundTutorial())
+	{
+		return 1;
+	}
+
+	const FRLRoundDefinition* RoundDefinition = GetCurrentRoundDefinition();
+	return RoundDefinition && RoundDefinition->DifficultySchedule
+		? RoundDefinition->DifficultySchedule->Waves.Num()
+		: 0;
+}
+
+int32 ARLGameModeBase::GetRemainingEnemyCount() const
+{
+	if (!GetWorld())
+	{
+		return 0;
+	}
+
+	int32 ActiveEnemyCount = 0;
+	for (TActorIterator<ARLEnemyCharacter> Iterator(GetWorld()); Iterator; ++Iterator)
+	{
+		if (Iterator->IsPoolActive())
+		{
+			++ActiveEnemyCount;
+		}
+	}
+	return ActiveEnemyCount;
 }
 
 float ARLGameModeBase::GetNextPhaseRemainingSeconds() const
@@ -198,8 +333,13 @@ void ARLGameModeBase::BeginRoundCountdown(int32 RoundIndex)
 	CacheEnemySpawners();
 	StopEnemySpawners();
 	CurrentRoundIndex = RoundIndex;
+	SetTutorialEnemyMovementLocked(RunDefinition->Rounds[RoundIndex].bIsTutorial);
 	CurrentPhaseIndex = INDEX_NONE;
 	CurrentPhaseName = NAME_None;
+	CurrentWaveIndex = INDEX_NONE;
+	CurrentWaveName = NAME_None;
+	bWaveTransitionPending = false;
+	NextWaveStartTimeSeconds = 0.0f;
 	RoundElapsedSeconds = 0.0f;
 	IntermissionEndTimeSeconds = 0.0f;
 	const float CountdownDuration = FMath::Max(0.0f, RoundCountdownDuration);
@@ -237,15 +377,21 @@ void ARLGameModeBase::StartRound(int32 RoundIndex)
 
 	CacheEnemySpawners();
 	CurrentRoundIndex = RoundIndex;
+	SetTutorialEnemyMovementLocked(RunDefinition->Rounds[RoundIndex].bIsTutorial);
 	CurrentPhaseIndex = INDEX_NONE;
 	CurrentPhaseName = NAME_None;
+	CurrentWaveIndex = INDEX_NONE;
+	CurrentWaveName = NAME_None;
+	TutorialEnemy.Reset();
+	bWaveTransitionPending = false;
+	NextWaveStartTimeSeconds = 0.0f;
 	RoundElapsedSeconds = 0.0f;
 	IntermissionEndTimeSeconds = 0.0f;
 	CountdownEndTimeSeconds = 0.0f;
 	RoundStartTimeSeconds = GetWorld()->GetTimeSeconds();
 	BindPlayerStats();
 	SetRunState(ERLRunState::PlayingRound);
-	UpdateRound();
+	BeginWave(0);
 
 	GetWorldTimerManager().SetTimer(
 		RoundUpdateTimerHandle,
@@ -269,67 +415,155 @@ void ARLGameModeBase::UpdateRound()
 		return;
 	}
 
-	const float PreviousElapsedSeconds = RoundElapsedSeconds;
 	RoundElapsedSeconds = FMath::Max(
 		0.0f,
 		GetWorld()->GetTimeSeconds() - RoundStartTimeSeconds);
-	const float RoundDuration = FMath::Max(1.0f, RoundDefinition->DurationSeconds);
-	if (RoundElapsedSeconds >= RoundDuration)
+
+	const URLDifficultyScheduleDataAsset* Schedule = RoundDefinition->DifficultySchedule;
+	if (!Schedule || Schedule->Waves.IsEmpty())
 	{
-		if (PreviousElapsedSeconds < RoundDuration)
-		{
-			StopEnemySpawners();
-			UE_LOG(
-				LogTemp,
-				Display,
-				TEXT("Round %d time limit reached. Waiting for remaining enemies to be cleared."),
-				CurrentRoundIndex + 1);
-		}
+		UE_LOG(LogTemp, Error, TEXT("Current round has no wave definitions."));
+		FinishRound();
+		return;
+	}
 
-		bool bHasActiveEnemies = false;
-		for (TActorIterator<ARLEnemyCharacter> Iterator(GetWorld()); Iterator; ++Iterator)
+	if (bWaveTransitionPending)
+	{
+		if (GetWorld()->GetTimeSeconds() >= NextWaveStartTimeSeconds)
 		{
-			if (Iterator->IsPoolActive())
-			{
-				bHasActiveEnemies = true;
-				break;
-			}
-		}
-
-		if (!bHasActiveEnemies)
-		{
-			FinishRound();
+			bWaveTransitionPending = false;
+			NextWaveStartTimeSeconds = 0.0f;
+			BeginWave(CurrentWaveIndex + 1);
 		}
 		return;
 	}
 
-	if (const URLDifficultyScheduleDataAsset* Schedule = RoundDefinition->DifficultySchedule)
+	if (GetRemainingEnemyCount() > 0)
 	{
-		int32 PhaseIndex = INDEX_NONE;
-		if (const FRLDifficultyPhase* Phase =
-			Schedule->FindPhaseAtTime(RoundElapsedSeconds, PhaseIndex))
+		return;
+	}
+
+	ClearActiveProjectiles();
+	if (RoundDefinition->bIsTutorial)
+	{
+		FinishRound();
+		return;
+	}
+
+	if (CurrentWaveIndex + 1 >= Schedule->Waves.Num())
+	{
+		FinishRound();
+		return;
+	}
+
+	const FRLWaveDefinition& CompletedWave = Schedule->Waves[CurrentWaveIndex];
+	bWaveTransitionPending = true;
+	NextWaveStartTimeSeconds = GetWorld()->GetTimeSeconds() +
+		FMath::Max(0.0f, CompletedWave.NextWaveDelaySeconds);
+}
+
+void ARLGameModeBase::BeginWave(int32 WaveIndex)
+{
+	const FRLRoundDefinition* RoundDefinition = GetCurrentRoundDefinition();
+	const URLDifficultyScheduleDataAsset* Schedule = RoundDefinition
+		? RoundDefinition->DifficultySchedule
+		: nullptr;
+	if (!Schedule || !Schedule->Waves.IsValidIndex(WaveIndex))
+	{
+		FinishRound();
+		return;
+	}
+
+	const FRLWaveDefinition& WaveDefinition = Schedule->Waves[WaveIndex];
+	ApplyWaveDefinition(WaveDefinition, WaveIndex);
+
+	TArray<ARLEnemySpawner*> ValidSpawners;
+	for (const TWeakObjectPtr<ARLEnemySpawner>& SpawnerPtr : EnemySpawners)
+	{
+		if (ARLEnemySpawner* Spawner = SpawnerPtr.Get())
 		{
-			if (PhaseIndex != CurrentPhaseIndex)
+			Spawner->ConfigureWave(WaveDefinition);
+			ValidSpawners.Add(Spawner);
+		}
+	}
+
+	if (ValidSpawners.IsEmpty())
+	{
+		UE_LOG(LogTemp, Error, TEXT("Cannot begin wave: no enemy spawners are available."));
+		return;
+	}
+
+	const bool bTutorialRound = RoundDefinition->bIsTutorial;
+	const int32 RequestedEnemyCount = bTutorialRound
+		? 1
+		: FMath::Max(1, WaveDefinition.EnemyCount);
+	int32 SpawnedEnemyCount = 0;
+	for (int32 EnemyIndex = 0; EnemyIndex < RequestedEnemyCount; ++EnemyIndex)
+	{
+		bool bSpawned = false;
+		for (int32 Attempt = 0; Attempt < ValidSpawners.Num(); ++Attempt)
+		{
+			const int32 SpawnerIndex = (EnemyIndex + Attempt) % ValidSpawners.Num();
+			if (ARLEnemyCharacter* SpawnedEnemy = ValidSpawners[SpawnerIndex]->SpawnEnemy())
 			{
-				ApplyDifficultyPhase(*Phase, PhaseIndex);
+				++SpawnedEnemyCount;
+				if (bTutorialRound)
+				{
+					TutorialEnemy = SpawnedEnemy;
+					SpawnedEnemy->SetTutorialCombatControlled(true);
+					SpawnedEnemy->SetTutorialInvulnerable(true);
+				}
+				bSpawned = true;
+				break;
 			}
 		}
+		if (!bSpawned)
+		{
+			break;
+		}
+	}
+
+	if (SpawnedEnemyCount != RequestedEnemyCount)
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("Wave %d requested %d enemies but spawned %d."),
+			WaveIndex + 1,
+			RequestedEnemyCount,
+			SpawnedEnemyCount);
 	}
 }
 
 void ARLGameModeBase::FinishRound()
 {
 	GetWorldTimerManager().ClearTimer(RoundUpdateTimerHandle);
+	bWaveTransitionPending = false;
+	NextWaveStartTimeSeconds = 0.0f;
 	const FRLRoundDefinition* RoundDefinition = GetCurrentRoundDefinition();
 	if (!RoundDefinition)
 	{
 		SetRunState(ERLRunState::RunCompleted);
 		return;
 	}
+	if (RoundDefinition->bIsTutorial && bTutorialOnlyMode)
+	{
+		StopEnemySpawners();
+		TutorialEnemy.Reset();
+		SetTutorialEnemyMovementLocked(false);
+		CleanupRoundActors(*RoundDefinition);
+		SetRunState(ERLRunState::TutorialCompleted);
+		return;
+	}
 
 	StopEnemySpawners();
+	TutorialEnemy.Reset();
+	SetTutorialEnemyMovementLocked(false);
 	CleanupRoundActors(*RoundDefinition);
-	RoundsCleared = FMath::Max(RoundsCleared, CurrentRoundIndex + 1);
+	if (!RoundDefinition->bIsTutorial)
+	{
+		RoundsCleared = FMath::Max(RoundsCleared, GetCurrentRoundNumber());
+	}
 
 	if (!RunDefinition || CurrentRoundIndex + 1 >= RunDefinition->Rounds.Num())
 	{
@@ -389,6 +623,144 @@ void ARLGameModeBase::ApplyDifficultyPhase(
 		CurrentRoundIndex + 1,
 		CurrentPhaseIndex + 1,
 		*DifficultyPhase.PhaseName.ToString());
+}
+
+void ARLGameModeBase::ApplyWaveDefinition(
+	const FRLWaveDefinition& WaveDefinition,
+	int32 WaveIndex)
+{
+	CurrentWaveIndex = WaveIndex;
+	CurrentWaveName = WaveDefinition.WaveName;
+	OnWaveChanged.Broadcast(CurrentRoundIndex, CurrentWaveIndex, CurrentWaveName);
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Round %d began wave %d (%s) with %d enemies."),
+		CurrentRoundIndex + 1,
+		CurrentWaveIndex + 1,
+		*CurrentWaveName.ToString(),
+		IsCurrentRoundTutorial() ? 1 : FMath::Max(1, WaveDefinition.EnemyCount));
+}
+
+bool ARLGameModeBase::RequestTutorialProjectile(
+	ERLProjectileBehavior ProjectileBehavior)
+{
+	if (!IsCurrentRoundTutorial() || RunState != ERLRunState::PlayingRound)
+	{
+		return false;
+	}
+
+	ARLEnemyCharacter* Enemy = GetTutorialEnemy();
+	URLProjectileDefinitionDataAsset* ProjectileDefinition =
+		FindTutorialProjectileDefinition(ProjectileBehavior);
+	if (!Enemy || !ProjectileDefinition)
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("Tutorial projectile request failed. Enemy=%s Definition=%s Behavior=%d."),
+			Enemy ? TEXT("valid") : TEXT("missing"),
+			ProjectileDefinition ? TEXT("valid") : TEXT("missing"),
+			static_cast<int32>(ProjectileBehavior));
+		return false;
+	}
+
+	const bool bFired = Enemy->FireTutorialProjectile(ProjectileDefinition);
+	if (bFired)
+	{
+		UE_LOG(
+			LogTemp,
+			Display,
+			TEXT("Tutorial enemy fired projectile behavior %d."),
+			static_cast<int32>(ProjectileBehavior));
+	}
+	return bFired;
+}
+
+void ARLGameModeBase::CompleteTutorialCombatIntroduction()
+{
+	if (!IsCurrentRoundTutorial())
+	{
+		return;
+	}
+
+	if (ARLEnemyCharacter* Enemy = GetTutorialEnemy())
+	{
+		ClearActiveProjectiles();
+		Enemy->SetTutorialInvulnerable(false);
+		Enemy->SetTutorialCombatControlled(false);
+		UE_LOG(LogTemp, Display, TEXT("Tutorial enemy is now vulnerable."));
+	}
+}
+
+ARLEnemyCharacter* ARLGameModeBase::GetTutorialEnemy() const
+{
+	if (ARLEnemyCharacter* Enemy = TutorialEnemy.Get();
+		Enemy && Enemy->IsPoolActive())
+	{
+		return Enemy;
+	}
+
+	if (!GetWorld())
+	{
+		return nullptr;
+	}
+
+	for (TActorIterator<ARLEnemyCharacter> Iterator(GetWorld()); Iterator; ++Iterator)
+	{
+		if (Iterator->IsPoolActive())
+		{
+			return *Iterator;
+		}
+	}
+	return nullptr;
+}
+
+URLProjectileDefinitionDataAsset* ARLGameModeBase::FindTutorialProjectileDefinition(
+	ERLProjectileBehavior ProjectileBehavior) const
+{
+	const FRLRoundDefinition* RoundDefinition = GetCurrentRoundDefinition();
+	const URLDifficultyScheduleDataAsset* Schedule = RoundDefinition
+		? RoundDefinition->DifficultySchedule
+		: nullptr;
+	if (!Schedule)
+	{
+		return nullptr;
+	}
+
+	for (const FRLWaveDefinition& WaveDefinition : Schedule->Waves)
+	{
+		if (WaveDefinition.DefaultProjectileDefinition &&
+			WaveDefinition.DefaultProjectileDefinition->Behavior == ProjectileBehavior)
+		{
+			return WaveDefinition.DefaultProjectileDefinition;
+		}
+		for (const FRLProjectileSpawnRule& Rule : WaveDefinition.ProjectileRules)
+		{
+			if (Rule.ProjectileDefinition &&
+				Rule.ProjectileDefinition->Behavior == ProjectileBehavior)
+			{
+				return Rule.ProjectileDefinition;
+			}
+		}
+	}
+	return nullptr;
+}
+
+void ARLGameModeBase::ClearActiveProjectiles()
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+
+	for (TActorIterator<ARLProjectile> Iterator(GetWorld()); Iterator; ++Iterator)
+	{
+		if (Iterator->IsPoolActive())
+		{
+			Iterator->ReturnToPool();
+		}
+	}
 }
 
 void ARLGameModeBase::CacheEnemySpawners()
@@ -471,7 +843,8 @@ void ARLGameModeBase::SetRunState(ERLRunState NewState)
 	}
 
 	RunState = NewState;
-	if ((RunState == ERLRunState::RunCompleted || RunState == ERLRunState::GameOver) &&
+	if ((RunState == ERLRunState::TutorialCompleted ||
+		RunState == ERLRunState::RunCompleted || RunState == ERLRunState::GameOver) &&
 		RunEndTimeSeconds <= 0.0f && GetWorld())
 	{
 		RunEndTimeSeconds = GetWorld()->GetTimeSeconds();
@@ -484,4 +857,21 @@ const FRLRoundDefinition* ARLGameModeBase::GetCurrentRoundDefinition() const
 	return RunDefinition && RunDefinition->Rounds.IsValidIndex(CurrentRoundIndex)
 		? &RunDefinition->Rounds[CurrentRoundIndex]
 		: nullptr;
+}
+
+int32 ARLGameModeBase::ResolveStartingRoundIndex() const
+{
+	if (!RunDefinition)
+	{
+		return INDEX_NONE;
+	}
+
+	for (int32 RoundIndex = 0; RoundIndex < RunDefinition->Rounds.Num(); ++RoundIndex)
+	{
+		if (RunDefinition->Rounds[RoundIndex].bIsTutorial == bTutorialOnlyMode)
+		{
+			return RoundIndex;
+		}
+	}
+	return INDEX_NONE;
 }

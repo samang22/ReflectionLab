@@ -54,14 +54,23 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Combo", meta = (ClampMin = "1"))
 	int32 ComboExtraProjectileMilestone = 5;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Enhancement", meta = (ClampMin = "1"))
+	int32 EnhancementStage2Combo = 3;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Enhancement", meta = (ClampMin = "1"))
+	int32 EnhancementStage3Combo = 6;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Enhancement", meta = (ClampMin = "1"))
+	int32 EnhancementStage4Combo = 9;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Combo", meta = (ClampMin = "0.0", ClampMax = "90.0"))
 	float ComboExtraProjectileSpreadAngle = 18.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Overdrive", meta = (ClampMin = "1"))
 	int32 OverdriveComboThreshold = 8;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Overdrive", meta = (ClampMin = "1", ClampMax = "16"))
-	int32 OverdriveProjectileCount = 7;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Overdrive", meta = (ClampMin = "1", ClampMax = "5"))
+	int32 OverdriveProjectileCount = 5;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Overdrive", meta = (ClampMin = "0.0", ClampMax = "180.0"))
 	float OverdriveSpreadAngleDegrees = 100.0f;

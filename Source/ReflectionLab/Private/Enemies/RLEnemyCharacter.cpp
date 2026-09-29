@@ -7,11 +7,14 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Data/RLEnemyCombatRow.h"
 #include "Engine/World.h"
 #include "Engine/StaticMesh.h"
+#include "EngineUtils.h"
 #include "GameFramework/Controller.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Sound/SoundBase.h"
@@ -30,12 +33,33 @@ ARLEnemyCharacter::ARLEnemyCharacter()
 		TEXT("/Game/ReflectionLab/Art/Materials/Projectiles/"
 			 "MI_Projectile_Hostile.MI_Projectile_Hostile"));
 	DeathEffectShardMaterial = DeathEffectShardMaterialFinder.Object;
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> ShieldMeshFinder(
+		TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ShieldMaterialFinder(
+		TEXT("/Game/ReflectionLab/Art/Materials/Projectiles/"
+			 "MI_Projectile_Reflected.MI_Projectile_Reflected"));
 
 	PrimaryActorTick.bCanEverTick = false;
 	GetMesh()->SetReceivesDecals(false);
 
 	MuzzlePoint = CreateDefaultSubobject<USceneComponent>(TEXT("MuzzlePoint"));
 	MuzzlePoint->SetupAttachment(GetRootComponent());
+
+	ShieldVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShieldVisual"));
+	ShieldVisual->SetupAttachment(GetRootComponent());
+	ShieldVisual->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ShieldVisual->SetCanEverAffectNavigation(false);
+	ShieldVisual->SetCastShadow(false);
+	ShieldVisual->SetReceivesDecals(false);
+	ShieldVisual->SetVisibility(false, true);
+	if (ShieldMeshFinder.Succeeded())
+	{
+		ShieldVisual->SetStaticMesh(ShieldMeshFinder.Object);
+	}
+	if (ShieldMaterialFinder.Succeeded())
+	{
+		ShieldVisual->SetMaterial(0, ShieldMaterialFinder.Object);
+	}
 }
 
 void ARLEnemyCharacter::BeginPlay()
@@ -45,6 +69,16 @@ void ARLEnemyCharacter::BeginPlay()
 	ApplyCombatConfig();
 	CacheBaseCombatValues();
 	CurrentHealth = MaxHealth;
+	ShieldMaterialInstance = ShieldVisual
+		? ShieldVisual->CreateDynamicMaterialInstance(0)
+		: nullptr;
+	if (ShieldMaterialInstance)
+	{
+		ShieldMaterialInstance->SetVectorParameterValue(TEXT("ProjectileColor"), ShieldColor);
+		ShieldMaterialInstance->SetScalarParameterValue(TEXT("EmissiveIntensity"), 8.0f);
+		ShieldMaterialInstance->SetScalarParameterValue(TEXT("FadeOpacity"), 0.12f);
+	}
+	UpdateShieldVisual();
 
 	if (ProjectileClass)
 	{
@@ -77,17 +111,61 @@ void ARLEnemyCharacter::ApplyDifficultyPhase(const FRLDifficultyPhase& Difficult
 		: BaseShotsPerBurst;
 	TimeBetweenShots = BaseTimeBetweenShots *
 		FMath::Max(0.1f, DifficultyPhase.TimeBetweenShotsMultiplier);
-	ExplosiveShotInterval = FMath::Max(0, DifficultyPhase.ExplosiveShotInterval);
-	RallyShotInterval = FMath::Max(0, DifficultyPhase.RallyShotInterval);
-	RallyRelayCount = FMath::Max(1, DifficultyPhase.RallyRelayCount);
-	RallySpeedMultiplierPerRelay = FMath::Max(
-		1.0f,
-		DifficultyPhase.RallySpeedMultiplierPerRelay);
+	DefaultProjectileDefinition = DifficultyPhase.DefaultProjectileDefinition;
+	ProjectileRules = DifficultyPhase.ProjectileRules;
 
 	if (bIsPoolActive && bAutoStartFiring)
 	{
 		StopFiring();
 		StartFiring();
+	}
+}
+
+void ARLEnemyCharacter::ApplyWaveDefinition(const FRLWaveDefinition& WaveDefinition)
+{
+	AttackInterval = BaseAttackInterval *
+		FMath::Max(0.1f, WaveDefinition.AttackIntervalMultiplier);
+	ShotsPerBurst = WaveDefinition.ShotsPerBurstOverride > 0
+		? WaveDefinition.ShotsPerBurstOverride
+		: BaseShotsPerBurst;
+	TimeBetweenShots = BaseTimeBetweenShots *
+		FMath::Max(0.1f, WaveDefinition.TimeBetweenShotsMultiplier);
+	DefaultProjectileDefinition = WaveDefinition.DefaultProjectileDefinition;
+	ProjectileRules = WaveDefinition.ProjectileRules;
+
+	if (bIsPoolActive && bAutoStartFiring)
+	{
+		StopFiring();
+		StartFiring();
+	}
+}
+
+void ARLEnemyCharacter::SetTutorialMovementLocked(bool bLocked)
+{
+	bTutorialMovementLocked = bLocked;
+	SetActorTickEnabled(bIsPoolActive && !bTutorialMovementLocked);
+
+	if (!bIsPoolActive)
+	{
+		return;
+	}
+
+	if (AController* EnemyController = GetController())
+	{
+		EnemyController->StopMovement();
+	}
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->StopMovementImmediately();
+		if (bTutorialMovementLocked)
+		{
+			Movement->DisableMovement();
+		}
+		else
+		{
+			Movement->SetDefaultMovementMode();
+		}
 	}
 }
 
@@ -118,10 +196,6 @@ void ARLEnemyCharacter::ApplyCombatConfig()
 	ShotsPerBurst = FMath::Max(1, Config->ShotsPerBurst);
 	TimeBetweenShots = FMath::Max(0.01f, Config->TimeBetweenShots);
 	InitialFireDelay = FMath::Max(0.0f, Config->InitialFireDelay);
-	ExplosiveShotInterval = FMath::Max(0, Config->ExplosiveShotInterval);
-	RallyShotInterval = FMath::Max(0, Config->RallyShotInterval);
-	RallyRelayCount = FMath::Max(1, Config->RallyRelayCount);
-	RallySpeedMultiplierPerRelay = FMath::Max(1.0f, Config->RallySpeedMultiplierPerRelay);
 }
 
 float ARLEnemyCharacter::TakeDamage(
@@ -133,6 +207,17 @@ float ARLEnemyCharacter::TakeDamage(
 	if (!bIsPoolActive)
 	{
 		return 0.0f;
+	}
+	if (bTutorialInvulnerable)
+	{
+		return 0.0f;
+	}
+	if (const ARLProjectile* Projectile = Cast<ARLProjectile>(DamageCauser))
+	{
+		if (Projectile->IsReflected() && TryAbsorbReflectedProjectile())
+		{
+			return 0.0f;
+		}
 	}
 
 	const float AppliedDamage = Super::TakeDamage(
@@ -169,7 +254,7 @@ float ARLEnemyCharacter::TakeDamage(
 
 void ARLEnemyCharacter::StartFiring()
 {
-	if (!GetWorld() || AttackTimerHandle.IsValid())
+	if (!GetWorld() || AttackTimerHandle.IsValid() || bTutorialCombatControlled)
 	{
 		return;
 	}
@@ -236,44 +321,161 @@ void ARLEnemyCharacter::Fire()
 		return;
 	}
 
-	APawn* TargetPawn = UGameplayStatics::GetPlayerPawn(this, 0);
-	if (!TargetPawn)
+	++ShotsFiredSinceActivation;
+	const FRLProjectileSpawnRule* SelectedRule = nullptr;
+	for (const FRLProjectileSpawnRule& Rule : ProjectileRules)
 	{
-		return;
+		if (Rule.ProjectileDefinition && Rule.ShotInterval > 0 &&
+			ShotsFiredSinceActivation % Rule.ShotInterval == 0)
+		{
+			SelectedRule = &Rule;
+			break;
+		}
+	}
+
+	SpawnProjectile(
+		SelectedRule ? SelectedRule->ProjectileDefinition.Get() : DefaultProjectileDefinition.Get(),
+		SelectedRule ? SelectedRule->ShotPattern : ERLShotPattern::Single,
+		SelectedRule ? SelectedRule->CrossLateralOffset : 90.0f,
+		SelectedRule ? SelectedRule->CrossTargetOffset : 110.0f);
+}
+
+bool ARLEnemyCharacter::SpawnProjectile(
+	URLProjectileDefinitionDataAsset* ProjectileDefinition,
+	ERLShotPattern ShotPattern,
+	float CrossLateralOffset,
+	float CrossTargetOffset)
+{
+	if (!ProjectileClass || !MuzzlePoint || !GetWorld() || !ProjectileDefinition)
+	{
+		return false;
+	}
+
+	APawn* TargetPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	URLProjectilePoolSubsystem* PoolSubsystem =
+		GetWorld()->GetSubsystem<URLProjectilePoolSubsystem>();
+	if (!TargetPawn || !PoolSubsystem)
+	{
+		return false;
 	}
 
 	const FVector SpawnLocation = MuzzlePoint->GetComponentLocation();
 	const FRotator SpawnRotation =
 		(TargetPawn->GetActorLocation() - SpawnLocation).Rotation();
-
-	const FTransform SpawnTransform(SpawnRotation, SpawnLocation);
-	if (URLProjectilePoolSubsystem* PoolSubsystem =
-		GetWorld()->GetSubsystem<URLProjectilePoolSubsystem>())
+	auto SpawnConfiguredProjectile = [
+		this,
+		PoolSubsystem,
+		ProjectileDefinition,
+		TargetPawn](const FTransform& SpawnTransform)
 	{
-		++ShotsFiredSinceActivation;
-		const bool bShouldFireExplosive = ExplosiveShotInterval > 0 &&
-			ShotsFiredSinceActivation % ExplosiveShotInterval == 0;
-		const bool bShouldFireRally = !bShouldFireExplosive &&
-			RallyShotInterval > 0 &&
-			ShotsFiredSinceActivation % RallyShotInterval == 0;
-
 		ARLProjectile* Projectile = PoolSubsystem->AcquireProjectile(
-			ProjectileClass,
-			SpawnTransform,
-			this,
-			this);
-		if (Projectile && bShouldFireExplosive)
+			ProjectileClass, SpawnTransform, this, this);
+		if (Projectile)
 		{
-			Projectile->ConfigureAsExplosive();
+			Projectile->InitializeFromDefinition(ProjectileDefinition, TargetPawn);
 		}
-		else if (Projectile && bShouldFireRally)
+		return Projectile != nullptr;
+	};
+
+	if (ShotPattern == ERLShotPattern::Cross)
+	{
+		bool bSpawnedAny = false;
+		const FVector RightDirection = SpawnRotation.RotateVector(FVector::RightVector);
+		for (const float Side : {-1.0f, 1.0f})
 		{
-			Projectile->ConfigureAsRally(
-				TargetPawn,
-				RallyRelayCount,
-				RallySpeedMultiplierPerRelay);
+			const FVector CrossSpawnLocation = SpawnLocation +
+				RightDirection * Side * FMath::Max(0.0f, CrossLateralOffset);
+			const FVector CrossTargetLocation = TargetPawn->GetActorLocation() -
+				RightDirection * Side * FMath::Max(0.0f, CrossTargetOffset);
+			const FVector CrossDirection =
+				(CrossTargetLocation - CrossSpawnLocation).GetSafeNormal();
+			bSpawnedAny |= SpawnConfiguredProjectile(
+				FTransform(CrossDirection.Rotation(), CrossSpawnLocation));
+		}
+		return bSpawnedAny;
+	}
+
+	return SpawnConfiguredProjectile(FTransform(SpawnRotation, SpawnLocation));
+}
+
+void ARLEnemyCharacter::SetTutorialCombatControlled(bool bControlled)
+{
+	bTutorialCombatControlled = bControlled;
+	StopFiring();
+	if (!bTutorialCombatControlled && bIsPoolActive && bAutoStartFiring)
+	{
+		StartFiring();
+	}
+}
+
+void ARLEnemyCharacter::SetTutorialInvulnerable(bool bInvulnerable)
+{
+	bTutorialInvulnerable = bInvulnerable;
+}
+
+bool ARLEnemyCharacter::FireTutorialProjectile(
+	URLProjectileDefinitionDataAsset* ProjectileDefinition)
+{
+	return bIsPoolActive && bTutorialCombatControlled &&
+		SpawnProjectile(ProjectileDefinition);
+}
+
+void ARLEnemyCharacter::SetShieldEmitter(bool bEnabled)
+{
+	bShieldEmitterActive = bEnabled && bIsPoolActive;
+	UpdateShieldVisual();
+}
+
+bool ARLEnemyCharacter::TryAbsorbReflectedProjectile()
+{
+	if (bShieldEmitterActive)
+	{
+		SetShieldEmitter(false);
+		UE_LOG(LogTemp, Display, TEXT("Shield broken on %s."), *GetName());
+		return true;
+	}
+
+	return IsProtectedByShield();
+}
+
+bool ARLEnemyCharacter::IsProtectedByShield() const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	for (TActorIterator<ARLEnemyCharacter> Iterator(World); Iterator; ++Iterator)
+	{
+		const ARLEnemyCharacter* ShieldEnemy = *Iterator;
+		if (!IsValid(ShieldEnemy) || ShieldEnemy == this ||
+			!ShieldEnemy->bIsPoolActive || !ShieldEnemy->bShieldEmitterActive)
+		{
+			continue;
+		}
+
+		if (FVector::DistSquared2D(GetActorLocation(), ShieldEnemy->GetActorLocation()) <=
+			FMath::Square(FMath::Max(1.0f, ShieldEnemy->ShieldProtectionRadius)))
+		{
+			return true;
 		}
 	}
+
+	return false;
+}
+
+void ARLEnemyCharacter::UpdateShieldVisual()
+{
+	if (!ShieldVisual)
+	{
+		return;
+	}
+
+	const float SphereMeshRadius = 50.0f;
+	const float ShieldScale = FMath::Max(1.0f, ShieldVisualRadius) / SphereMeshRadius;
+	ShieldVisual->SetRelativeScale3D(FVector(ShieldScale));
+	ShieldVisual->SetVisibility(bShieldEmitterActive && bIsPoolActive, true);
 }
 
 void ARLEnemyCharacter::Die()
@@ -364,8 +566,12 @@ void ARLEnemyCharacter::ActivateFromPool(const FTransform& SpawnTransform)
 	}
 
 	bIsPoolActive = true;
+	bShieldEmitterActive = false;
+	bTutorialCombatControlled = false;
+	bTutorialInvulnerable = false;
 	CurrentHealth = MaxHealth;
 	ShotsFiredSinceActivation = 0;
+	UpdateShieldVisual();
 
 	if (bAutoStartFiring)
 	{
@@ -377,6 +583,10 @@ void ARLEnemyCharacter::DeactivateForPool()
 {
 	StopFiring();
 	bIsPoolActive = false;
+	bShieldEmitterActive = false;
+	bTutorialMovementLocked = false;
+	bTutorialCombatControlled = false;
+	bTutorialInvulnerable = false;
 	CurrentHealth = 0.0f;
 	ShotsFiredSinceActivation = 0;
 
@@ -392,6 +602,7 @@ void ARLEnemyCharacter::DeactivateForPool()
 	}
 
 	SetActorEnableCollision(false);
+	UpdateShieldVisual();
 	SetActorHiddenInGame(true);
 	SetActorTickEnabled(false);
 }

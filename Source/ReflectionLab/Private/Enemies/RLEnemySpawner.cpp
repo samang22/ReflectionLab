@@ -4,6 +4,7 @@
 #include "Enemies/RLEnemyCharacter.h"
 #include "Enemies/RLEnemyPoolSubsystem.h"
 #include "Engine/World.h"
+#include "Framework/GameMode/RLGameModeBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 
@@ -98,9 +99,28 @@ ARLEnemyCharacter* ARLEnemySpawner::SpawnEnemy()
 		if (ARLEnemyCharacter* Enemy =
 			PoolSubsystem->AcquireEnemy(EnemyClass, SpawnTransform))
 		{
-			if (bHasActiveDifficultyPhase)
+			++SpawnSequenceCount;
+			if (bHasActiveWaveDefinition)
+			{
+				Enemy->ApplyWaveDefinition(ActiveWaveDefinition);
+			}
+			else if (bHasActiveDifficultyPhase)
 			{
 				Enemy->ApplyDifficultyPhase(ActiveDifficultyPhase);
+			}
+			const int32 ShieldEnemyInterval = bHasActiveWaveDefinition
+				? FMath::Max(0, ActiveWaveDefinition.ShieldEnemyInterval)
+				: (bHasActiveDifficultyPhase
+					? FMath::Max(0, ActiveDifficultyPhase.ShieldEnemyInterval)
+					: 0);
+			Enemy->SetShieldEmitter(
+				ShieldEnemyInterval > 0 &&
+				SpawnSequenceCount % ShieldEnemyInterval == 0);
+			if (const ARLGameModeBase* GameMode =
+				GetWorld()->GetAuthGameMode<ARLGameModeBase>())
+			{
+				Enemy->SetTutorialMovementLocked(
+					GameMode->IsTutorialEnemyMovementLocked());
 			}
 			ActiveEnemies.Add(Enemy);
 			return Enemy;
@@ -130,6 +150,7 @@ void ARLEnemySpawner::ApplyDifficultyPhase(const FRLDifficultyPhase& DifficultyP
 {
 	ActiveDifficultyPhase = DifficultyPhase;
 	bHasActiveDifficultyPhase = true;
+	SpawnSequenceCount = 0;
 	CurrentSpawnBatchSize = FMath::Max(1, DifficultyPhase.SpawnBatchSize);
 	MaxAliveEnemies = FMath::Max(0, DifficultyPhase.MaxAliveEnemies);
 	MinimumPlayerDistance = FMath::Max(0.0f, DifficultyPhase.MinimumSpawnDistance);
@@ -143,6 +164,10 @@ void ARLEnemySpawner::ApplyDifficultyPhase(const FRLDifficultyPhase& DifficultyP
 		if (ARLEnemyCharacter* Enemy = EnemyPtr.Get())
 		{
 			Enemy->ApplyDifficultyPhase(DifficultyPhase);
+			if (DifficultyPhase.ShieldEnemyInterval <= 0)
+			{
+				Enemy->SetShieldEmitter(false);
+			}
 		}
 	}
 
@@ -154,6 +179,33 @@ void ARLEnemySpawner::ApplyDifficultyPhase(const FRLDifficultyPhase& DifficultyP
 	else
 	{
 		StartSpawning();
+	}
+}
+
+void ARLEnemySpawner::ConfigureWave(const FRLWaveDefinition& WaveDefinition)
+{
+	StopSpawning();
+	ActiveWaveDefinition = WaveDefinition;
+	bHasActiveWaveDefinition = true;
+	bHasActiveDifficultyPhase = false;
+	SpawnSequenceCount = 0;
+	MaxAliveEnemies = FMath::Max(1, WaveDefinition.EnemyCount);
+	MinimumPlayerDistance = FMath::Max(0.0f, WaveDefinition.MinimumSpawnDistance);
+	SpawnRadius = FMath::Max(
+		MinimumPlayerDistance,
+		WaveDefinition.MaximumSpawnDistance);
+
+	CleanupInactiveEnemies();
+	for (const TWeakObjectPtr<ARLEnemyCharacter>& EnemyPtr : ActiveEnemies)
+	{
+		if (ARLEnemyCharacter* Enemy = EnemyPtr.Get())
+		{
+			Enemy->ApplyWaveDefinition(WaveDefinition);
+			if (WaveDefinition.ShieldEnemyInterval <= 0)
+			{
+				Enemy->SetShieldEmitter(false);
+			}
+		}
 	}
 }
 

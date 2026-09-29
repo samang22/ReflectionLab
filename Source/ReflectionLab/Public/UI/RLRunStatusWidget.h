@@ -27,10 +27,10 @@ private:
 	void HandleRunStateChanged(ERLRunState NewState, int32 RoundIndex);
 
 	UFUNCTION()
-	void HandleDifficultyPhaseChanged(
+	void HandleWaveChanged(
 		int32 RoundIndex,
-		int32 PhaseIndex,
-		FName PhaseName);
+		int32 WaveIndex,
+		FName WaveName);
 
 	UFUNCTION()
 	void HandleRestartClicked();
@@ -41,7 +41,7 @@ private:
 	void BuildWidgetTree();
 	void RefreshDisplay();
 	void UpdateTimerText();
-	void UpdatePhaseText();
+	void UpdateWaveText();
 	void UpdateStateText();
 	void UpdateResultsPanel();
 	void UpdateInputMode();
@@ -75,6 +75,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> RestartButton;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> RestartButtonLabel;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> MainMenuButton;

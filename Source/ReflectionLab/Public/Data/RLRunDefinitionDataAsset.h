@@ -14,11 +14,15 @@ struct REFLECTIONLAB_API FRLRoundDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Round")
 	FName RoundName = NAME_None;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Round", meta = (ClampMin = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Round")
+	bool bIsTutorial = false;
+
+	// Retained for existing asset compatibility. Wave completion now ends a round.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Deprecated", meta = (DeprecatedProperty, DeprecationMessage = "Rounds now end after the final wave."))
 	float DurationSeconds = 300.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Round", meta = (ClampMin = "0.0"))
-	float IntermissionDurationSeconds = 25.0f;
+	float IntermissionDurationSeconds = 3.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Round")
 	TObjectPtr<URLDifficultyScheduleDataAsset> DifficultySchedule;

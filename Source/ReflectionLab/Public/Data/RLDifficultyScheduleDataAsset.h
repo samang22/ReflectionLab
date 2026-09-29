@@ -1,8 +1,30 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Data/RLProjectileDefinitionDataAsset.h"
 #include "Engine/DataAsset.h"
 #include "RLDifficultyScheduleDataAsset.generated.h"
+
+USTRUCT(BlueprintType)
+struct REFLECTIONLAB_API FRLProjectileSpawnRule
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile Rule")
+	TObjectPtr<URLProjectileDefinitionDataAsset> ProjectileDefinition;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile Rule", meta = (ClampMin = "0"))
+	int32 ShotInterval = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile Rule")
+	ERLShotPattern ShotPattern = ERLShotPattern::Single;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile Rule|Cross", meta = (ClampMin = "0.0", EditCondition = "ShotPattern == ERLShotPattern::Cross", EditConditionHides))
+	float CrossLateralOffset = 90.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile Rule|Cross", meta = (ClampMin = "0.0", EditCondition = "ShotPattern == ERLShotPattern::Cross", EditConditionHides))
+	float CrossTargetOffset = 110.0f;
+};
 
 USTRUCT(BlueprintType)
 struct REFLECTIONLAB_API FRLDifficultyPhase
@@ -39,20 +61,57 @@ struct REFLECTIONLAB_API FRLDifficultyPhase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Combat", meta = (ClampMin = "0.1"))
 	float TimeBetweenShotsMultiplier = 1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Special Projectiles", meta = (ClampMin = "0"))
-	int32 ExplosiveShotInterval = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Projectiles")
+	TObjectPtr<URLProjectileDefinitionDataAsset> DefaultProjectileDefinition;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Special Projectiles", meta = (ClampMin = "0"))
-	int32 RallyShotInterval = 0;
+	// Rules are evaluated in array order. The first matching interval wins.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Projectiles")
+	TArray<FRLProjectileSpawnRule> ProjectileRules;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Special Projectiles", meta = (ClampMin = "1"))
-	int32 RallyRelayCount = 2;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Special Projectiles", meta = (ClampMin = "1.0"))
-	float RallySpeedMultiplierPerRelay = 1.15f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Enemy Mechanics", meta = (ClampMin = "0"))
+	int32 ShieldEnemyInterval = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty")
 	bool bBreatherPhase = false;
+};
+
+USTRUCT(BlueprintType)
+struct REFLECTIONLAB_API FRLWaveDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave")
+	FName WaveName = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Spawning", meta = (ClampMin = "1"))
+	int32 EnemyCount = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave", meta = (ClampMin = "0.0"))
+	float NextWaveDelaySeconds = 2.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Spawning", meta = (ClampMin = "0.0"))
+	float MinimumSpawnDistance = 750.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Spawning", meta = (ClampMin = "0.0"))
+	float MaximumSpawnDistance = 1150.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Combat", meta = (ClampMin = "0.1"))
+	float AttackIntervalMultiplier = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Combat", meta = (ClampMin = "0"))
+	int32 ShotsPerBurstOverride = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Combat", meta = (ClampMin = "0.1"))
+	float TimeBetweenShotsMultiplier = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Projectiles")
+	TObjectPtr<URLProjectileDefinitionDataAsset> DefaultProjectileDefinition;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Projectiles")
+	TArray<FRLProjectileSpawnRule> ProjectileRules;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Enemy Mechanics", meta = (ClampMin = "0"))
+	int32 ShieldEnemyInterval = 0;
 };
 
 UCLASS(BlueprintType)
@@ -61,10 +120,14 @@ class REFLECTIONLAB_API URLDifficultyScheduleDataAsset : public UDataAsset
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Difficulty", meta = (ClampMin = "1.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Wave")
+	TArray<FRLWaveDefinition> Waves;
+
+	// Retained only so existing assets can be migrated. Runtime gameplay ignores it.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deprecated", meta = (DeprecatedProperty, DeprecationMessage = "Rounds now progress by Waves."))
 	float DurationSeconds = 300.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Difficulty")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deprecated", meta = (DeprecatedProperty, DeprecationMessage = "Use Waves instead."))
 	TArray<FRLDifficultyPhase> Phases;
 
 	const FRLDifficultyPhase* FindPhaseAtTime(float ElapsedSeconds, int32& OutPhaseIndex) const;

@@ -12,7 +12,9 @@ class UStaticMeshComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class USoundBase;
+class USoundConcurrency;
 class URLProjectilePoolSubsystem;
+class URLProjectileDefinitionDataAsset;
 
 USTRUCT(BlueprintType)
 struct FRLProjectileReflectionParams
@@ -55,6 +57,16 @@ public:
 		AActor* NewOwner,
 		APawn* NewInstigator);
 
+	void InitializeFromDefinition(
+		URLProjectileDefinitionDataAsset* Definition,
+		AActor* TargetActor,
+		bool bConfigureBehavior = true);
+
+	URLProjectileDefinitionDataAsset* GetProjectileDefinition() const
+	{
+		return ActiveDefinition;
+	}
+
 	UFUNCTION(BlueprintCallable, Category = "Projectile")
 	bool Reflect(
 		AActor* NewOwner,
@@ -67,6 +79,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Projectile")
 	bool CanBeReflected() const { return bCanBeReflected; }
+
+	UFUNCTION(BlueprintPure, Category = "Projectile|Guard")
+	bool IsGuardProjectile() const { return bIsGuardProjectile; }
 
 	UFUNCTION(BlueprintPure, Category = "Projectile|Explosive")
 	bool IsExplosive() const { return bIsExplosive; }
@@ -90,6 +105,18 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Projectile|Explosive")
 	void ConfigureAsExplosive();
+
+	UFUNCTION(BlueprintCallable, Category = "Projectile|Delayed Explosive")
+	void ConfigureAsDelayedExplosive(AActor* TargetActor);
+
+	UFUNCTION(BlueprintCallable, Category = "Projectile|Fake")
+	void ConfigureAsFake(AActor* TargetActor);
+
+	UFUNCTION(BlueprintCallable, Category = "Projectile|Guard")
+	void ConfigureAsGuard();
+
+	UFUNCTION(BlueprintCallable, Category = "Projectile|Parry Split")
+	void ConfigureAsParrySplit();
 
 	UFUNCTION(BlueprintCallable, Category = "Projectile|Rally")
 	void ConfigureAsRally(AActor* FinalTarget, int32 InMaxRallies, float InSpeedMultiplierPerRally);
@@ -154,7 +181,13 @@ protected:
 	float ReflectedSpeedMultiplier = 1.5f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile", meta = (ClampMin = "0.1"))
-	float LifeSeconds = 5.0f;
+	float LifeSeconds = 999.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Bounds")
+	FVector2D PlayAreaCenter = FVector2D::ZeroVector;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Bounds", meta = (ClampMin = "1.0"))
+	FVector2D PlayAreaHalfExtent = FVector2D(2200.0f, 2200.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Visuals", meta = (ClampMin = "0.0"))
 	float FadeOutDuration = 0.2f;
@@ -186,6 +219,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive|Audio", meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float ExplosionSoundVolume = 0.8f;
 
+	UPROPERTY(Transient)
+	TObjectPtr<USoundConcurrency> ExplosionSoundConcurrency;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive", meta = (ClampMin = "0.01"))
 	float ExplosiveBlinkStartInterval = 0.45f;
 
@@ -206,6 +242,48 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive|Visuals", meta = (ClampMin = "0.0"))
 	float ExplosiveWarningEmissiveIntensity = 40.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Delayed Explosive", meta = (ClampMin = "1.0"))
+	float DelayedExplosiveTriggerDistance = 320.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Delayed Explosive", meta = (ClampMin = "0.0"))
+	float DelayedExplosivePauseDuration = 0.55f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Delayed Explosive", meta = (ClampMin = "0.1"))
+	float DelayedExplosiveResumeSpeedMultiplier = 1.3f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Fake", meta = (ClampMin = "1.0"))
+	float FakeTriggerDistance = 280.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Fake", meta = (ClampMin = "0.0"))
+	float FakeRevealDelay = 0.4f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Fake", meta = (ClampMin = "0.1"))
+	float FakeRealSpeedMultiplier = 1.35f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Fake|Visuals")
+	FLinearColor FakeColor = FLinearColor(0.12f, 0.015f, 0.22f, 1.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Fake|Visuals", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float FakeOpacity = 0.38f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Guard|Visuals")
+	FLinearColor GuardColor = FLinearColor(0.7f, 0.12f, 1.0f, 1.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Parry Split|Visuals")
+	FLinearColor ParrySplitColor = FLinearColor(1.0f, 0.32f, 0.02f, 1.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Parry Split", meta = (ClampMin = "1", ClampMax = "6"))
+	int32 ParrySplitFragmentCount = 2;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Parry Split", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+	float ParrySplitSpreadAngle = 70.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Parry Split", meta = (ClampMin = "0.1"))
+	float ParrySplitFragmentSpeedMultiplier = 0.7f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Parry Split", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float ParrySplitFragmentScale = 0.75f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Rally", meta = (ClampMin = "1.0"))
 	float RallyVisualScale = 1.25f;
@@ -234,6 +312,9 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> FadeMaterialInstance;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> SpecialMaterialInstance;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Projectile|Explosive")
 	void OnExploded(const FVector& ExplosionLocation, float BlastRadius);
 
@@ -249,17 +330,30 @@ private:
 	void UpdateProjectileMaterial();
 	void UpdateExplosive(float DeltaTime);
 	void ApplyExplosiveBlinkColor(bool bUseWarningColor);
+	void UpdateDelayedExplosive(float DeltaTime);
+	void UpdateFake(float DeltaTime);
+	void RevealFakeProjectile();
+	void SpawnParrySplitFragments(
+		AActor* OriginalOwner,
+		APawn* OriginalInstigator,
+		AActor* PlayerActor);
+	void ConfigureAsSplitFragment(float SpeedMultiplier, float VisualScale);
+	void ApplySpecialColor(const FLinearColor& Color, float EmissiveIntensity, float Opacity = 1.0f);
 	void SpawnExplosionVisual(const FVector& ExplosionLocation, float BlastRadius);
 	void Explode();
+	void TriggerExplosion(bool bDamagePlayer, bool bDamageEnemies);
 	void UpdateRally(float DeltaTime);
 	void AdvanceRally();
 	AActor* FindNextRallyTarget(AActor* RelaySource) const;
 	void SetRallyTarget(AActor* NewTarget);
 	void SetProjectileOwnerAndIgnore(AActor* NewOwner);
 	void SetProjectileSpeed(float NewSpeed, const FVector& Direction);
+	bool IsOutsidePlayArea() const;
 	bool TryDetonateOnPlayerContact(AActor* OtherActor);
+	bool TryExplodeOnEnemyContact(AActor* OtherActor);
 	bool ShouldIgnoreActor(const AActor* OtherActor) const;
 	void ApplyDamageAndReturn(AActor* OtherActor);
+	void ApplyDefinitionStats(const URLProjectileDefinitionDataAsset& Definition);
 
 	FTimerHandle LifetimeTimerHandle;
 	TArray<FTransform> ReflectedAfterimageHistory;
@@ -269,18 +363,29 @@ private:
 	float FadeOutElapsedTime = 0.0f;
 	float ExplosiveElapsedTime = 0.0f;
 	float ExplosiveNextBlinkTime = 0.0f;
+	float DelayedExplosivePauseElapsedTime = 0.0f;
+	float FakeDormantElapsedTime = 0.0f;
 	float RallyCurrentSpeed = 0.0f;
 	float RallySpeedMultiplierPerRally = 1.15f;
 	int32 RallyCount = 0;
 	int32 MaxRallies = 0;
 	TWeakObjectPtr<AActor> RallyTarget;
 	TWeakObjectPtr<AActor> RallyFinalTarget;
+	TWeakObjectPtr<AActor> DelayedExplosiveTarget;
+	TWeakObjectPtr<AActor> FakeTarget;
 	bool bIsActive = false;
 	bool bIsFadingOut = false;
 	bool bIsReflected = false;
 	bool bCanBeReflected = true;
 	bool bIsExplosive = false;
 	bool bExplosiveBlinkWarning = false;
+	bool bIsDelayedExplosive = false;
+	bool bDelayedExplosivePaused = false;
+	bool bDelayedExplosiveResumed = false;
+	bool bIsFakeProjectile = false;
+	bool bFakeDormant = false;
+	bool bIsGuardProjectile = false;
+	bool bSplitsOnParry = false;
 	bool bIsRallyProjectile = false;
 	bool bRallyFinalShot = false;
 	int32 RemainingPierces = 0;
@@ -288,4 +393,8 @@ private:
 	bool bWasPerfectParried = false;
 	bool bWasCloseRangeParried = false;
 	bool bWasOverdriveReflected = false;
+	bool bExplodesOnEnemyImpact = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URLProjectileDefinitionDataAsset> ActiveDefinition;
 };
