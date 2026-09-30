@@ -219,16 +219,16 @@ private:
 	void UpdateRound();
 	void BeginWave(int32 WaveIndex);
 	void FinishRound();
+	void BeginRewardSelection();
+	void BeginIntermission();
 	void FinishIntermission();
+	void BuildRewardChoices();
 	void ApplyDifficultyPhase(const FRLDifficultyPhase& DifficultyPhase, int32 PhaseIndex);
 	void ApplyWaveDefinition(const FRLWaveDefinition& WaveDefinition, int32 WaveIndex);
 	void ClearActiveProjectiles();
 	void CacheEnemySpawners();
 	void StopEnemySpawners();
-	void BeginRewardSelection();
-	void BeginIntermission();
 	void CleanupRoundActors(const FRLRoundDefinition& RoundDefinition);
-	void BuildRewardChoices();
 	void BindPlayerStats();
 	void ResetRunRecord();
 	void EnsureExtendedRounds();
@@ -263,6 +263,6 @@ private:
 	bool bWaveTransitionPending = false;
 	bool bTutorialEnemyMovementLocked = false;
 	bool bTutorialOnlyMode = false;
+	TArray<ERLRunRewardType> PendingRewardChoices;
 	TWeakObjectPtr<ARLEnemyCharacter> TutorialEnemy;
 };
-	TArray<ERLRunRewardType> PendingRewardChoices;
