@@ -11,6 +11,8 @@ class USphereComponent;
 class UStaticMeshComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
+class UNiagaraComponent;
+class UNiagaraSystem;
 class USoundBase;
 class USoundConcurrency;
 class URLProjectilePoolSubsystem;
@@ -171,6 +173,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projectile")
 	TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projectile|Visuals|VFX")
+	TObjectPtr<UNiagaraComponent> ReflectedTrailComponent;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile", meta = (ClampMin = "0.0"))
 	float DamageAmount = 1.0f;
 
@@ -315,6 +320,15 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> SpecialMaterialInstance;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraSystem> ReflectedTrailVFX;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraSystem> ExplosionVFX;
+
+	float ReflectedTrailScale = 1.0f;
+	float ExplosionVFXScale = 1.0f;
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Projectile|Explosive")
 	void OnExploded(const FVector& ExplosionLocation, float BlastRadius);
 
@@ -328,6 +342,8 @@ private:
 	void ResetReflectedAfterimages();
 	void UpdateReflectedAfterimages(float DeltaTime);
 	void UpdateProjectileMaterial();
+	void ActivateReflectedTrail(float VisualScaleMultiplier);
+	void DeactivateReflectedTrail();
 	void UpdateExplosive(float DeltaTime);
 	void ApplyExplosiveBlinkColor(bool bUseWarningColor);
 	void UpdateDelayedExplosive(float DeltaTime);

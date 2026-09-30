@@ -2,6 +2,7 @@
 
 #include "Combat/RLExplosionVisual.h"
 #include "Combat/RLProjectilePoolSubsystem.h"
+#include "Combat/RLVFXPoolSubsystem.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -12,6 +13,8 @@
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 #include "Sound/SoundBase.h"
 #include "Sound/SoundConcurrency.h"
 #include "TimerManager.h"
@@ -57,6 +60,11 @@ ARLProjectile::ARLProjectile()
 	ProjectileMovement->bShouldBounce = false;
 	ProjectileMovement->ProjectileGravityScale = 0.0f;
 	ProjectileMovement->bAutoActivate = false;
+
+	ReflectedTrailComponent = CreateDefaultSubobject<UNiagaraComponent>(TEXT("ReflectedTrailComponent"));
+	ReflectedTrailComponent->SetupAttachment(CollisionComponent);
+	ReflectedTrailComponent->SetAutoActivate(false);
+	ReflectedTrailComponent->SetAutoDestroy(false);
 
 	static ConstructorHelpers::FObjectFinder<USoundBase> ExplosionSoundFinder(
 		TEXT("/Game/ReflectionLab/Audio/SFX/Combat/Explosion/"
@@ -203,6 +211,11 @@ void ARLProjectile::ActivateProjectile(
 	ExplosiveMaterialInstance = nullptr;
 	FadeMaterialInstance = nullptr;
 	SpecialMaterialInstance = nullptr;
+	DeactivateReflectedTrail();
+	ReflectedTrailVFX = nullptr;
+	ExplosionVFX = nullptr;
+	ReflectedTrailScale = 1.0f;
+	ExplosionVFXScale = 1.0f;
 	ActiveDefinition = nullptr;
 	FadeOutElapsedTime = 0.0f;
 	ProjectileMesh->SetRelativeScale3D(DefaultProjectileMeshScale);
@@ -307,6 +320,8 @@ void ARLProjectile::ApplyDefinitionStats(
 	FadeOutDuration = FMath::Max(0.0f, Definition.FadeOutDuration);
 	HostileMaterial = Definition.HostileMaterial;
 	ReflectedMaterial = Definition.ReflectedMaterial;
+	ReflectedTrailVFX = Definition.ReflectedTrailVFX;
+	ReflectedTrailScale = FMath::Clamp(Definition.ReflectedTrailScale, 0.1f, 5.0f);
 	bExplodesOnEnemyImpact = Definition.bExplodesOnEnemyImpact;
 
 	ExplosiveSpeedMultiplier = FMath::Clamp(Definition.ExplosiveSpeedMultiplier, 0.1f, 1.0f);
@@ -323,6 +338,8 @@ void ARLProjectile::ApplyDefinitionStats(
 		ExplosionDefinition.ExplosionSoundVolume,
 		0.0f,
 		2.0f);
+	ExplosionVFX = ExplosionDefinition.ExplosionVFX;
+	ExplosionVFXScale = FMath::Clamp(ExplosionDefinition.ExplosionVFXScale, 0.1f, 5.0f);
 	ExplosiveBlinkStartInterval = FMath::Max(0.01f, Definition.ExplosiveBlinkStartInterval);
 	ExplosiveBlinkEndInterval = FMath::Max(0.01f, Definition.ExplosiveBlinkEndInterval);
 	ExplosiveBaseColor = Definition.ExplosiveBaseColor;
@@ -428,6 +445,7 @@ bool ARLProjectile::Reflect(
 		DefaultCollisionRadius * ReflectedScale,
 		true);
 	UpdateProjectileMaterial();
+	ActivateReflectedTrail(ReflectedScale);
 	ResetReflectedAfterimages();
 	SetActorTickEnabled(true);
 
@@ -706,6 +724,11 @@ void ARLProjectile::DeactivateForPool()
 	ExplosiveMaterialInstance = nullptr;
 	FadeMaterialInstance = nullptr;
 	SpecialMaterialInstance = nullptr;
+	DeactivateReflectedTrail();
+	ReflectedTrailVFX = nullptr;
+	ExplosionVFX = nullptr;
+	ReflectedTrailScale = 1.0f;
+	ExplosionVFXScale = 1.0f;
 	ActiveDefinition = nullptr;
 	FadeOutElapsedTime = 0.0f;
 	ProjectileMesh->SetRelativeScale3D(DefaultProjectileMeshScale);
@@ -863,6 +886,30 @@ void ARLProjectile::UpdateProjectileMaterial()
 			AfterimageMesh->SetMaterial(0, ReflectedMaterial);
 		}
 	}
+}
+
+void ARLProjectile::ActivateReflectedTrail(float VisualScaleMultiplier)
+{
+	if (!ReflectedTrailComponent || !ReflectedTrailVFX)
+	{
+		return;
+	}
+
+	ReflectedTrailComponent->SetAsset(ReflectedTrailVFX);
+	ReflectedTrailComponent->SetRelativeScale3D(
+		FVector(ReflectedTrailScale * FMath::Max(0.1f, VisualScaleMultiplier)));
+	ReflectedTrailComponent->Activate(true);
+}
+
+void ARLProjectile::DeactivateReflectedTrail()
+{
+	if (!ReflectedTrailComponent)
+	{
+		return;
+	}
+
+	ReflectedTrailComponent->Deactivate();
+	ReflectedTrailComponent->SetAsset(nullptr);
 }
 
 void ARLProjectile::ApplySpecialColor(
@@ -1131,6 +1178,17 @@ void ARLProjectile::TriggerExplosion(bool bDamagePlayer, bool bDamageEnemies)
 			nullptr,
 			ExplosionSoundConcurrency,
 			this);
+	}
+	if (ExplosionVFX)
+	{
+		if (URLVFXPoolSubsystem* VFXPool = GetWorld()->GetSubsystem<URLVFXPoolSubsystem>())
+		{
+			VFXPool->PlaySystemAtLocation(
+				ExplosionVFX,
+				ExplosionLocation,
+				FRotator::ZeroRotator,
+				FVector(ExplosionVFXScale));
+		}
 	}
 	SpawnExplosionVisual(ExplosionLocation, BlastRadius);
 	OnExploded(ExplosionLocation, BlastRadius);

@@ -5,6 +5,7 @@
 #include "RLParryTuningDataAsset.generated.h"
 
 class USoundBase;
+class UNiagaraSystem;
 
 UCLASS(BlueprintType)
 class REFLECTIONLAB_API URLParryTuningDataAsset : public UDataAsset
@@ -12,6 +13,8 @@ class REFLECTIONLAB_API URLParryTuningDataAsset : public UDataAsset
 	GENERATED_BODY()
 
 public:
+	URLParryTuningDataAsset();
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Timing", meta = (ClampMin = "0.0", DisplayName = "Failed Parry Cooldown"))
 	float FailedParryCooldown = 0.5f;
 
@@ -131,4 +134,19 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Feedback", meta = (ClampMin = "0.01", ClampMax = "1.0"))
 	float HitStopTimeDilation = 0.1f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Overdrive|VFX")
+	TObjectPtr<UNiagaraSystem> OverdriveAuraVFX;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Overdrive|VFX", meta = (ClampMin = "0.1", ClampMax = "5.0"))
+	float OverdriveAuraScale = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Overdrive|VFX", meta = (ClampMin = "0.1", ClampMax = "4.0"))
+	float EnhancementAuraStage2ScaleMultiplier = 0.1f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Overdrive|VFX", meta = (ClampMin = "0.1", ClampMax = "4.0"))
+	float EnhancementAuraStage3ScaleMultiplier = 0.3f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Overdrive|VFX", meta = (ClampMin = "0.1", ClampMax = "4.0"))
+	float EnhancementAuraStage4ScaleMultiplier = 0.7f;
 };

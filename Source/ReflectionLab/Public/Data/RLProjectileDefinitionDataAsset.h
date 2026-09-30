@@ -5,6 +5,7 @@
 #include "RLProjectileDefinitionDataAsset.generated.h"
 
 class UMaterialInterface;
+class UNiagaraSystem;
 class USoundBase;
 
 UENUM(BlueprintType)
@@ -32,6 +33,8 @@ class REFLECTIONLAB_API URLProjectileDefinitionDataAsset : public UDataAsset
 	GENERATED_BODY()
 
 public:
+	URLProjectileDefinitionDataAsset();
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile")
 	ERLProjectileBehavior Behavior = ERLProjectileBehavior::Normal;
 
@@ -59,6 +62,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Visuals")
 	TObjectPtr<UMaterialInterface> ReflectedMaterial;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Visuals|VFX")
+	TObjectPtr<UNiagaraSystem> ReflectedTrailVFX;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Visuals|VFX", meta = (ClampMin = "0.1", ClampMax = "5.0"))
+	float ReflectedTrailScale = 1.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Impact")
 	bool bExplodesOnEnemyImpact = false;
 
@@ -85,6 +94,12 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive|Audio", meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float ExplosionSoundVolume = 0.8f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive|VFX")
+	TObjectPtr<UNiagaraSystem> ExplosionVFX;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive|VFX", meta = (ClampMin = "0.1", ClampMax = "5.0"))
+	float ExplosionVFXScale = 1.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive", meta = (ClampMin = "0.01"))
 	float ExplosiveBlinkStartInterval = 0.45f;
