@@ -56,6 +56,7 @@ void ARLGameModeBase::StartRun()
 	GetWorldTimerManager().ClearTimer(CountdownTimerHandle);
 	ResetRunRecord();
 	BindPlayerStats();
+	PendingRewardChoices.Reset();
 	const int32 StartingRoundIndex = ResolveStartingRoundIndex();
 	if (!RunDefinition->Rounds.IsValidIndex(StartingRoundIndex))
 	{
@@ -714,6 +715,41 @@ ARLEnemyCharacter* ARLGameModeBase::GetTutorialEnemy() const
 		}
 	}
 	return nullptr;
+	if (!RoundDefinition->bIsTutorial)
+	{
+		BeginRewardSelection();
+		return;
+	}
+	BeginIntermission();
+}
+
+void ARLGameModeBase::BeginRewardSelection()
+{
+	BuildRewardChoices();
+	if (PendingRewardChoices.Num() < 3)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Reward selection skipped: insufficient reward choices."));
+		BeginIntermission();
+		return;
+	}
+
+	SetRunState(ERLRunState::RewardSelection);
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Round %d cleared. Awaiting reward selection."),
+		GetCurrentRoundNumber());
+}
+
+void ARLGameModeBase::BeginIntermission()
+{
+	PendingRewardChoices.Reset();
+	const FRLRoundDefinition* RoundDefinition = GetCurrentRoundDefinition();
+	if (!RoundDefinition)
+	{
+		SetRunState(ERLRunState::RunCompleted);
+		return;
+	}
 }
 
 URLProjectileDefinitionDataAsset* ARLGameModeBase::FindTutorialProjectileDefinition(
@@ -735,6 +771,115 @@ URLProjectileDefinitionDataAsset* ARLGameModeBase::FindTutorialProjectileDefinit
 		{
 			return WaveDefinition.DefaultProjectileDefinition;
 		}
+void ARLGameModeBase::BuildRewardChoices()
+{
+	PendingRewardChoices.Reset();
+	static constexpr ERLRunRewardType RewardRotation[] = {
+		ERLRunRewardType::WiderArc,
+		ERLRunRewardType::ExtendedRange,
+		ERLRunRewardType::PiercingReturn,
+		ERLRunRewardType::PerfectFocus,
+		ERLRunRewardType::VelocityDrive,
+		ERLRunRewardType::CloseCall,
+	};
+
+	const int32 RewardCount = UE_ARRAY_COUNT(RewardRotation);
+	const int32 StartIndex = FMath::Abs(RoundsCleared - 1) % RewardCount;
+	for (int32 Offset = 0; Offset < 3; ++Offset)
+	{
+		PendingRewardChoices.Add(RewardRotation[(StartIndex + Offset) % RewardCount]);
+	}
+}
+
+FText ARLGameModeBase::GetRewardChoiceTitle(int32 ChoiceIndex) const
+{
+	if (!PendingRewardChoices.IsValidIndex(ChoiceIndex))
+	{
+		return FText::GetEmpty();
+	}
+
+	switch (PendingRewardChoices[ChoiceIndex])
+	{
+	case ERLRunRewardType::WiderArc:
+		return FText::FromString(TEXT("WIDE SWING"));
+	case ERLRunRewardType::ExtendedRange:
+		return FText::FromString(TEXT("LONG REACH"));
+	case ERLRunRewardType::PiercingReturn:
+		return FText::FromString(TEXT("PIERCING RETURN"));
+	case ERLRunRewardType::PerfectFocus:
+		return FText::FromString(TEXT("PERFECT VOLLEY"));
+	case ERLRunRewardType::VelocityDrive:
+		return FText::FromString(TEXT("VELOCITY DRIVE"));
+	case ERLRunRewardType::CloseCall:
+		return FText::FromString(TEXT("CLOSE CALL"));
+	default:
+		return FText::GetEmpty();
+	}
+}
+
+FText ARLGameModeBase::GetRewardChoiceDescription(int32 ChoiceIndex) const
+{
+	if (!PendingRewardChoices.IsValidIndex(ChoiceIndex))
+	{
+		return FText::GetEmpty();
+	}
+
+	switch (PendingRewardChoices[ChoiceIndex])
+	{
+	case ERLRunRewardType::WiderArc:
+		return FText::FromString(TEXT("Parry angle +12 degrees"));
+	case ERLRunRewardType::ExtendedRange:
+		return FText::FromString(TEXT("Parry range +18%"));
+	case ERLRunRewardType::PiercingReturn:
+		return FText::FromString(TEXT("Reflected projectile pierce +1"));
+	case ERLRunRewardType::PerfectFocus:
+		return FText::FromString(TEXT("Perfect parry split projectile +1"));
+	case ERLRunRewardType::VelocityDrive:
+		return FText::FromString(TEXT("Maximum reflected speed +0.2x"));
+	case ERLRunRewardType::CloseCall:
+		return FText::FromString(TEXT("Close-range parry zone +12 cm"));
+	default:
+		return FText::GetEmpty();
+	}
+}
+
+TOptional<ERLRunRewardType> ARLGameModeBase::GetRewardChoiceType(int32 ChoiceIndex) const
+{
+	if (!PendingRewardChoices.IsValidIndex(ChoiceIndex))
+	{
+		return TOptional<ERLRunRewardType>();
+	}
+
+	return PendingRewardChoices[ChoiceIndex];
+}
+
+bool ARLGameModeBase::SelectReward(int32 ChoiceIndex)
+{
+	if (RunState != ERLRunState::RewardSelection ||
+		!PendingRewardChoices.IsValidIndex(ChoiceIndex))
+	{
+		return false;
+	}
+
+	ARLPlayerCharacter* PlayerCharacter = Cast<ARLPlayerCharacter>(
+		UGameplayStatics::GetPlayerCharacter(this, 0));
+	if (!PlayerCharacter)
+	{
+		return false;
+	}
+
+	const ERLRunRewardType SelectedReward = PendingRewardChoices[ChoiceIndex];
+	PlayerCharacter->ApplyRunReward(SelectedReward);
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Selected run reward %d after round %d."),
+		static_cast<int32>(SelectedReward),
+		GetCurrentRoundNumber());
+	BeginIntermission();
+	return true;
+}
+
 		for (const FRLProjectileSpawnRule& Rule : WaveDefinition.ProjectileRules)
 		{
 			if (Rule.ProjectileDefinition &&

@@ -7,6 +7,10 @@
 
 class UTextBlock;
 class UButton;
+class UBorder;
+class UHorizontalBox;
+class UImage;
+class UTexture2D;
 class UVerticalBox;
 
 UCLASS()
@@ -38,12 +42,22 @@ private:
 	UFUNCTION()
 	void HandleMainMenuClicked();
 
+	UFUNCTION()
+	void HandleRewardChoiceOneClicked();
+
+	UFUNCTION()
+	void HandleRewardChoiceTwoClicked();
+
+	UFUNCTION()
+	void HandleRewardChoiceThreeClicked();
+
 	void BuildWidgetTree();
 	void RefreshDisplay();
 	void UpdateTimerText();
 	void UpdateWaveText();
 	void UpdateStateText();
 	void UpdateResultsPanel();
+	void UpdateRewardChoices();
 	void UpdateInputMode();
 	void UpdateExplosiveWarning(float DeltaTime);
 	void SetStateMessage(const FText& Message, const FLinearColor& Color, int32 FontSize);
@@ -60,6 +74,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> NextPhaseText;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UVerticalBox> StatusContainer;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> StateText;
@@ -81,6 +98,33 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UButton> MainMenuButton;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UHorizontalBox> RewardContainer;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> RewardBackdrop;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> RewardPromptText;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UButton>> RewardButtons;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTextBlock>> RewardTitleTexts;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTextBlock>> RewardDescriptionTexts;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UBorder>> RewardArtPanels;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UImage>> RewardArtImages;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTexture2D>> RewardArtTextures;
 
 	UPROPERTY(Transient)
 	TObjectPtr<ARLGameModeBase> BoundGameMode;

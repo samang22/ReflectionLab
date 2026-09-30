@@ -181,6 +181,21 @@ void ARLPlayerController::OnUnPossess()
 	Super::OnUnPossess();
 }
 
+void ARLPlayerController::SetGameplayHUDVisible(bool bVisible)
+{
+	const ESlateVisibility Visibility = bVisible
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed;
+	if (ParryComboWidget)
+	{
+		ParryComboWidget->SetVisibility(Visibility);
+	}
+	if (PlayerHealthWidget)
+	{
+		PlayerHealthWidget->SetVisibility(Visibility);
+	}
+}
+
 void ARLPlayerController::CreateOrBindPlayerHealthWidget()
 {
 	if (!IsLocalController())

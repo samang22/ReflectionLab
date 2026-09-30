@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Data/RLRunRewardTypes.h"
 #include "GameFramework/Character.h"
 #include "RLPlayerCharacter.generated.h"
 
@@ -11,6 +12,7 @@ class UDecalComponent;
 class UAnimMontage;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
+class UNiagaraComponent;
 class URLParryTuningDataAsset;
 class URLPlayerStatsDataAsset;
 class USoundBase;
@@ -97,6 +99,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Parry|Enhancement")
 	int32 GetParryEnhancementLevel() const { return ParryEnhancementLevel; }
 
+	UFUNCTION(BlueprintCallable, Category = "Run|Rewards")
+	void ApplyRunReward(ERLRunRewardType RewardType);
+
+	UFUNCTION(BlueprintCallable, Category = "Run|Rewards")
+	void ResetRunRewards();
+
 	UPROPERTY(BlueprintAssignable, Category = "Parry")
 	FRLParryChainChangedSignature OnParryChainChanged;
 
@@ -157,6 +165,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Parry|Indicator", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UDecalComponent> ParryRangeIndicator;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Parry|Overdrive|VFX", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UNiagaraComponent> OverdriveAuraComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Indicator", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UMaterialInterface> ParryRangeIndicatorMaterial;
@@ -220,6 +231,7 @@ private:
 	void ApplyPlayerStats();
 	void ApplyParryTuning();
 	void UpdateParryRangeIndicator();
+	void UpdateOverdriveAura();
 	void UpdateParryIndicatorColor();
 	void ShowParrySuccessIndicator();
 	void ClearParrySuccessIndicator();
@@ -256,6 +268,7 @@ private:
 	void DowngradeParryEnhancement();
 	void SetParryEnhancementLevel(int32 NewLevel);
 	int32 GetEnhancementComboRequirement() const;
+	void ApplyRunRewardModifiers();
 
 	FTimerHandle ParryAttemptTimerHandle;
 	FTimerHandle ParryCooldownTimerHandle;
@@ -300,7 +313,17 @@ private:
 	TArray<float> ParryComboImpactSoundVolumes;
 	float ParryHitStopDuration = 0.04f;
 	float ParryHitStopTimeDilation = 0.1f;
+	float OverdriveAuraBaseScale = 1.0f;
+	float EnhancementAuraStage2ScaleMultiplier = 0.1f;
+	float EnhancementAuraStage3ScaleMultiplier = 0.3f;
+	float EnhancementAuraStage4ScaleMultiplier = 0.7f;
 	float PreHitRecoveryMaxWalkSpeed = 0.0f;
+	float RunRewardRangeMultiplier = 1.0f;
+	float RunRewardArcBonusDegrees = 0.0f;
+	int32 RunRewardPierceBonus = 0;
+	int32 RunRewardPerfectSplitBonus = 0;
+	float RunRewardReflectedSpeedBonus = 0.0f;
+	float RunRewardCloseRangeBonus = 0.0f;
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> ParryRangeIndicatorMaterialInstance;
 

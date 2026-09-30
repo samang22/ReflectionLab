@@ -38,6 +38,7 @@ public:
 	virtual void OnUnPossess() override;
 
 	void DismissTutorialPrompt();
+	void SetGameplayHUDVisible(bool bVisible);
 
 protected:
 	virtual void BeginPlay() override;

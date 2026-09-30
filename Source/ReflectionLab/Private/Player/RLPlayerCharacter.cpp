@@ -19,6 +19,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "NiagaraComponent.h"
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
@@ -77,6 +78,11 @@ ARLPlayerCharacter::ARLPlayerCharacter()
 	ParryRangeIndicator->SetSortOrder(5);
 	ParryRangeIndicator->FadeScreenSize = 0.0f;
 	ParryRangeIndicator->SetDecalMaterial(ParryRangeIndicatorMaterial);
+
+	OverdriveAuraComponent = CreateDefaultSubobject<UNiagaraComponent>(TEXT("OverdriveAuraComponent"));
+	OverdriveAuraComponent->SetupAttachment(RootComponent);
+	OverdriveAuraComponent->SetAutoActivate(false);
+	OverdriveAuraComponent->SetAutoDestroy(false);
 }
 
 // Called when the game starts or when spawned
@@ -95,6 +101,7 @@ void ARLPlayerCharacter::BeginPlay()
 		ParryRangeIndicatorMaterialInstance = ParryRangeIndicator->CreateDynamicMaterialInstance();
 	}
 	UpdateParryRangeIndicator();
+	UpdateOverdriveAura();
 }
 
 void ARLPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -111,6 +118,7 @@ void ARLPlayerCharacter::OnConstruction(const FTransform& Transform)
 	ApplyPlayerStats();
 	ApplyParryTuning();
 	UpdateParryRangeIndicator();
+	UpdateOverdriveAura();
 }
 
 void ARLPlayerCharacter::ApplyPlayerStats()
@@ -218,6 +226,127 @@ void ARLPlayerCharacter::ApplyParryTuning()
 	}
 	ParryHitStopDuration = FMath::Max(0.0f, ParryTuningData->HitStopDuration);
 	ParryHitStopTimeDilation = FMath::Clamp(ParryTuningData->HitStopTimeDilation, 0.01f, 1.0f);
+	if (OverdriveAuraComponent)
+	{
+		OverdriveAuraComponent->SetAsset(ParryTuningData->OverdriveAuraVFX);
+	}
+	OverdriveAuraBaseScale = FMath::Clamp(ParryTuningData->OverdriveAuraScale, 0.1f, 5.0f);
+	EnhancementAuraStage2ScaleMultiplier = FMath::Clamp(
+		ParryTuningData->EnhancementAuraStage2ScaleMultiplier,
+		0.1f,
+		4.0f);
+	EnhancementAuraStage3ScaleMultiplier = FMath::Clamp(
+		ParryTuningData->EnhancementAuraStage3ScaleMultiplier,
+		EnhancementAuraStage2ScaleMultiplier,
+		4.0f);
+	EnhancementAuraStage4ScaleMultiplier = FMath::Clamp(
+		ParryTuningData->EnhancementAuraStage4ScaleMultiplier,
+		EnhancementAuraStage3ScaleMultiplier,
+		4.0f);
+	ApplyRunRewardModifiers();
+}
+
+void ARLPlayerCharacter::ApplyRunReward(ERLRunRewardType RewardType)
+{
+	switch (RewardType)
+	{
+	case ERLRunRewardType::WiderArc:
+		RunRewardArcBonusDegrees += 12.0f;
+		break;
+	case ERLRunRewardType::ExtendedRange:
+		RunRewardRangeMultiplier += 0.18f;
+		break;
+	case ERLRunRewardType::PiercingReturn:
+		++RunRewardPierceBonus;
+		break;
+	case ERLRunRewardType::PerfectFocus:
+		++RunRewardPerfectSplitBonus;
+		break;
+	case ERLRunRewardType::VelocityDrive:
+		RunRewardReflectedSpeedBonus += 0.2f;
+		break;
+	case ERLRunRewardType::CloseCall:
+		RunRewardCloseRangeBonus += 12.0f;
+		break;
+	default:
+		return;
+	}
+
+	ApplyParryTuning();
+	if (ReflectionZone)
+	{
+		ReflectionZone->SetSphereRadius(ReflectionRange);
+	}
+	UpdateParryRangeIndicator();
+}
+
+void ARLPlayerCharacter::ResetRunRewards()
+{
+	RunRewardRangeMultiplier = 1.0f;
+	RunRewardArcBonusDegrees = 0.0f;
+	RunRewardPierceBonus = 0;
+	RunRewardPerfectSplitBonus = 0;
+	RunRewardReflectedSpeedBonus = 0.0f;
+	RunRewardCloseRangeBonus = 0.0f;
+	ApplyParryTuning();
+	if (ReflectionZone)
+	{
+		ReflectionZone->SetSphereRadius(ReflectionRange);
+	}
+	UpdateParryRangeIndicator();
+}
+
+void ARLPlayerCharacter::ApplyRunRewardModifiers()
+{
+	ReflectionRange = FMath::Max(1.0f, ReflectionRange * RunRewardRangeMultiplier);
+	ReflectionHalfAngleDegrees = FMath::Clamp(
+		ReflectionHalfAngleDegrees + RunRewardArcBonusDegrees,
+		0.0f,
+		180.0f);
+	BasePierceCount = FMath::Max(0, BasePierceCount + RunRewardPierceBonus);
+	PerfectSplitProjectileCount = FMath::Clamp(
+		PerfectSplitProjectileCount + RunRewardPerfectSplitBonus,
+		1,
+		8);
+	MaxReflectedSpeedMultiplier = FMath::Max(
+		1.0f,
+		MaxReflectedSpeedMultiplier + RunRewardReflectedSpeedBonus);
+	CloseRangeThreshold = FMath::Max(0.0f, CloseRangeThreshold + RunRewardCloseRangeBonus);
+}
+
+void ARLPlayerCharacter::UpdateOverdriveAura()
+{
+	if (!OverdriveAuraComponent)
+	{
+		return;
+	}
+
+	float AuraScaleMultiplier = 0.0f;
+	switch (ParryEnhancementLevel)
+	{
+	case 4:
+		AuraScaleMultiplier = EnhancementAuraStage4ScaleMultiplier;
+		break;
+	case 3:
+		AuraScaleMultiplier = EnhancementAuraStage3ScaleMultiplier;
+		break;
+	case 2:
+		AuraScaleMultiplier = EnhancementAuraStage2ScaleMultiplier;
+		break;
+	default:
+		break;
+	}
+
+	if (AuraScaleMultiplier > 0.0f && OverdriveAuraComponent->GetAsset())
+	{
+		const float AuraScale = OverdriveAuraBaseScale * AuraScaleMultiplier;
+		OverdriveAuraComponent->SetRelativeScale3D(FVector(AuraScale));
+		OverdriveAuraComponent->Activate(true);
+	}
+	else
+	{
+		OverdriveAuraComponent->Deactivate();
+	}
 }
 
 void ARLPlayerCharacter::UpdateParryRangeIndicator()
@@ -233,16 +362,29 @@ void ARLPlayerCharacter::UpdateParryRangeIndicator()
 		0.0f,
 		0.0f,
 		-GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() + 30.0f));
-	ParryRangeIndicator->SetDecalMaterial(
-		ParryRangeIndicatorMaterialInstance
-			? ParryRangeIndicatorMaterialInstance
-			: ParryRangeIndicatorMaterial);
+	UMaterialInterface* const IndicatorMaterial = ParryRangeIndicatorMaterialInstance
+		? static_cast<UMaterialInterface*>(ParryRangeIndicatorMaterialInstance)
+		: ParryRangeIndicatorMaterial.Get();
+	if (ParryRangeIndicator->GetDecalMaterial() != IndicatorMaterial)
+	{
+		ParryRangeIndicator->SetDecalMaterial(IndicatorMaterial);
+	}
 
 	if (ParryRangeIndicatorMaterialInstance)
 	{
+		// The decal material expects a tangent slope. Its masked UV fan starts
+		// clipping at very steep slopes, so keep the visual value in its valid
+		// range while leaving the gameplay parry angle unrestricted.
+		constexpr float MaxIndicatorHalfAngleDegrees = 58.0f;
+		const float VisualHalfAngleDegrees = FMath::Clamp(
+			ReflectionHalfAngleDegrees,
+			1.0f,
+			MaxIndicatorHalfAngleDegrees);
+		const float ConeSlope = FMath::Tan(
+			FMath::DegreesToRadians(VisualHalfAngleDegrees));
 		ParryRangeIndicatorMaterialInstance->SetScalarParameterValue(
 			TEXT("ConeSlope"),
-			FMath::Tan(FMath::DegreesToRadians(ReflectionHalfAngleDegrees)));
+			ConeSlope);
 		const float PerfectBandInnerRadiusUv = 0.5f *
 			(1.0f - PerfectParryOuterBandWidth / ReflectionRange);
 		ParryRangeIndicatorMaterialInstance->SetScalarParameterValue(
@@ -326,7 +468,8 @@ void ARLPlayerCharacter::TriggerParryHitStop(bool bPerfectParry, bool bOverdrive
 	}
 
 	bParryHitStopActive = true;
-	UGameplayStatics::SetGlobalTimeDilation(World, ParryHitStopTimeDilation);
+	const float EffectiveTimeDilation = ParryHitStopTimeDilation;
+	UGameplayStatics::SetGlobalTimeDilation(World, EffectiveTimeDilation);
 	const float DurationMultiplier = bOverdrive
 		? OverdriveHitStopDurationMultiplier
 		: (bPerfectParry ? PerfectHitStopDurationMultiplier : 1.0f);
@@ -336,7 +479,7 @@ void ARLPlayerCharacter::TriggerParryHitStop(bool bPerfectParry, bool bOverdrive
 		ParryHitStopTimerHandle,
 		this,
 		&ThisClass::RestoreTimeDilation,
-		FMath::Max(KINDA_SMALL_NUMBER, EffectiveHitStopDuration * ParryHitStopTimeDilation),
+		FMath::Max(KINDA_SMALL_NUMBER, EffectiveHitStopDuration * EffectiveTimeDilation),
 		false);
 }
 
@@ -959,6 +1102,7 @@ void ARLPlayerCharacter::RegisterSuccessfulParry(
 		ParryEnhancementLevel,
 		bPerfectParry,
 		bCloseRangeParry);
+	UpdateOverdriveAura();
 
 	UE_LOG(
 		LogTemp,
@@ -1086,10 +1230,12 @@ void ARLPlayerCharacter::ResetParryChain()
 	bPlayMirroredParryNext = false;
 	if (ParryChainCount == 0)
 	{
+		UpdateOverdriveAura();
 		return;
 	}
 
 	ParryChainCount = 0;
+	UpdateOverdriveAura();
 	OnParryChainChanged.Broadcast(ParryChainCount);
 	OnParryComboChanged.Broadcast(0, 0, ParryEnhancementLevel, false, false);
 	UE_LOG(LogTemp, Display, TEXT("Parry chain reset."));
@@ -1121,6 +1267,7 @@ void ARLPlayerCharacter::SetParryEnhancementLevel(int32 NewLevel)
 	}
 
 	ParryEnhancementLevel = ClampedLevel;
+	UpdateOverdriveAura();
 	OnParryComboChanged.Broadcast(
 		ParryChainCount,
 		0,

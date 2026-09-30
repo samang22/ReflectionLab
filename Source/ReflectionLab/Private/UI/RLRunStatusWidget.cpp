@@ -5,13 +5,67 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Button.h"
+#include "Components/Border.h"
+#include "Components/BorderSlot.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/Image.h"
+#include "Components/ScaleBox.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/World.h"
+#include "Engine/Texture2D.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "Framework/PlayerController/RLPlayerController.h"
+
+namespace
+{
+	const TCHAR* GetRewardArtPath(ERLRunRewardType RewardType)
+	{
+		switch (RewardType)
+		{
+		case ERLRunRewardType::WiderArc:
+			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_WideSwing.T_Reward_WideSwing");
+		case ERLRunRewardType::ExtendedRange:
+			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_LongReach.T_Reward_LongReach");
+		case ERLRunRewardType::PiercingReturn:
+			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_PiercingReturn.T_Reward_PiercingReturn");
+		case ERLRunRewardType::PerfectFocus:
+			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_PerfectVolley.T_Reward_PerfectVolley");
+		case ERLRunRewardType::VelocityDrive:
+			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_VelocityDrive.T_Reward_VelocityDrive");
+		case ERLRunRewardType::CloseCall:
+			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_CloseCall.T_Reward_CloseCall");
+		default:
+			return nullptr;
+		}
+	}
+
+	FLinearColor GetRewardAccentColor(ERLRunRewardType RewardType)
+	{
+		switch (RewardType)
+		{
+		case ERLRunRewardType::WiderArc:
+			return FLinearColor(0.1f, 0.85f, 1.0f);
+		case ERLRunRewardType::ExtendedRange:
+			return FLinearColor(0.25f, 1.0f, 0.55f);
+		case ERLRunRewardType::PiercingReturn:
+			return FLinearColor(0.72f, 0.35f, 1.0f);
+		case ERLRunRewardType::PerfectFocus:
+			return FLinearColor(1.0f, 0.72f, 0.12f);
+		case ERLRunRewardType::VelocityDrive:
+			return FLinearColor(1.0f, 0.38f, 0.08f);
+		case ERLRunRewardType::CloseCall:
+			return FLinearColor(1.0f, 0.12f, 0.08f);
+		default:
+			return FLinearColor(0.2f, 0.9f, 1.0f);
+		}
+	}
+}
 
 void URLRunStatusWidget::NativeOnInitialized()
 {
@@ -107,7 +161,7 @@ void URLRunStatusWidget::BuildWidgetTree()
 		TEXT("RootCanvas"));
 	WidgetTree->RootWidget = RootCanvas;
 
-	UVerticalBox* StatusContainer = WidgetTree->ConstructWidget<UVerticalBox>(
+	StatusContainer = WidgetTree->ConstructWidget<UVerticalBox>(
 		UVerticalBox::StaticClass(),
 		TEXT("StatusContainer"));
 	UCanvasPanelSlot* StatusSlot = RootCanvas->AddChildToCanvas(StatusContainer);
@@ -243,6 +297,175 @@ void URLRunStatusWidget::BuildWidgetTree()
 	UVerticalBoxSlot* MainMenuSlot = ResultsContainer->AddChildToVerticalBox(MainMenuButton);
 	MainMenuSlot->SetHorizontalAlignment(HAlign_Fill);
 	MainMenuSlot->SetPadding(FMargin(24.0f, 4.0f));
+
+	RewardBackdrop = WidgetTree->ConstructWidget<UBorder>(
+		UBorder::StaticClass(),
+		TEXT("RewardBackdrop"));
+	RewardBackdrop->SetBrushColor(FLinearColor(0.005f, 0.012f, 0.03f, 0.92f));
+	RewardBackdrop->SetVisibility(ESlateVisibility::Collapsed);
+	UCanvasPanelSlot* RewardBackdropSlot = RootCanvas->AddChildToCanvas(RewardBackdrop);
+	RewardBackdropSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+	RewardBackdropSlot->SetOffsets(FMargin(0.0f));
+
+	RewardPromptText = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(),
+		TEXT("RewardPromptText"));
+	RewardPromptText->SetText(FText::FromString(TEXT("CHOOSE ONE\nREFLECTION PROTOCOL")));
+	RewardPromptText->SetJustification(ETextJustify::Center);
+	RewardPromptText->SetColorAndOpacity(FLinearColor(0.45f, 0.9f, 1.0f));
+	RewardPromptText->SetShadowOffset(FVector2D(3.0f, 3.0f));
+	RewardPromptText->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.95f));
+	FSlateFontInfo RewardPromptFont = RewardPromptText->GetFont();
+	RewardPromptFont.Size = 28;
+	RewardPromptText->SetFont(RewardPromptFont);
+	RewardPromptText->SetVisibility(ESlateVisibility::Collapsed);
+	UCanvasPanelSlot* RewardPromptSlot = RootCanvas->AddChildToCanvas(RewardPromptText);
+	RewardPromptSlot->SetAnchors(FAnchors(0.5f, 0.06f));
+	RewardPromptSlot->SetAlignment(FVector2D(0.5f, 0.0f));
+	RewardPromptSlot->SetAutoSize(true);
+
+	RewardContainer = WidgetTree->ConstructWidget<UHorizontalBox>(
+		UHorizontalBox::StaticClass(),
+		TEXT("RewardContainer"));
+	UCanvasPanelSlot* RewardSlot = RootCanvas->AddChildToCanvas(RewardContainer);
+	RewardSlot->SetAnchors(FAnchors(0.06f, 0.16f, 0.94f, 0.86f));
+	RewardSlot->SetOffsets(FMargin(0.0f));
+	RewardContainer->SetVisibility(ESlateVisibility::Collapsed);
+	RewardArtTextures.SetNum(static_cast<int32>(ERLRunRewardType::CloseCall) + 1);
+	for (int32 RewardIndex = 0; RewardIndex < RewardArtTextures.Num(); ++RewardIndex)
+	{
+		const ERLRunRewardType RewardType = static_cast<ERLRunRewardType>(RewardIndex);
+		if (const TCHAR* ArtPath = GetRewardArtPath(RewardType))
+		{
+			RewardArtTextures[RewardIndex] = LoadObject<UTexture2D>(nullptr, ArtPath);
+		}
+	}
+
+	for (int32 ChoiceIndex = 0; ChoiceIndex < 3; ++ChoiceIndex)
+	{
+		UButton* RewardButton = WidgetTree->ConstructWidget<UButton>(
+			UButton::StaticClass(),
+			*FString::Printf(TEXT("RewardChoiceButton%d"), ChoiceIndex));
+		FButtonStyle TransparentButtonStyle = RewardButton->GetStyle();
+		TransparentButtonStyle.Normal.DrawAs = ESlateBrushDrawType::NoDrawType;
+		TransparentButtonStyle.Hovered.DrawAs = ESlateBrushDrawType::NoDrawType;
+		TransparentButtonStyle.Pressed.DrawAs = ESlateBrushDrawType::NoDrawType;
+		TransparentButtonStyle.Disabled.DrawAs = ESlateBrushDrawType::NoDrawType;
+		RewardButton->SetStyle(TransparentButtonStyle);
+		UBorder* CardBorder = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(),
+			*FString::Printf(TEXT("RewardCardBorder%d"), ChoiceIndex));
+		CardBorder->SetBrushColor(FLinearColor(0.025f, 0.06f, 0.12f, 0.98f));
+		RewardButton->AddChild(CardBorder);
+
+		UVerticalBox* RewardContent = WidgetTree->ConstructWidget<UVerticalBox>(
+			UVerticalBox::StaticClass(),
+			*FString::Printf(TEXT("RewardChoiceContent%d"), ChoiceIndex));
+		UBorderSlot* CardBorderSlot = Cast<UBorderSlot>(CardBorder->AddChild(RewardContent));
+		CardBorderSlot->SetPadding(FMargin(12.0f));
+
+		UTextBlock* TitleText = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			*FString::Printf(TEXT("RewardTitle%d"), ChoiceIndex));
+		TitleText->SetJustification(ETextJustify::Center);
+		TitleText->SetColorAndOpacity(FLinearColor(0.4f, 0.9f, 1.0f));
+		TitleText->SetAutoWrapText(true);
+		FSlateFontInfo TitleFont = TitleText->GetFont();
+		TitleFont.Size = 28;
+		TitleText->SetFont(TitleFont);
+		UVerticalBoxSlot* TitleSlot = RewardContent->AddChildToVerticalBox(TitleText);
+		TitleSlot->SetPadding(FMargin(12.0f, 14.0f, 12.0f, 10.0f));
+		TitleSlot->SetHorizontalAlignment(HAlign_Center);
+
+		USizeBox* ArtSizeBox = WidgetTree->ConstructWidget<USizeBox>(
+			USizeBox::StaticClass(),
+			*FString::Printf(TEXT("RewardArtSize%d"), ChoiceIndex));
+		ArtSizeBox->SetHeightOverride(220.0f);
+		UBorder* ArtPanel = WidgetTree->ConstructWidget<UBorder>(
+			UBorder::StaticClass(),
+			*FString::Printf(TEXT("RewardArtPanel%d"), ChoiceIndex));
+		ArtPanel->SetBrushColor(FLinearColor(0.04f, 0.18f, 0.28f, 1.0f));
+		ArtSizeBox->AddChild(ArtPanel);
+
+		UScaleBox* ArtScaleBox = WidgetTree->ConstructWidget<UScaleBox>(
+			UScaleBox::StaticClass(),
+			*FString::Printf(TEXT("RewardArtScale%d"), ChoiceIndex));
+		ArtScaleBox->SetStretch(EStretch::ScaleToFill);
+		ArtScaleBox->SetStretchDirection(EStretchDirection::Both);
+		ArtPanel->AddChild(ArtScaleBox);
+
+		UImage* ArtImage = WidgetTree->ConstructWidget<UImage>(
+			UImage::StaticClass(),
+			*FString::Printf(TEXT("RewardArtImage%d"), ChoiceIndex));
+		ArtImage->SetVisibility(ESlateVisibility::HitTestInvisible);
+		ArtScaleBox->AddChild(ArtImage);
+		UVerticalBoxSlot* ArtSlot = RewardContent->AddChildToVerticalBox(ArtSizeBox);
+		ArtSlot->SetPadding(FMargin(12.0f, 0.0f, 12.0f, 12.0f));
+		ArtSlot->SetHorizontalAlignment(HAlign_Fill);
+
+		UTextBlock* EffectLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			*FString::Printf(TEXT("RewardEffectLabel%d"), ChoiceIndex));
+		EffectLabel->SetText(FText::FromString(TEXT("REFLECTION PROTOCOL")));
+		EffectLabel->SetJustification(ETextJustify::Center);
+		EffectLabel->SetColorAndOpacity(FLinearColor(0.72f, 0.78f, 0.92f));
+		FSlateFontInfo EffectFont = EffectLabel->GetFont();
+		EffectFont.Size = 12;
+		EffectLabel->SetFont(EffectFont);
+		UVerticalBoxSlot* EffectSlot = RewardContent->AddChildToVerticalBox(EffectLabel);
+		EffectSlot->SetPadding(FMargin(12.0f, 0.0f, 12.0f, 4.0f));
+		EffectSlot->SetHorizontalAlignment(HAlign_Center);
+
+		UTextBlock* DescriptionText = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			*FString::Printf(TEXT("RewardDescription%d"), ChoiceIndex));
+		DescriptionText->SetJustification(ETextJustify::Center);
+		DescriptionText->SetColorAndOpacity(FLinearColor(0.9f, 0.95f, 1.0f));
+		DescriptionText->SetAutoWrapText(true);
+		DescriptionText->SetWrapTextAt(360.0f);
+		FSlateFontInfo DescriptionFont = DescriptionText->GetFont();
+		DescriptionFont.Size = 17;
+		DescriptionText->SetFont(DescriptionFont);
+		UVerticalBoxSlot* DescriptionSlot = RewardContent->AddChildToVerticalBox(DescriptionText);
+		DescriptionSlot->SetPadding(FMargin(18.0f, 4.0f, 18.0f, 10.0f));
+		DescriptionSlot->SetHorizontalAlignment(HAlign_Center);
+
+		UTextBlock* SelectLabel = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			*FString::Printf(TEXT("RewardSelectLabel%d"), ChoiceIndex));
+		SelectLabel->SetText(FText::FromString(TEXT("CLICK TO SELECT")));
+		SelectLabel->SetJustification(ETextJustify::Center);
+		SelectLabel->SetColorAndOpacity(FLinearColor(0.92f, 0.96f, 1.0f));
+		FSlateFontInfo SelectFont = SelectLabel->GetFont();
+		SelectFont.Size = 13;
+		SelectLabel->SetFont(SelectFont);
+		UVerticalBoxSlot* SelectSlot = RewardContent->AddChildToVerticalBox(SelectLabel);
+		SelectSlot->SetPadding(FMargin(12.0f, 4.0f, 12.0f, 14.0f));
+		SelectSlot->SetHorizontalAlignment(HAlign_Center);
+
+		switch (ChoiceIndex)
+		{
+		case 0:
+			RewardButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRewardChoiceOneClicked);
+			break;
+		case 1:
+			RewardButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRewardChoiceTwoClicked);
+			break;
+		default:
+			RewardButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRewardChoiceThreeClicked);
+			break;
+		}
+
+		UHorizontalBoxSlot* ButtonSlot = RewardContainer->AddChildToHorizontalBox(RewardButton);
+		ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		ButtonSlot->SetPadding(FMargin(14.0f));
+		ButtonSlot->SetVerticalAlignment(VAlign_Fill);
+		RewardButtons.Add(RewardButton);
+		RewardTitleTexts.Add(TitleText);
+		RewardDescriptionTexts.Add(DescriptionText);
+		RewardArtPanels.Add(ArtPanel);
+		RewardArtImages.Add(ArtImage);
+	}
 }
 
 void URLRunStatusWidget::RefreshDisplay()
@@ -257,7 +480,8 @@ void URLRunStatusWidget::RefreshDisplay()
 	const bool bShowingResults =
 		RunState == ERLRunState::TutorialCompleted ||
 		RunState == ERLRunState::RunCompleted || RunState == ERLRunState::GameOver;
-	SetVisibility(bShowingResults
+	const bool bChoosingReward = RunState == ERLRunState::RewardSelection;
+	SetVisibility((bShowingResults || bChoosingReward)
 		? ESlateVisibility::Visible
 		: ESlateVisibility::HitTestInvisible);
 	const int32 RoundCount = BoundGameMode->GetRoundCount();
@@ -279,6 +503,7 @@ void URLRunStatusWidget::RefreshDisplay()
 	UpdateTimerText();
 	UpdateStateText();
 	UpdateResultsPanel();
+	UpdateRewardChoices();
 }
 
 void URLRunStatusWidget::HandleRestartClicked()
@@ -301,6 +526,30 @@ void URLRunStatusWidget::HandleMainMenuClicked()
 	if (BoundGameMode)
 	{
 		BoundGameMode->ReturnToMainMenu();
+	}
+}
+
+void URLRunStatusWidget::HandleRewardChoiceOneClicked()
+{
+	if (BoundGameMode)
+	{
+		BoundGameMode->SelectReward(0);
+	}
+}
+
+void URLRunStatusWidget::HandleRewardChoiceTwoClicked()
+{
+	if (BoundGameMode)
+	{
+		BoundGameMode->SelectReward(1);
+	}
+}
+
+void URLRunStatusWidget::HandleRewardChoiceThreeClicked()
+{
+	if (BoundGameMode)
+	{
+		BoundGameMode->SelectReward(2);
 	}
 }
 
@@ -346,6 +595,87 @@ void URLRunStatusWidget::UpdateResultsPanel()
 	MainMenuButton->SetIsEnabled(BoundGameMode->CanReturnToMainMenu());
 }
 
+void URLRunStatusWidget::UpdateRewardChoices()
+{
+	if (!RewardContainer || !BoundGameMode)
+	{
+		return;
+	}
+
+	const bool bChoosingReward = BoundGameMode->IsChoosingReward();
+	if (StatusContainer)
+	{
+		StatusContainer->SetVisibility(
+			bChoosingReward ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	}
+	if (RewardPromptText)
+	{
+		RewardPromptText->SetVisibility(
+			bChoosingReward ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (ARLPlayerController* PlayerController = Cast<ARLPlayerController>(GetOwningPlayer()))
+	{
+		PlayerController->SetGameplayHUDVisible(!bChoosingReward);
+	}
+	if (RewardBackdrop)
+	{
+		RewardBackdrop->SetVisibility(
+			bChoosingReward ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	RewardContainer->SetVisibility(
+		bChoosingReward ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	for (int32 ChoiceIndex = 0; ChoiceIndex < RewardButtons.Num(); ++ChoiceIndex)
+	{
+		const bool bValidChoice = bChoosingReward &&
+			ChoiceIndex < BoundGameMode->GetRewardChoiceCount();
+		if (RewardButtons[ChoiceIndex])
+		{
+			RewardButtons[ChoiceIndex]->SetIsEnabled(bValidChoice);
+		}
+		if (RewardTitleTexts.IsValidIndex(ChoiceIndex) && RewardTitleTexts[ChoiceIndex])
+		{
+			RewardTitleTexts[ChoiceIndex]->SetText(
+				bValidChoice ? BoundGameMode->GetRewardChoiceTitle(ChoiceIndex) : FText::GetEmpty());
+		}
+		if (RewardDescriptionTexts.IsValidIndex(ChoiceIndex) && RewardDescriptionTexts[ChoiceIndex])
+		{
+			RewardDescriptionTexts[ChoiceIndex]->SetText(
+				bValidChoice ? BoundGameMode->GetRewardChoiceDescription(ChoiceIndex) : FText::GetEmpty());
+		}
+		const TOptional<ERLRunRewardType> RewardType = bValidChoice
+			? BoundGameMode->GetRewardChoiceType(ChoiceIndex)
+			: TOptional<ERLRunRewardType>();
+		const FLinearColor CardAccent = RewardType.IsSet()
+			? GetRewardAccentColor(RewardType.GetValue())
+			: FLinearColor(0.2f, 0.9f, 1.0f);
+		if (RewardArtPanels.IsValidIndex(ChoiceIndex) && RewardArtPanels[ChoiceIndex])
+		{
+			RewardArtPanels[ChoiceIndex]->SetBrushColor(
+				FLinearColor(CardAccent.R * 0.12f, CardAccent.G * 0.12f, CardAccent.B * 0.12f, 1.0f));
+		}
+		if (RewardTitleTexts.IsValidIndex(ChoiceIndex) && RewardTitleTexts[ChoiceIndex])
+		{
+			RewardTitleTexts[ChoiceIndex]->SetColorAndOpacity(CardAccent);
+		}
+		if (RewardArtImages.IsValidIndex(ChoiceIndex) && RewardArtImages[ChoiceIndex])
+		{
+			UTexture2D* ArtTexture = nullptr;
+			if (RewardType.IsSet())
+			{
+				const int32 RewardIndex = static_cast<int32>(RewardType.GetValue());
+				if (RewardArtTextures.IsValidIndex(RewardIndex))
+				{
+					ArtTexture = RewardArtTextures[RewardIndex];
+				}
+			}
+			RewardArtImages[ChoiceIndex]->SetBrushFromTexture(ArtTexture, true);
+			RewardArtImages[ChoiceIndex]->SetVisibility(ArtTexture
+				? ESlateVisibility::HitTestInvisible
+				: ESlateVisibility::Collapsed);
+		}
+	}
+}
+
 void URLRunStatusWidget::UpdateInputMode()
 {
 	APlayerController* PlayerController = GetOwningPlayer();
@@ -355,10 +685,28 @@ void URLRunStatusWidget::UpdateInputMode()
 	}
 
 	const ERLRunState RunState = BoundGameMode->GetRunState();
-	if (RunState == ERLRunState::TutorialCompleted ||
+	if (RunState == ERLRunState::RewardSelection)
+	{
+		FInputModeGameAndUI InputMode;
+		if (RewardButtons.IsValidIndex(0))
+		{
+			InputMode.SetWidgetToFocus(RewardButtons[0]->GetCachedWidget());
+		}
+		PlayerController->SetInputMode(InputMode);
+		PlayerController->bShowMouseCursor = true;
+	}
+	else if (RunState == ERLRunState::TutorialCompleted ||
 		RunState == ERLRunState::RunCompleted || RunState == ERLRunState::GameOver)
 	{
 		FInputModeUIOnly InputMode;
+		PlayerController->SetInputMode(InputMode);
+		PlayerController->bShowMouseCursor = true;
+	}
+	else
+	{
+		FInputModeGameAndUI InputMode;
+		InputMode.SetHideCursorDuringCapture(false);
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		PlayerController->SetInputMode(InputMode);
 		PlayerController->bShowMouseCursor = true;
 	}
@@ -453,6 +801,9 @@ void URLRunStatusWidget::UpdateStateText()
 		{
 			StateText->SetVisibility(ESlateVisibility::Collapsed);
 		}
+		break;
+	case ERLRunState::RewardSelection:
+		StateText->SetVisibility(ESlateVisibility::Collapsed);
 		break;
 	case ERLRunState::Intermission:
 		if (RoundClearMessageRemaining > 0.0f)

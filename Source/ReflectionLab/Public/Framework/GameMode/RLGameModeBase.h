@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Data/RLProjectileDefinitionDataAsset.h"
+#include "Data/RLRunRewardTypes.h"
 #include "GameFramework/GameModeBase.h"
 #include "RLGameModeBase.generated.h"
 
@@ -18,6 +19,7 @@ enum class ERLRunState : uint8
 	Waiting,
 	Countdown,
 	PlayingRound,
+	RewardSelection,
 	Intermission,
 	TutorialCompleted,
 	RunCompleted,
@@ -157,6 +159,23 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Run|Navigation")
 	bool CanReturnToMainMenu() const { return !MainMenuLevelName.IsNone(); }
 
+	UFUNCTION(BlueprintPure, Category = "Run|Rewards")
+	bool IsChoosingReward() const { return RunState == ERLRunState::RewardSelection; }
+
+	UFUNCTION(BlueprintPure, Category = "Run|Rewards")
+	int32 GetRewardChoiceCount() const { return PendingRewardChoices.Num(); }
+
+	UFUNCTION(BlueprintPure, Category = "Run|Rewards")
+	FText GetRewardChoiceTitle(int32 ChoiceIndex) const;
+
+	UFUNCTION(BlueprintPure, Category = "Run|Rewards")
+	FText GetRewardChoiceDescription(int32 ChoiceIndex) const;
+
+	TOptional<ERLRunRewardType> GetRewardChoiceType(int32 ChoiceIndex) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Run|Rewards")
+	bool SelectReward(int32 ChoiceIndex);
+
 	UPROPERTY(BlueprintAssignable, Category = "Run")
 	FRLRunStateChangedSignature OnRunStateChanged;
 
@@ -200,7 +219,10 @@ private:
 	void ClearActiveProjectiles();
 	void CacheEnemySpawners();
 	void StopEnemySpawners();
+	void BeginRewardSelection();
+	void BeginIntermission();
 	void CleanupRoundActors(const FRLRoundDefinition& RoundDefinition);
+	void BuildRewardChoices();
 	void BindPlayerStats();
 	void ResetRunRecord();
 	void SetRunState(ERLRunState NewState);
@@ -236,3 +258,4 @@ private:
 	bool bTutorialOnlyMode = false;
 	TWeakObjectPtr<ARLEnemyCharacter> TutorialEnemy;
 };
+	TArray<ERLRunRewardType> PendingRewardChoices;
