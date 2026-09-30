@@ -200,6 +200,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run", meta = (ClampMin = "0.0"))
 	float RoundCountdownDuration = 3.0f;
 
+	// Arena center in world XY coordinates. The player's current height is retained
+	// when a new round begins so the destination remains valid on uneven floors.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Arena")
+	FVector ArenaCenterLocation = FVector::ZeroVector;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Navigation")
 	FName MainMenuLevelName = TEXT("MainMenu");
 
@@ -208,6 +213,7 @@ private:
 	void HandleParryChainChanged(int32 ParryChainCount);
 
 	void BeginRoundCountdown(int32 RoundIndex);
+	void ResetPlayerToArenaCenter();
 	void FinishRoundCountdown();
 	void StartRound(int32 RoundIndex);
 	void UpdateRound();
@@ -225,6 +231,7 @@ private:
 	void BuildRewardChoices();
 	void BindPlayerStats();
 	void ResetRunRecord();
+	void EnsureExtendedRounds();
 	void SetRunState(ERLRunState NewState);
 	const FRLRoundDefinition* GetCurrentRoundDefinition() const;
 	int32 ResolveStartingRoundIndex() const;
