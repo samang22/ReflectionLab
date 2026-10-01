@@ -24,6 +24,7 @@ class REFLECTIONLAB_API ARLEnemyCharacter : public ACharacter
 
 public:
 	ARLEnemyCharacter();
+	virtual void Tick(float DeltaSeconds) override;
 
 	virtual float TakeDamage(
 		float DamageAmount,
@@ -133,6 +134,7 @@ private:
 	friend class URLEnemyPoolSubsystem;
 
 	void ApplyCombatConfig();
+	void UpdateFacingPlayer();
 	void CacheBaseCombatValues();
 	void SpawnDeathEffect();
 	bool IsProtectedByShield() const;

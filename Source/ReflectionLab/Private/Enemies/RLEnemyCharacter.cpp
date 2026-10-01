@@ -1,4 +1,5 @@
 #include "Enemies/RLEnemyCharacter.h"
+#include "Animation/RLEnemyAnimInstance.h"
 
 #include "Combat/RLExplosionVisual.h"
 #include "Combat/RLProjectile.h"
@@ -39,8 +40,14 @@ ARLEnemyCharacter::ARLEnemyCharacter()
 		TEXT("/Game/ReflectionLab/Art/Materials/Projectiles/"
 			 "MI_Projectile_Reflected.MI_Projectile_Reflected"));
 
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = false;
+	bUseControllerRotationRoll = false;
+	GetCharacterMovement()->bOrientRotationToMovement = false;
+	GetCharacterMovement()->bUseControllerDesiredRotation = false;
 	GetMesh()->SetReceivesDecals(false);
+	GetMesh()->SetAnimInstanceClass(URLEnemyAnimInstance::StaticClass());
 
 	MuzzlePoint = CreateDefaultSubobject<USceneComponent>(TEXT("MuzzlePoint"));
 	MuzzlePoint->SetupAttachment(GetRootComponent());
@@ -65,6 +72,14 @@ ARLEnemyCharacter::ARLEnemyCharacter()
 void ARLEnemyCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Enforce facing ownership even when a blueprint has saved rotation defaults.
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = false;
+	bUseControllerRotationRoll = false;
+	GetCharacterMovement()->bOrientRotationToMovement = false;
+	GetCharacterMovement()->bUseControllerDesiredRotation = false;
+	UpdateFacingPlayer();
 
 	ApplyCombatConfig();
 	CacheBaseCombatValues();
@@ -92,6 +107,32 @@ void ARLEnemyCharacter::BeginPlay()
 	if (bIsPoolActive && bAutoStartFiring)
 	{
 		StartFiring();
+	}
+}
+
+void ARLEnemyCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	UpdateFacingPlayer();
+}
+
+void ARLEnemyCharacter::UpdateFacingPlayer()
+{
+	if (!bIsPoolActive)
+	{
+		return;
+	}
+
+	const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	if (!IsValid(PlayerPawn))
+	{
+		return;
+	}
+
+	const FVector ToPlayer = (PlayerPawn->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+	if (!ToPlayer.IsNearlyZero())
+	{
+		SetActorRotation(FRotator(0.0f, ToPlayer.Rotation().Yaw, 0.0f));
 	}
 }
 
@@ -143,7 +184,7 @@ void ARLEnemyCharacter::ApplyWaveDefinition(const FRLWaveDefinition& WaveDefinit
 void ARLEnemyCharacter::SetTutorialMovementLocked(bool bLocked)
 {
 	bTutorialMovementLocked = bLocked;
-	SetActorTickEnabled(bIsPoolActive && !bTutorialMovementLocked);
+	SetActorTickEnabled(bIsPoolActive);
 
 	if (!bIsPoolActive)
 	{
@@ -392,10 +433,25 @@ bool ARLEnemyCharacter::SpawnProjectile(
 			bSpawnedAny |= SpawnConfiguredProjectile(
 				FTransform(CrossDirection.Rotation(), CrossSpawnLocation));
 		}
+		if (bSpawnedAny)
+		{
+			if (URLEnemyAnimInstance* AnimInstance = Cast<URLEnemyAnimInstance>(GetMesh()->GetAnimInstance()))
+			{
+				AnimInstance->PlayShootAnimation();
+			}
+		}
 		return bSpawnedAny;
 	}
 
-	return SpawnConfiguredProjectile(FTransform(SpawnRotation, SpawnLocation));
+	const bool bSpawned = SpawnConfiguredProjectile(FTransform(SpawnRotation, SpawnLocation));
+	if (bSpawned)
+	{
+		if (URLEnemyAnimInstance* AnimInstance = Cast<URLEnemyAnimInstance>(GetMesh()->GetAnimInstance()))
+		{
+			AnimInstance->PlayShootAnimation();
+		}
+	}
+	return bSpawned;
 }
 
 void ARLEnemyCharacter::SetTutorialCombatControlled(bool bControlled)
@@ -549,6 +605,10 @@ void ARLEnemyCharacter::ReturnToPool()
 
 void ARLEnemyCharacter::ActivateFromPool(const FTransform& SpawnTransform)
 {
+	if (URLEnemyAnimInstance* AnimInstance = Cast<URLEnemyAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		AnimInstance->ResetCombatAnimation();
+	}
 	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
 	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
@@ -566,6 +626,7 @@ void ARLEnemyCharacter::ActivateFromPool(const FTransform& SpawnTransform)
 	}
 
 	bIsPoolActive = true;
+	UpdateFacingPlayer();
 	bShieldEmitterActive = false;
 	bTutorialCombatControlled = false;
 	bTutorialInvulnerable = false;
@@ -581,6 +642,10 @@ void ARLEnemyCharacter::ActivateFromPool(const FTransform& SpawnTransform)
 
 void ARLEnemyCharacter::DeactivateForPool()
 {
+	if (URLEnemyAnimInstance* AnimInstance = Cast<URLEnemyAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		AnimInstance->ResetCombatAnimation();
+	}
 	StopFiring();
 	bIsPoolActive = false;
 	bShieldEmitterActive = false;

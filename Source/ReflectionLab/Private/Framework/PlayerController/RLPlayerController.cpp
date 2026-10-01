@@ -204,7 +204,12 @@ void ARLPlayerController::SetGameplayHUDVisible(bool bVisible)
 		: ESlateVisibility::Collapsed;
 	if (ParryComboWidget)
 	{
-		ParryComboWidget->SetVisibility(Visibility);
+		const ARLGameModeBase* GameMode = GetWorld()
+			? GetWorld()->GetAuthGameMode<ARLGameModeBase>() : nullptr;
+		const bool bShowCombo = bVisible && GameMode &&
+			GameMode->GetRunState() == ERLRunState::PlayingRound;
+		ParryComboWidget->SetVisibility(bShowCombo
+			? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 	if (PlayerHealthWidget)
 	{

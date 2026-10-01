@@ -68,7 +68,7 @@ void URLParryComboWidget::HandleParryComboChanged(
 	{
 		EnhancementText->SetVisibility(ESlateVisibility::HitTestInvisible);
 		EnhancementText->SetText(FText::FromString(
-			FString::Printf(TEXT("POWER STAGE %d"), FMath::Clamp(EnhancementLevel, 1, 4))));
+			FString::Printf(TEXT("POWER LEVEL %d"), FMath::Clamp(EnhancementLevel, 1, 4))));
 		EnhancementText->SetColorAndOpacity(
 			EnhancementLevel >= 4
 				? FLinearColor(1.0f, 0.55f, 0.05f)
