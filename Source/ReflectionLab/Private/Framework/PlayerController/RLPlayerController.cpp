@@ -435,9 +435,51 @@ void ARLPlayerController::UpdateTutorial()
 	}
 
 	ARLGameModeBase* GameMode = GetWorld()->GetAuthGameMode<ARLGameModeBase>();
-	if (!GameMode || !GameMode->IsCurrentRoundTutorial() ||
-		GameMode->GetRunState() != ERLRunState::PlayingRound)
+	if (!GameMode || !GameMode->IsCurrentRoundTutorial())
 	{
+		return;
+	}
+	if (GameMode->IsChoosingReward() && TutorialStage != ERLTutorialStage::WaitingForRewardChoice)
+	{
+		ShowTutorialPrompt(
+			LOCTEXT("RoundRewardTitle", "ROUND CLEAR — CHOOSE A REWARD"),
+			LOCTEXT("RoundRewardBody",
+				"After clearing a round, choose one of three reward cards.\nThe selected upgrade lasts for the rest of that run.\nClose this message and select a card to finish the tutorial.\nTutorial upgrades reset when you start the main game."),
+			ERLTutorialStage::WaitingForRewardChoice);
+		return;
+	}
+	if (GameMode->GetRunState() != ERLRunState::PlayingRound)
+	{
+		return;
+	}
+	if (TutorialStage == ERLTutorialStage::WaitingForExplosiveDelay)
+	{
+		if (GetWorld()->GetTimeSeconds() < TutorialPromptReadyTimeSeconds)
+		{
+			return;
+		}
+		TutorialStage = ERLTutorialStage::WaitingForExplosiveProjectile;
+		NextTutorialProjectileRequestTimeSeconds = 0.0f;
+	}
+	if (TutorialStage == ERLTutorialStage::WaitingForPerfectExplanation)
+	{
+		if (GetWorld()->GetTimeSeconds() >= TutorialPromptReadyTimeSeconds)
+		{
+			ShowPerfectParryTutorial();
+		}
+		return;
+	}
+	if (TutorialStage == ERLTutorialStage::WaitingForCloseRangeExplanation)
+	{
+		if (GetWorld()->GetTimeSeconds() < TutorialPromptReadyTimeSeconds)
+		{
+			return;
+		}
+		ShowTutorialPrompt(
+			LOCTEXT("CloseParryTitle", "CLOSE-RANGE PARRY"),
+			LOCTEXT("CloseParryBody",
+				"Let a projectile get close to your character before parrying.\nA close-range parry returns a faster, larger shot with extra piercing.\nDistance is measured from you to the projectile, not to the enemy.\nGuard shots still cannot damage enemies or pierce."),
+			ERLTutorialStage::WaitingForCloseRangeParry);
 		return;
 	}
 
@@ -459,7 +501,8 @@ void ARLPlayerController::UpdateTutorial()
 			LogTemp,
 			Display,
 			TEXT("Tutorial advanced after polling a successful parry."));
-		ShowPerfectParryTutorial();
+		TutorialStage = ERLTutorialStage::WaitingForPerfectExplanation;
+		TutorialPromptReadyTimeSeconds = GetWorld()->GetTimeSeconds() + 2.0f;
 		return;
 	}
 
@@ -481,6 +524,11 @@ void ARLPlayerController::UpdateTutorial()
 	}
 
 	UpdateTutorialProjectileRequest(*GameMode);
+	if (TutorialStage == ERLTutorialStage::WaitingForCombo && TutorialBoundPlayer &&
+		TutorialBoundPlayer->GetParryComboCount() >= 2)
+	{
+		ShowComboTutorial();
+	}
 
 	if (TutorialStage != ERLTutorialStage::WaitingForNormalProjectile &&
 		TutorialStage != ERLTutorialStage::WaitingForExplosiveProjectile &&
@@ -555,6 +603,8 @@ void ARLPlayerController::UpdateTutorialProjectileRequest(ARLGameModeBase& GameM
 	{
 	case ERLTutorialStage::WaitingForNormalProjectile:
 	case ERLTutorialStage::WaitingForSuccessfulParry:
+	case ERLTutorialStage::WaitingForPerfectParry:
+	case ERLTutorialStage::WaitingForCloseRangeParry:
 		RequestedBehavior = ERLProjectileBehavior::Normal;
 		break;
 	case ERLTutorialStage::WaitingForExplosiveProjectile:
@@ -650,7 +700,7 @@ void ARLPlayerController::ShowPerfectParryTutorial()
 		LOCTEXT(
 			"PerfectParryBody",
 			"Parry a projectile in the outer ring to perform a perfect parry.\nA perfect parry splits the reflected shot into three projectiles and covers a wider area."),
-		ERLTutorialStage::WaitingForExplosiveProjectile);
+		ERLTutorialStage::WaitingForPerfectParry);
 }
 
 void ARLPlayerController::DismissTutorialPrompt()
@@ -662,6 +712,10 @@ void ARLPlayerController::DismissTutorialPrompt()
 
 	bTutorialPromptVisible = false;
 	TutorialStage = TutorialStageAfterDismiss;
+	if (TutorialStage == ERLTutorialStage::WaitingForCombo)
+	{
+		TutorialPromptReadyTimeSeconds = GetWorld()->GetTimeSeconds() + 2.0f;
+	}
 	NextTutorialProjectileRequestTimeSeconds = 0.0f;
 	UE_LOG(
 		LogTemp,
@@ -698,8 +752,6 @@ void ARLPlayerController::HandleTutorialParryComboChanged(
 {
 	(void)MultiParryCount;
 	(void)EnhancementLevel;
-	(void)bPerfectParry;
-	(void)bCloseRangeParry;
 
 	if (ComboCount > 0 &&
 		TutorialStage == ERLTutorialStage::WaitingForSuccessfulParry)
@@ -709,11 +761,32 @@ void ARLPlayerController::HandleTutorialParryComboChanged(
 			Display,
 			TEXT("Tutorial advanced from parry success event. Combo: %d."),
 			ComboCount);
-		ShowPerfectParryTutorial();
+		TutorialStage = ERLTutorialStage::WaitingForPerfectExplanation;
+		TutorialPromptReadyTimeSeconds = GetWorld()->GetTimeSeconds() + 2.0f;
+		return;
+	}
+	if (bPerfectParry && TutorialStage == ERLTutorialStage::WaitingForPerfectParry)
+	{
+		TutorialStage = ERLTutorialStage::WaitingForCloseRangeExplanation;
+		TutorialPromptReadyTimeSeconds = GetWorld()->GetTimeSeconds() + 2.0f;
 		return;
 	}
 
+	if (bCloseRangeParry && TutorialStage == ERLTutorialStage::WaitingForCloseRangeParry)
+	{
+		TutorialStage = ERLTutorialStage::WaitingForExplosiveDelay;
+		TutorialPromptReadyTimeSeconds = GetWorld()->GetTimeSeconds() + 2.0f;
+		return;
+	}
 	if (ComboCount >= 2 && TutorialStage == ERLTutorialStage::WaitingForCombo)
+	{
+		ShowComboTutorial();
+	}
+}
+
+void ARLPlayerController::ShowComboTutorial()
+{
+	if (GetWorld() && GetWorld()->GetTimeSeconds() >= TutorialPromptReadyTimeSeconds)
 	{
 		ShowTutorialPrompt(
 			LOCTEXT("ComboTitle", "BUILD THE COMBO"),

@@ -588,7 +588,7 @@ void URLRunStatusWidget::UpdateResultsPanel()
 	if (RunState == ERLRunState::TutorialCompleted)
 	{
 		ResultsText->SetText(FText::FromString(TEXT(
-			"TUTORIAL COMPLETE\nStart the main run or return to the main menu.")));
+			"TUTORIAL COMPLETE — REWARD ACQUIRED\nChoose a reward after each cleared round to strengthen your run.\nStart the main run or return to the main menu.")));
 		if (RestartButtonLabel)
 		{
 			RestartButtonLabel->SetText(FText::FromString(TEXT("START GAME")));

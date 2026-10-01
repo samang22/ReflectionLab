@@ -21,10 +21,16 @@ enum class ERLTutorialStage : uint8
 	WaitingForMovement,
 	WaitingForNormalProjectile,
 	WaitingForSuccessfulParry,
+	WaitingForPerfectExplanation,
+	WaitingForPerfectParry,
+	WaitingForCloseRangeExplanation,
+	WaitingForCloseRangeParry,
+	WaitingForExplosiveDelay,
 	WaitingForExplosiveProjectile,
 	WaitingForExplosiveResolution,
 	WaitingForGuardProjectile,
 	WaitingForCombo,
+	WaitingForRewardChoice,
 	Complete,
 };
 
@@ -67,6 +73,7 @@ private:
 		const FText& Body,
 		ERLTutorialStage StageAfterDismiss);
 	void ShowPerfectParryTutorial();
+	void ShowComboTutorial();
 	void UpdateTutorialProjectileRequest(class ARLGameModeBase& GameMode);
 	bool HasActiveTutorialProjectile(ERLProjectileBehavior ProjectileBehavior) const;
 	void BindTutorialPlayer(class ARLPlayerCharacter* PlayerCharacter);
@@ -128,4 +135,5 @@ private:
 	ERLTutorialStage TutorialStageAfterDismiss = ERLTutorialStage::WaitingForTutorial;
 	bool bTutorialPromptVisible = false;
 	float NextTutorialProjectileRequestTimeSeconds = 0.0f;
+	float TutorialPromptReadyTimeSeconds = 0.0f;
 };

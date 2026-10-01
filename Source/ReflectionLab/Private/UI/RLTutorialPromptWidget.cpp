@@ -63,7 +63,7 @@ void URLTutorialPromptWidget::BuildWidgetTree()
 	UCanvasPanelSlot* PromptSlot = RootCanvas->AddChildToCanvas(PromptPanel);
 	PromptSlot->SetAnchors(FAnchors(0.5f, 0.5f));
 	PromptSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-	PromptSlot->SetSize(FVector2D(720.0f, 350.0f));
+	PromptSlot->SetSize(FVector2D(900.0f, 500.0f));
 
 	UVerticalBox* PromptContent = WidgetTree->ConstructWidget<UVerticalBox>(
 		UVerticalBox::StaticClass(), TEXT("PromptContent"));

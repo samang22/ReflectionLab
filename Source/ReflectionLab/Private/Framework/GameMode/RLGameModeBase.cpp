@@ -13,6 +13,60 @@
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+#include "Engine/Engine.h"
+#include "GameFramework/PlayerController.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRLTutorialRewardTest, "ReflectionLab.Run.TutorialReward",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRLTutorialRewardTest::RunTest(const FString& Parameters)
+{
+	const UWorld::InitializationValues Settings = UWorld::InitializationValues()
+		.AllowAudioPlayback(false).CreatePhysicsScene(true).CreateNavigation(false)
+		.CreateAISystem(false).ShouldSimulatePhysics(false).SetTransactional(false);
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr,
+		true, ERHIFeatureLevel::Num, &Settings);
+	if (!TestNotNull(TEXT("Test world"), World))
+	{
+		return false;
+	}
+	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
+	FActorSpawnParameters Spawn;
+	Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	ARLGameModeBase* Mode = World->SpawnActor<ARLGameModeBase>();
+	APlayerController* Controller = World->SpawnActor<APlayerController>();
+	ARLPlayerCharacter* Player = World->SpawnActor<ARLPlayerCharacter>(
+		ARLPlayerCharacter::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Spawn);
+	if (TestNotNull(TEXT("Game mode"), Mode) && TestNotNull(TEXT("Player controller"), Controller)
+		&& TestNotNull(TEXT("Player"), Player))
+	{
+		Controller->Possess(Player);
+		// This isolated world has not begun play, so register its player explicitly.
+		World->AddController(Controller);
+		TestTrue(TEXT("Player available to gameplay lookup"),
+			UGameplayStatics::GetPlayerCharacter(Mode, 0) == Player);
+		Mode->RunDefinition = NewObject<URLRunDefinitionDataAsset>(Mode);
+		Mode->RunDefinition->Rounds.AddDefaulted_GetRef().bIsTutorial = true;
+		Mode->CurrentRoundIndex = 0;
+		Mode->bTutorialOnlyMode = true;
+		Mode->RunState = ERLRunState::PlayingRound;
+		Mode->FinishRound();
+		TestTrue(TEXT("Tutorial ends in reward selection"), Mode->IsChoosingReward());
+		TestEqual(TEXT("Three practice cards"), Mode->GetRewardChoiceCount(), 3);
+		TestFalse(TEXT("Invalid reward rejected"), Mode->SelectReward(-1));
+		TestTrue(TEXT("Practice reward applied"), Mode->SelectReward(0));
+		TestTrue(TEXT("Selection completes tutorial"), Mode->GetRunState() == ERLRunState::TutorialCompleted);
+		TestFalse(TEXT("Duplicate selection rejected"), Mode->SelectReward(0));
+	}
+	World->DestroyWorld(false);
+	GEngine->DestroyWorldContext(World);
+	return true;
+}
+
+#endif
+
 ARLGameModeBase::ARLGameModeBase()
 {
 	static ConstructorHelpers::FObjectFinder<URLRunDefinitionDataAsset> RunDefinitionFinder(
@@ -691,13 +745,13 @@ void ARLGameModeBase::FinishRound()
 		SetRunState(ERLRunState::RunCompleted);
 		return;
 	}
-	if (RoundDefinition->bIsTutorial && bTutorialOnlyMode)
+	if (RoundDefinition->bIsTutorial)
 	{
 		StopEnemySpawners();
 		TutorialEnemy.Reset();
 		SetTutorialEnemyMovementLocked(false);
 		CleanupRoundActors(*RoundDefinition);
-		SetRunState(ERLRunState::TutorialCompleted);
+		BeginRewardSelection();
 		return;
 	}
 
@@ -729,6 +783,11 @@ void ARLGameModeBase::BeginRewardSelection()
 	if (PendingRewardChoices.Num() < 3)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Reward selection skipped: insufficient reward choices."));
+		if (IsCurrentRoundTutorial())
+		{
+			SetRunState(ERLRunState::TutorialCompleted);
+			return;
+		}
 		BeginIntermission();
 		return;
 	}
@@ -876,7 +935,15 @@ bool ARLGameModeBase::SelectReward(int32 ChoiceIndex)
 		TEXT("Selected run reward %d after round %d."),
 		static_cast<int32>(SelectedReward),
 		GetCurrentRoundNumber());
-	BeginIntermission();
+	if (IsCurrentRoundTutorial() && bTutorialOnlyMode)
+	{
+		PendingRewardChoices.Reset();
+		SetRunState(ERLRunState::TutorialCompleted);
+	}
+	else
+	{
+		BeginIntermission();
+	}
 	return true;
 }
 

@@ -232,6 +232,7 @@ private:
 	void BindPlayerStats();
 	void ResetRunRecord();
 	void EnsureExtendedRounds();
+	friend class FRLTutorialRewardTest;
 	void SetRunState(ERLRunState NewState);
 	const FRLRoundDefinition* GetCurrentRoundDefinition() const;
 	int32 ResolveStartingRoundIndex() const;
