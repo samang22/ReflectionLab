@@ -5,6 +5,7 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Components/Border.h"
 #include "Components/BorderSlot.h"
 #include "Components/HorizontalBox.h"
@@ -356,13 +357,18 @@ void URLRunStatusWidget::BuildWidgetTree()
 			UBorder::StaticClass(),
 			*FString::Printf(TEXT("RewardCardBorder%d"), ChoiceIndex));
 		CardBorder->SetBrushColor(FLinearColor(0.025f, 0.06f, 0.12f, 0.98f));
-		RewardButton->AddChild(CardBorder);
+		UButtonSlot* CardButtonSlot = Cast<UButtonSlot>(RewardButton->AddChild(CardBorder));
+		CardButtonSlot->SetPadding(FMargin(0.0f));
+		CardButtonSlot->SetHorizontalAlignment(HAlign_Fill);
+		CardButtonSlot->SetVerticalAlignment(VAlign_Fill);
 
 		UVerticalBox* RewardContent = WidgetTree->ConstructWidget<UVerticalBox>(
 			UVerticalBox::StaticClass(),
 			*FString::Printf(TEXT("RewardChoiceContent%d"), ChoiceIndex));
 		UBorderSlot* CardBorderSlot = Cast<UBorderSlot>(CardBorder->AddChild(RewardContent));
 		CardBorderSlot->SetPadding(FMargin(12.0f));
+		CardBorderSlot->SetHorizontalAlignment(HAlign_Fill);
+		CardBorderSlot->SetVerticalAlignment(VAlign_Fill);
 
 		UTextBlock* TitleText = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(),
@@ -373,9 +379,14 @@ void URLRunStatusWidget::BuildWidgetTree()
 		FSlateFontInfo TitleFont = TitleText->GetFont();
 		TitleFont.Size = 28;
 		TitleText->SetFont(TitleFont);
-		UVerticalBoxSlot* TitleSlot = RewardContent->AddChildToVerticalBox(TitleText);
+		USizeBox* TitleSizeBox = WidgetTree->ConstructWidget<USizeBox>(
+			USizeBox::StaticClass(),
+			*FString::Printf(TEXT("RewardTitleSize%d"), ChoiceIndex));
+		TitleSizeBox->SetHeightOverride(80.0f);
+		TitleSizeBox->AddChild(TitleText);
+		UVerticalBoxSlot* TitleSlot = RewardContent->AddChildToVerticalBox(TitleSizeBox);
 		TitleSlot->SetPadding(FMargin(12.0f, 14.0f, 12.0f, 10.0f));
-		TitleSlot->SetHorizontalAlignment(HAlign_Center);
+		TitleSlot->SetHorizontalAlignment(HAlign_Fill);
 
 		USizeBox* ArtSizeBox = WidgetTree->ConstructWidget<USizeBox>(
 			USizeBox::StaticClass(),
@@ -427,8 +438,10 @@ void URLRunStatusWidget::BuildWidgetTree()
 		DescriptionFont.Size = 17;
 		DescriptionText->SetFont(DescriptionFont);
 		UVerticalBoxSlot* DescriptionSlot = RewardContent->AddChildToVerticalBox(DescriptionText);
+		DescriptionSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		DescriptionSlot->SetPadding(FMargin(18.0f, 4.0f, 18.0f, 10.0f));
-		DescriptionSlot->SetHorizontalAlignment(HAlign_Center);
+		DescriptionSlot->SetHorizontalAlignment(HAlign_Fill);
+		DescriptionSlot->SetVerticalAlignment(VAlign_Center);
 
 		UTextBlock* SelectLabel = WidgetTree->ConstructWidget<UTextBlock>(
 			UTextBlock::StaticClass(),
@@ -459,6 +472,7 @@ void URLRunStatusWidget::BuildWidgetTree()
 		UHorizontalBoxSlot* ButtonSlot = RewardContainer->AddChildToHorizontalBox(RewardButton);
 		ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		ButtonSlot->SetPadding(FMargin(14.0f));
+		ButtonSlot->SetHorizontalAlignment(HAlign_Fill);
 		ButtonSlot->SetVerticalAlignment(VAlign_Fill);
 		RewardButtons.Add(RewardButton);
 		RewardTitleTexts.Add(TitleText);
