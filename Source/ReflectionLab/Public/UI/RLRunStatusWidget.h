@@ -112,6 +112,9 @@ private:
 	TArray<TObjectPtr<UButton>> RewardButtons;
 
 	UPROPERTY(Transient)
+	TArray<TObjectPtr<UBorder>> RewardCardBorders;
+
+	UPROPERTY(Transient)
 	TArray<TObjectPtr<UTextBlock>> RewardTitleTexts;
 
 	UPROPERTY(Transient)
@@ -142,6 +145,13 @@ private:
 	float StartMessageDuration = 0.65f;
 
 	float ExplosiveWarningUpdateAccumulator = 0.0f;
+	void UpdateRewardEntrance(float DeltaSeconds);
+	void BeginRewardSelectionAnimation(int32 ChoiceIndex);
+	void UpdateRewardSelectionAnimation(float DeltaSeconds);
+	int32 SelectedRewardIndex = INDEX_NONE;
+	float RewardSelectionElapsed = 0.0f;
+	float RewardEntranceElapsed = 0.0f;
+	bool bRewardEntranceVisible = false;
 	float RoundClearMessageRemaining = 0.0f;
 	float StartMessageRemaining = 0.0f;
 };

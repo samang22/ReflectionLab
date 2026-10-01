@@ -65,6 +65,49 @@ bool FRLTutorialRewardTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRLShortRoundsTest, "ReflectionLab.Run.ShortRounds",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRLShortRoundsTest::RunTest(const FString& Parameters)
+{
+	ARLGameModeBase* Mode = GetMutableDefault<ARLGameModeBase>();
+	URLRunDefinitionDataAsset* Original = Mode->RunDefinition;
+	const bool bWasPrepared = Mode->bShortRoundsPrepared;
+	Mode->RunDefinition = DuplicateObject<URLRunDefinitionDataAsset>(Original, GetTransientPackage());
+	Mode->bShortRoundsPrepared = false;
+	Mode->EnsureExtendedRounds();
+	const TArray<FRLRoundDefinition> Before = Mode->RunDefinition->Rounds;
+	Mode->PrepareShortRounds();
+	int32 OutputIndex = 0;
+	int32 MainRounds = 0;
+	for (const FRLRoundDefinition& Round : Before)
+	{
+		const int32 Parts = Round.bIsTutorial ? 1 : 2;
+		int32 WaveIndex = 0;
+		for (int32 Part = 0; Part < Parts; ++Part)
+		{
+			if (!TestTrue(TEXT("Split round exists"), Mode->RunDefinition->Rounds.IsValidIndex(OutputIndex)))
+			{
+				break;
+			}
+			const FRLRoundDefinition& Result = Mode->RunDefinition->Rounds[OutputIndex++];
+			MainRounds += Result.bIsTutorial ? 0 : 1;
+			for (const FRLWaveDefinition& Wave : Result.DifficultySchedule->Waves)
+			{
+				TestEqual(TEXT("Wave order preserved"), Wave.WaveName,
+					Round.DifficultySchedule->Waves[WaveIndex++].WaveName);
+			}
+		}
+		TestEqual(TEXT("All waves preserved"), WaveIndex, Round.DifficultySchedule->Waves.Num());
+	}
+	TestEqual(TEXT("Ten main rounds"), MainRounds, 10);
+	const int32 Count = Mode->RunDefinition->Rounds.Num();
+	Mode->PrepareShortRounds();
+	TestEqual(TEXT("Restart does not split again"), Mode->RunDefinition->Rounds.Num(), Count);
+	Mode->RunDefinition = Original;
+	Mode->bShortRoundsPrepared = bWasPrepared;
+	return true;
+}
 #endif
 
 ARLGameModeBase::ARLGameModeBase()
@@ -100,7 +143,7 @@ void ARLGameModeBase::BeginPlay()
 
 void ARLGameModeBase::StartRun()
 {
-	EnsureExtendedRounds();
+	PrepareShortRounds();
 	if (!RunDefinition || RunDefinition->Rounds.IsEmpty())
 	{
 		UE_LOG(LogTemp, Warning, TEXT("RunDefinition is not assigned or contains no rounds."));
@@ -129,6 +172,51 @@ void ARLGameModeBase::StartRun()
 		CleanupRoundActors(*FirstRound);
 	}
 	BeginRoundCountdown(StartingRoundIndex);
+}
+
+void ARLGameModeBase::PrepareShortRounds()
+{
+	if (!RunDefinition || bShortRoundsPrepared)
+	{
+		return;
+	}
+
+	// Keep shared editor assets untouched and do not split again on run restart.
+	RunDefinition = DuplicateObject<URLRunDefinitionDataAsset>(RunDefinition, this);
+	EnsureExtendedRounds();
+	TArray<FRLRoundDefinition> ShortRounds;
+	for (const FRLRoundDefinition& Round : RunDefinition->Rounds)
+	{
+		const URLDifficultyScheduleDataAsset* Schedule = Round.DifficultySchedule;
+		if (Round.bIsTutorial || !Schedule || Schedule->Waves.Num() < 2)
+		{
+			ShortRounds.Add(Round);
+			continue;
+		}
+
+		const int32 SplitIndex = (Schedule->Waves.Num() + 1) / 2;
+		for (int32 Part = 0; Part < 2; ++Part)
+		{
+			FRLRoundDefinition& ShortRound = ShortRounds.Add_GetRef(Round);
+			ShortRound.RoundName = FName(*FString::Printf(TEXT("%s %d"),
+				*Round.RoundName.ToString(), Part + 1));
+			URLDifficultyScheduleDataAsset* ShortSchedule =
+				DuplicateObject<URLDifficultyScheduleDataAsset>(Schedule, RunDefinition,
+					MakeUniqueObjectName(RunDefinition, URLDifficultyScheduleDataAsset::StaticClass()));
+			ShortSchedule->Waves.Reset();
+			const int32 Begin = Part == 0 ? 0 : SplitIndex;
+			const int32 End = Part == 0 ? SplitIndex : Schedule->Waves.Num();
+			for (int32 Index = Begin; Index < End; ++Index)
+			{
+				ShortSchedule->Waves.Add(Schedule->Waves[Index]);
+			}
+			ShortRound.DifficultySchedule = ShortSchedule;
+		}
+	}
+	RunDefinition->Rounds = MoveTemp(ShortRounds);
+	bShortRoundsPrepared = true;
+	UE_LOG(LogTemp, Display, TEXT("Prepared short rounds: %d rounds including tutorial."),
+		RunDefinition->Rounds.Num());
 }
 
 void ARLGameModeBase::EnsureExtendedRounds()

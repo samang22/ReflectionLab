@@ -155,7 +155,7 @@ void ARLProjectile::Tick(float DeltaTime)
 		UpdateRally(DeltaTime);
 	}
 
-	if (bIsReflected)
+	if (bIsReflected || bIsRallyProjectile)
 	{
 		UpdateReflectedAfterimages(DeltaTime);
 	}
@@ -605,6 +605,8 @@ void ARLProjectile::ConfigureAsRally(
 	bIsGuardProjectile = false;
 	bSplitsOnParry = false;
 	bIsRallyProjectile = true;
+	ResetReflectedAfterimages();
+	UpdateProjectileMaterial();
 	bRallyFinalShot = false;
 	RallyCount = 0;
 	MaxRallies = FMath::Max(1, InMaxRallies);
@@ -881,9 +883,9 @@ void ARLProjectile::UpdateProjectileMaterial()
 
 	for (UStaticMeshComponent* AfterimageMesh : ReflectedAfterimageMeshes)
 	{
-		if (AfterimageMesh && ReflectedMaterial)
+		if (AfterimageMesh && ProjectileMesh)
 		{
-			AfterimageMesh->SetMaterial(0, ReflectedMaterial);
+			AfterimageMesh->SetMaterial(0, ProjectileMesh->GetMaterial(0));
 		}
 	}
 }

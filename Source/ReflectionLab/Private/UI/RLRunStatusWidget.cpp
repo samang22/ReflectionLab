@@ -92,6 +92,8 @@ void URLRunStatusWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 	UpdateWaveText();
 	UpdateStateText();
 	UpdateExplosiveWarning(InDeltaTime);
+	UpdateRewardEntrance(InDeltaTime);
+	UpdateRewardSelectionAnimation(InDeltaTime);
 }
 
 void URLRunStatusWidget::BindToGameMode(ARLGameModeBase* GameMode)
@@ -107,6 +109,8 @@ void URLRunStatusWidget::BindToGameMode(ARLGameModeBase* GameMode)
 	}
 
 	BoundGameMode = GameMode;
+	bRewardEntranceVisible = false;
+	SelectedRewardIndex = INDEX_NONE;
 	if (BoundGameMode)
 	{
 		BoundGameMode->OnRunStateChanged.AddUniqueDynamic(
@@ -475,6 +479,7 @@ void URLRunStatusWidget::BuildWidgetTree()
 		ButtonSlot->SetHorizontalAlignment(HAlign_Fill);
 		ButtonSlot->SetVerticalAlignment(VAlign_Fill);
 		RewardButtons.Add(RewardButton);
+		RewardCardBorders.Add(CardBorder);
 		RewardTitleTexts.Add(TitleText);
 		RewardDescriptionTexts.Add(DescriptionText);
 		RewardArtPanels.Add(ArtPanel);
@@ -543,27 +548,111 @@ void URLRunStatusWidget::HandleMainMenuClicked()
 	}
 }
 
+void URLRunStatusWidget::UpdateRewardEntrance(float DeltaSeconds)
+{
+	if (!bRewardEntranceVisible || SelectedRewardIndex != INDEX_NONE)
+	{
+		return;
+	}
+	RewardEntranceElapsed = FMath::Min(0.5f,
+		RewardEntranceElapsed + FMath::Max(0.0f, DeltaSeconds) * 0.5f);
+	if (RewardBackdrop)
+	{
+		RewardBackdrop->SetRenderOpacity(FMath::Clamp(RewardEntranceElapsed / 0.15f, 0.0f, 1.0f));
+	}
+	for (int32 Index = 0; Index < RewardButtons.Num(); ++Index)
+	{
+		if (UButton* Button = RewardButtons[Index])
+		{
+			const float Progress = FMath::Clamp(
+				(RewardEntranceElapsed - 0.05f - Index * 0.06f) / 0.23f, 0.0f, 1.0f);
+			const float Eased = 1.0f - FMath::Pow(1.0f - Progress, 3.0f);
+			Button->SetRenderOpacity(Eased);
+			Button->SetRenderTranslation(FVector2D(0.0f, 25.0f * (1.0f - Eased)));
+			Button->SetRenderScale(FVector2D(FMath::Lerp(0.96f, 1.0f, Eased)));
+			Button->SetVisibility(Progress > 0.0f
+				? ESlateVisibility::Visible : ESlateVisibility::HitTestInvisible);
+		}
+	}
+}
+
 void URLRunStatusWidget::HandleRewardChoiceOneClicked()
 {
-	if (BoundGameMode)
-	{
-		BoundGameMode->SelectReward(0);
-	}
+	BeginRewardSelectionAnimation(0);
 }
 
 void URLRunStatusWidget::HandleRewardChoiceTwoClicked()
 {
-	if (BoundGameMode)
-	{
-		BoundGameMode->SelectReward(1);
-	}
+	BeginRewardSelectionAnimation(1);
 }
 
 void URLRunStatusWidget::HandleRewardChoiceThreeClicked()
 {
-	if (BoundGameMode)
+	BeginRewardSelectionAnimation(2);
+}
+
+void URLRunStatusWidget::BeginRewardSelectionAnimation(int32 ChoiceIndex)
+{
+	if (!IsValid(BoundGameMode) || !BoundGameMode->IsChoosingReward() ||
+		SelectedRewardIndex != INDEX_NONE || ChoiceIndex < 0 ||
+		ChoiceIndex >= BoundGameMode->GetRewardChoiceCount())
 	{
-		BoundGameMode->SelectReward(2);
+		return;
+	}
+	SelectedRewardIndex = ChoiceIndex;
+	RewardSelectionElapsed = 0.0f;
+	for (UButton* Button : RewardButtons)
+	{
+		if (Button)
+		{
+			Button->SetVisibility(ESlateVisibility::HitTestInvisible);
+		}
+	}
+	UpdateRewardSelectionAnimation(0.0f);
+}
+
+void URLRunStatusWidget::UpdateRewardSelectionAnimation(float DeltaSeconds)
+{
+	if (SelectedRewardIndex == INDEX_NONE)
+	{
+		return;
+	}
+	if (!IsValid(BoundGameMode) || !BoundGameMode->IsChoosingReward())
+	{
+		SelectedRewardIndex = INDEX_NONE;
+		return;
+	}
+	RewardSelectionElapsed += FMath::Max(0.0f, DeltaSeconds);
+	const float Fade = FMath::Clamp((RewardSelectionElapsed - 0.3f) / 0.3f, 0.0f, 1.0f);
+	for (int32 Index = 0; Index < RewardButtons.Num(); ++Index)
+	{
+		if (UButton* Button = RewardButtons[Index])
+		{
+			const bool bSelected = Index == SelectedRewardIndex;
+			Button->SetRenderOpacity(bSelected ? 1.0f - Fade
+				: 1.0f - FMath::Clamp(RewardSelectionElapsed / 0.2f, 0.0f, 1.0f));
+			const float Scale = bSelected ? FMath::Lerp(1.0f, 1.04f,
+				FMath::Clamp(RewardSelectionElapsed / 0.15f, 0.0f, 1.0f)) : 1.0f;
+			Button->SetRenderScale(FVector2D(Scale));
+			Button->SetRenderTranslation(FVector2D(0.0f, bSelected ? -25.0f * Fade : 0.0f));
+		}
+		if (Index == SelectedRewardIndex && RewardCardBorders.IsValidIndex(Index))
+		{
+			RewardCardBorders[Index]->SetBrushColor(FLinearColor(0.08f, 0.28f, 0.38f, 1.0f));
+		}
+	}
+	if (RewardBackdrop)
+	{
+		RewardBackdrop->SetRenderOpacity(1.0f - Fade);
+	}
+	if (RewardPromptText)
+	{
+		RewardPromptText->SetRenderOpacity(1.0f - Fade);
+	}
+	if (RewardSelectionElapsed >= 0.6f)
+	{
+		// State changes synchronously; keep the input guard set until the screen closes.
+		BoundGameMode->SelectReward(SelectedRewardIndex);
 	}
 }
 
@@ -617,6 +706,24 @@ void URLRunStatusWidget::UpdateRewardChoices()
 	}
 
 	const bool bChoosingReward = BoundGameMode->IsChoosingReward();
+	if (bChoosingReward != bRewardEntranceVisible)
+	{
+		bRewardEntranceVisible = bChoosingReward;
+		RewardEntranceElapsed = 0.0f;
+		SelectedRewardIndex = INDEX_NONE;
+		RewardSelectionElapsed = 0.0f;
+		if (RewardPromptText)
+		{
+			RewardPromptText->SetRenderOpacity(1.0f);
+		}
+		for (UBorder* Border : RewardCardBorders)
+		{
+			if (Border)
+			{
+				Border->SetBrushColor(FLinearColor(0.025f, 0.06f, 0.12f, 0.98f));
+			}
+		}
+	}
 	if (StatusContainer)
 	{
 		StatusContainer->SetVisibility(
@@ -645,6 +752,7 @@ void URLRunStatusWidget::UpdateRewardChoices()
 		if (RewardButtons[ChoiceIndex])
 		{
 			RewardButtons[ChoiceIndex]->SetIsEnabled(bValidChoice);
+			RewardButtons[ChoiceIndex]->SetRenderTransformPivot(FVector2D(0.5f, 0.5f));
 		}
 		if (RewardTitleTexts.IsValidIndex(ChoiceIndex) && RewardTitleTexts[ChoiceIndex])
 		{
@@ -688,6 +796,7 @@ void URLRunStatusWidget::UpdateRewardChoices()
 				: ESlateVisibility::Collapsed);
 		}
 	}
+	UpdateRewardEntrance(0.0f);
 }
 
 void URLRunStatusWidget::UpdateInputMode()

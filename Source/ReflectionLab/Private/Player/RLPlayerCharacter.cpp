@@ -391,6 +391,9 @@ void ARLPlayerCharacter::UpdateParryRangeIndicator()
 			TEXT("PerfectBandInnerRadiusUV"),
 			PerfectBandInnerRadiusUv);
 		UpdateParryIndicatorColor();
+		ParryRangeIndicatorMaterialInstance->SetScalarParameterValue(
+			TEXT("CloseRadiusUV"), 0.5f * FMath::Clamp(
+				CloseRangeThreshold / FMath::Max(1.0f, ReflectionRange), 0.0f, 1.0f));
 	}
 }
 
@@ -419,6 +422,13 @@ void ARLPlayerCharacter::UpdateParryIndicatorColor()
 	ParryRangeIndicatorMaterialInstance->SetVectorParameterValue(
 		TEXT("PerfectIndicatorColor"),
 		PerfectIndicatorColor);
+	ParryRangeIndicatorMaterialInstance->SetVectorParameterValue(
+		TEXT("CloseIndicatorColor"),
+		(bHitRecoveryActive || bParryOnCooldown)
+			? FLinearColor(0.5f, 0.08f, 0.22f, 1.0f)
+			: (bShowingParrySuccessIndicator
+				? FLinearColor(1.0f, 0.35f, 0.9f, 1.0f)
+				: FLinearColor(0.75f, 0.12f, 1.0f, 1.0f)));
 
 	const float IndicatorOpacity = bShowingParrySuccessIndicator
 		? ParryIndicatorSuccessOpacity
