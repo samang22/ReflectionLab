@@ -128,7 +128,7 @@ void ARLPlayerCharacter::ApplyPlayerStats()
 		return;
 	}
 
-	MaxHealth = FMath::Max(1.0f, PlayerStatsData->MaxHealth);
+	MaxHealth = FMath::Max(1.0f, PlayerStatsData->MaxHealth) + RunRewardMaxHealthBonus;
 	HitRecoveryDuration = FMath::Max(0.0f, PlayerStatsData->HitRecoveryDuration);
 	HitRecoveryMovementSpeedMultiplier = FMath::Clamp(
 		PlayerStatsData->HitRecoveryMovementSpeedMultiplier,
@@ -246,6 +246,16 @@ void ARLPlayerCharacter::ApplyParryTuning()
 	ApplyRunRewardModifiers();
 }
 
+void ARLPlayerCharacter::RestoreHealth(float Amount)
+{
+	if (!FMath::IsFinite(Amount) || Amount <= 0.0f || IsDead() || CurrentHealth >= MaxHealth)
+	{
+		return;
+	}
+	CurrentHealth = FMath::Min(MaxHealth, CurrentHealth + Amount);
+	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+}
+
 void ARLPlayerCharacter::ApplyRunReward(ERLRunRewardType RewardType)
 {
 	switch (RewardType)
@@ -268,6 +278,15 @@ void ARLPlayerCharacter::ApplyRunReward(ERLRunRewardType RewardType)
 	case ERLRunRewardType::CloseCall:
 		RunRewardCloseRangeBonus += 12.0f;
 		break;
+	case ERLRunRewardType::Vitality:
+		RunRewardMaxHealthBonus += 2.0f;
+		MaxHealth += 2.0f;
+		CurrentHealth = FMath::Min(MaxHealth, CurrentHealth + 2.0f);
+		OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+		break;
+	case ERLRunRewardType::PerfectRecovery:
+		++RunRewardPerfectRecoveryAmount;
+		break;
 	default:
 		return;
 	}
@@ -288,6 +307,11 @@ void ARLPlayerCharacter::ResetRunRewards()
 	RunRewardPerfectSplitBonus = 0;
 	RunRewardReflectedSpeedBonus = 0.0f;
 	RunRewardCloseRangeBonus = 0.0f;
+	MaxHealth = FMath::Max(1.0f, MaxHealth - RunRewardMaxHealthBonus);
+	RunRewardMaxHealthBonus = 0.0f;
+	RunRewardPerfectRecoveryAmount = 0;
+	CurrentHealth = FMath::Min(CurrentHealth, MaxHealth);
+	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
 	ApplyParryTuning();
 	if (ReflectionZone)
 	{
@@ -1095,6 +1119,11 @@ void ARLPlayerCharacter::RegisterSuccessfulParry(
 	bool bOverdrive)
 {
 	++ParryChainCount;
+	if (bPerfectParry && RunRewardPerfectRecoveryAmount > 0 && !IsDead() && CurrentHealth < MaxHealth)
+	{
+		CurrentHealth = FMath::Min(MaxHealth, CurrentHealth + RunRewardPerfectRecoveryAmount);
+		OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+	}
 	if (!bOverdrive)
 	{
 		++EnhancementComboProgress;

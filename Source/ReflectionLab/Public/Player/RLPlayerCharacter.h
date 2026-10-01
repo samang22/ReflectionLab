@@ -65,6 +65,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Player|Health")
 	float GetMaxHealth() const { return MaxHealth; }
+	void RestoreHealth(float Amount);
+	bool HasPerfectRecoveryReward() const { return RunRewardPerfectRecoveryAmount > 0; }
 
 	UFUNCTION(BlueprintPure, Category = "Player|Health")
 	bool IsDead() const { return CurrentHealth <= 0.0f; }
@@ -122,7 +124,7 @@ protected:
 	virtual void Die_Implementation();
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Player|Health")
-	float MaxHealth = 3.0f;
+	float MaxHealth = 10.0f;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Player|Health")
 	float CurrentHealth = 0.0f;
@@ -228,6 +230,7 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 private:
+	friend class FRLTutorialRewardTest;
 	void ApplyPlayerStats();
 	void ApplyParryTuning();
 	void UpdateParryRangeIndicator();
@@ -324,6 +327,8 @@ private:
 	int32 RunRewardPerfectSplitBonus = 0;
 	float RunRewardReflectedSpeedBonus = 0.0f;
 	float RunRewardCloseRangeBonus = 0.0f;
+	float RunRewardMaxHealthBonus = 0.0f;
+	int32 RunRewardPerfectRecoveryAmount = 0;
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> ParryRangeIndicatorMaterialInstance;
 

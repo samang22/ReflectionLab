@@ -6,8 +6,10 @@
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/TextBlock.h"
-#include "Components/WrapBox.h"
-#include "Components/WrapBoxSlot.h"
+#include "Components/UniformGridPanel.h"
+#include "Components/UniformGridSlot.h"
+#include "Components/SizeBox.h"
+#include "Components/SizeBoxSlot.h"
 #include "Engine/World.h"
 #include "Player/RLPlayerCharacter.h"
 
@@ -145,17 +147,22 @@ void URLPlayerHealthWidget::BuildWidgetTree()
 	LabelFont.OutlineSettings.OutlineSize = 2;
 	LabelFont.OutlineSettings.OutlineColor = FilledColor.CopyWithNewOpacity(0.55f);
 	HealthLabel->SetFont(LabelFont);
-	UHorizontalBoxSlot* LabelSlot = HealthContainer->AddChildToHorizontalBox(HealthLabel);
+	USizeBox* LabelBox = WidgetTree->ConstructWidget<USizeBox>(
+		USizeBox::StaticClass(), TEXT("HealthLabelBox"));
+	LabelBox->SetHeightOverride(SegmentDisplaySize + 8.0f);
+	LabelBox->AddChild(HealthLabel);
+	HealthLabel->SetJustification(ETextJustify::Center);
+	// Use the same fixed cell height for the label and the diamonds.
+	Cast<USizeBoxSlot>(HealthLabel->Slot)->SetVerticalAlignment(VAlign_Center);
+	UHorizontalBoxSlot* LabelSlot = HealthContainer->AddChildToHorizontalBox(LabelBox);
 	LabelSlot->SetVerticalAlignment(VAlign_Bottom);
-	LabelSlot->SetPadding(FMargin(0.0f, 0.0f, 16.0f, 6.0f));
+	LabelSlot->SetPadding(FMargin(0.0f, 0.0f, 16.0f, 0.0f));
 
-	HealthSegmentsContainer = WidgetTree->ConstructWidget<UWrapBox>(
-		UWrapBox::StaticClass(),
+	HealthSegmentsContainer = WidgetTree->ConstructWidget<UUniformGridPanel>(
+		UUniformGridPanel::StaticClass(),
 		TEXT("HealthSegmentsContainer"));
-	HealthSegmentsContainer->SetExplicitWrapSize(true);
-	HealthSegmentsContainer->SetWrapSize(
-		FMath::Max(1, SegmentsPerRow) * (SegmentDisplaySize + 8.0f));
-	HealthSegmentsContainer->SetInnerSlotPadding(FVector2D(4.0f, 2.0f));
+	HealthSegmentsContainer->SetMinDesiredSlotWidth(SegmentDisplaySize + 8.0f);
+	HealthSegmentsContainer->SetMinDesiredSlotHeight(SegmentDisplaySize + 8.0f);
 	UHorizontalBoxSlot* SegmentsSlot =
 		HealthContainer->AddChildToHorizontalBox(HealthSegmentsContainer);
 	SegmentsSlot->SetVerticalAlignment(VAlign_Bottom);
@@ -181,6 +188,8 @@ void URLPlayerHealthWidget::RebuildHealthSegments()
 			UTextBlock::StaticClass(),
 			*FString::Printf(TEXT("HealthSegment_%d"), SegmentIndex));
 		HealthSegment->SetText(FText::FromString(TEXT("\u25C6")));
+		// The diamond glyph sits above the visual center of its font layout box.
+		HealthSegment->SetRenderTranslation(FVector2D(0.0f, SegmentVerticalOffset));
 		HealthSegment->SetShadowOffset(FVector2D(3.0f, 3.0f));
 		HealthSegment->SetShadowColorAndOpacity(FilledColor.CopyWithNewOpacity(0.8f));
 		FSlateFontInfo SegmentFont = HealthSegment->GetFont();
@@ -188,8 +197,9 @@ void URLPlayerHealthWidget::RebuildHealthSegments()
 		SegmentFont.OutlineSettings.OutlineSize = 3;
 		SegmentFont.OutlineSettings.OutlineColor = FilledColor.CopyWithNewOpacity(0.55f);
 		HealthSegment->SetFont(SegmentFont);
-		UWrapBoxSlot* SegmentSlot =
-			HealthSegmentsContainer->AddChildToWrapBox(HealthSegment);
+		UUniformGridSlot* SegmentSlot = HealthSegmentsContainer->AddChildToUniformGrid(
+			HealthSegment, SegmentIndex / SegmentsPerRow, SegmentIndex % SegmentsPerRow);
+		SegmentSlot->SetHorizontalAlignment(HAlign_Center);
 		SegmentSlot->SetVerticalAlignment(VAlign_Center);
 		HealthSegments.Add(HealthSegment);
 	}
@@ -252,7 +262,7 @@ void URLPlayerHealthWidget::SpawnDamageFragments(int32 SegmentIndex)
 		return;
 	}
 
-	const int32 SafeSegmentsPerRow = FMath::Max(1, SegmentsPerRow);
+	constexpr int32 SafeSegmentsPerRow = SegmentsPerRow;
 	const int32 Column = SegmentIndex % SafeSegmentsPerRow;
 	const int32 Row = SegmentIndex / SafeSegmentsPerRow;
 	FVector2D SegmentOrigin(

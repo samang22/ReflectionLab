@@ -37,10 +37,14 @@ namespace
 			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_PiercingReturn.T_Reward_PiercingReturn");
 		case ERLRunRewardType::PerfectFocus:
 			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_PerfectVolley.T_Reward_PerfectVolley");
+		case ERLRunRewardType::PerfectRecovery:
+			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/parry-heal-robot-grid.parry-heal-robot-grid");
 		case ERLRunRewardType::VelocityDrive:
 			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_VelocityDrive.T_Reward_VelocityDrive");
 		case ERLRunRewardType::CloseCall:
 			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_CloseCall.T_Reward_CloseCall");
+		case ERLRunRewardType::Vitality:
+			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/max-health-heart-grid.max-health-heart-grid");
 		default:
 			return nullptr;
 		}
@@ -62,6 +66,10 @@ namespace
 			return FLinearColor(1.0f, 0.38f, 0.08f);
 		case ERLRunRewardType::CloseCall:
 			return FLinearColor(1.0f, 0.12f, 0.08f);
+		case ERLRunRewardType::Vitality:
+			return FLinearColor(0.2f, 1.0f, 0.4f);
+		case ERLRunRewardType::PerfectRecovery:
+			return FLinearColor(1.0f, 0.4f, 0.7f);
 		default:
 			return FLinearColor(0.2f, 0.9f, 1.0f);
 		}
@@ -336,7 +344,7 @@ void URLRunStatusWidget::BuildWidgetTree()
 	RewardSlot->SetAnchors(FAnchors(0.06f, 0.16f, 0.94f, 0.86f));
 	RewardSlot->SetOffsets(FMargin(0.0f));
 	RewardContainer->SetVisibility(ESlateVisibility::Collapsed);
-	RewardArtTextures.SetNum(static_cast<int32>(ERLRunRewardType::CloseCall) + 1);
+	RewardArtTextures.SetNum(static_cast<int32>(ERLRunRewardType::PerfectRecovery) + 1);
 	for (int32 RewardIndex = 0; RewardIndex < RewardArtTextures.Num(); ++RewardIndex)
 	{
 		const ERLRunRewardType RewardType = static_cast<ERLRunRewardType>(RewardIndex);

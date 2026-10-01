@@ -59,6 +59,31 @@ bool FRLTutorialRewardTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Practice reward applied"), Mode->SelectReward(0));
 		TestTrue(TEXT("Selection completes tutorial"), Mode->GetRunState() == ERLRunState::TutorialCompleted);
 		TestFalse(TEXT("Duplicate selection rejected"), Mode->SelectReward(0));
+		Player->ResetRunRewards();
+		const float BaseHealth = Player->GetMaxHealth();
+		TestEqual(TEXT("Default max HP"), BaseHealth, 10.0f);
+		Player->CurrentHealth = 5.0f;
+		Player->ApplyRunReward(ERLRunRewardType::Vitality);
+		TestEqual(TEXT("Vitality increases max HP"), Player->GetMaxHealth(), BaseHealth + 2.0f);
+		TestEqual(TEXT("Vitality restores HP"), Player->GetCurrentHealth(), 7.0f);
+		Player->ApplyRunReward(ERLRunRewardType::PerfectRecovery);
+		Player->RegisterSuccessfulParry(3, true, false, false);
+		TestEqual(TEXT("Multi perfect parry heals once"), Player->GetCurrentHealth(), 8.0f);
+		Player->RegisterSuccessfulParry(1, false, false, false);
+		TestEqual(TEXT("Normal parry does not heal"), Player->GetCurrentHealth(), 8.0f);
+		Player->ApplyRunReward(ERLRunRewardType::PerfectRecovery);
+		Player->RegisterSuccessfulParry(1, true, false, false);
+		TestEqual(TEXT("Second recovery reward heals two HP"), Player->GetCurrentHealth(), 10.0f);
+		Player->ApplyRunReward(ERLRunRewardType::PerfectRecovery);
+		Player->CurrentHealth = 5.0f;
+		Player->RegisterSuccessfulParry(1, true, false, false);
+		TestEqual(TEXT("Third recovery reward heals three HP"), Player->GetCurrentHealth(), 8.0f);
+		Player->CurrentHealth = Player->GetMaxHealth();
+		Player->RegisterSuccessfulParry(1, true, false, false);
+		TestEqual(TEXT("Healing respects max HP"), Player->GetCurrentHealth(), Player->GetMaxHealth());
+		Player->ResetRunRewards();
+		TestEqual(TEXT("Reset restores base max HP"), Player->GetMaxHealth(), BaseHealth);
+		TestFalse(TEXT("Reset clears recovery reward"), Player->HasPerfectRecoveryReward());
 	}
 	World->DestroyWorld(false);
 	GEngine->DestroyWorldContext(World);
@@ -850,6 +875,11 @@ void ARLGameModeBase::FinishRound()
 	if (!RoundDefinition->bIsTutorial)
 	{
 		RoundsCleared = FMath::Max(RoundsCleared, GetCurrentRoundNumber());
+		if (ARLPlayerCharacter* Player = Cast<ARLPlayerCharacter>(
+			UGameplayStatics::GetPlayerCharacter(this, 0)))
+		{
+			Player->RestoreHealth(2.0f);
+		}
 	}
 
 	if (!RunDefinition || CurrentRoundIndex + 1 >= RunDefinition->Rounds.Num())
@@ -921,20 +951,22 @@ void ARLGameModeBase::BeginIntermission()
 void ARLGameModeBase::BuildRewardChoices()
 {
 	PendingRewardChoices.Reset();
-	static constexpr ERLRunRewardType RewardRotation[] = {
+	TArray<ERLRunRewardType> AvailableRewards = {
 		ERLRunRewardType::WiderArc,
 		ERLRunRewardType::ExtendedRange,
 		ERLRunRewardType::PiercingReturn,
 		ERLRunRewardType::PerfectFocus,
 		ERLRunRewardType::VelocityDrive,
 		ERLRunRewardType::CloseCall,
+		ERLRunRewardType::Vitality,
+		ERLRunRewardType::PerfectRecovery,
 	};
 
-	const int32 RewardCount = UE_ARRAY_COUNT(RewardRotation);
-	const int32 StartIndex = FMath::Abs(RoundsCleared - 1) % RewardCount;
-	for (int32 Offset = 0; Offset < 3; ++Offset)
+	while (!AvailableRewards.IsEmpty() && PendingRewardChoices.Num() < 3)
 	{
-		PendingRewardChoices.Add(RewardRotation[(StartIndex + Offset) % RewardCount]);
+		const int32 Index = FMath::RandRange(0, AvailableRewards.Num() - 1);
+		PendingRewardChoices.Add(AvailableRewards[Index]);
+		AvailableRewards.RemoveAtSwap(Index, 1, EAllowShrinking::No);
 	}
 }
 
@@ -959,6 +991,10 @@ FText ARLGameModeBase::GetRewardChoiceTitle(int32 ChoiceIndex) const
 		return FText::FromString(TEXT("VELOCITY DRIVE"));
 	case ERLRunRewardType::CloseCall:
 		return FText::FromString(TEXT("CLOSE CALL"));
+	case ERLRunRewardType::Vitality:
+		return FText::FromString(TEXT("VITALITY"));
+	case ERLRunRewardType::PerfectRecovery:
+		return FText::FromString(TEXT("PERFECT RECOVERY"));
 	default:
 		return FText::GetEmpty();
 	}
@@ -985,6 +1021,10 @@ FText ARLGameModeBase::GetRewardChoiceDescription(int32 ChoiceIndex) const
 		return FText::FromString(TEXT("Maximum reflected speed +0.2x"));
 	case ERLRunRewardType::CloseCall:
 		return FText::FromString(TEXT("Close-range parry zone +12 cm"));
+	case ERLRunRewardType::Vitality:
+		return FText::FromString(TEXT("Max HP +2 and restore 2 HP"));
+	case ERLRunRewardType::PerfectRecovery:
+		return FText::FromString(TEXT("Perfect parry healing +1 HP (stacks)"));
 	default:
 		return FText::GetEmpty();
 	}

@@ -11,7 +11,7 @@ class REFLECTIONLAB_API URLPlayerStatsDataAsset : public UDataAsset
 
 public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Health", meta = (ClampMin = "1.0"))
-	float MaxHealth = 3.0f;
+	float MaxHealth = 10.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Movement", meta = (ClampMin = "0.0"))
 	float MaxWalkSpeed = 600.0f;

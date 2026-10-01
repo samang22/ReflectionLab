@@ -12,4 +12,6 @@ enum class ERLRunRewardType : uint8
 	PerfectFocus,
 	VelocityDrive,
 	CloseCall,
+	Vitality,
+	PerfectRecovery,
 };

@@ -8,7 +8,7 @@ class ARLPlayerCharacter;
 class UCanvasPanel;
 class UHorizontalBox;
 class UTextBlock;
-class UWrapBox;
+class UUniformGridPanel;
 
 UCLASS()
 class REFLECTIONLAB_API URLPlayerHealthWidget : public UUserWidget
@@ -51,7 +51,7 @@ private:
 	TObjectPtr<UHorizontalBox> HealthContainer;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UWrapBox> HealthSegmentsContainer;
+	TObjectPtr<UUniformGridPanel> HealthSegmentsContainer;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> HealthLabel;
@@ -77,11 +77,13 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Health UI", meta = (ClampMin = "0.0"))
 	float FeedbackDuration = 0.3f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Health UI|Layout", meta = (ClampMin = "1", ClampMax = "12"))
-	int32 SegmentsPerRow = 10;
+	static constexpr int32 SegmentsPerRow = 10;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Health UI|Layout", meta = (ClampMin = "24.0", ClampMax = "96.0"))
 	float SegmentDisplaySize = 48.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Health UI|Layout")
+	float SegmentVerticalOffset = 14.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Health UI|Damage Fragments", meta = (ClampMin = "1", ClampMax = "24"))
 	int32 DamageFragmentCount = 8;
