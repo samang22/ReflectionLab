@@ -12,6 +12,7 @@ class URLParryComboWidget;
 class URLPlayerHealthWidget;
 class URLRunStatusWidget;
 class URLTutorialPromptWidget;
+class URLOffscreenEnemyWidget;
 enum class ERLProjectileBehavior : uint8;
 
 enum class ERLTutorialStage : uint8
@@ -59,6 +60,7 @@ private:
 	void CreateOrBindPlayerHealthWidget();
 	void CreateOrBindRunStatusWidget();
 	void CreateOrBindTutorialPromptWidget();
+	void CreateOffscreenEnemyWidget();
 	void UpdateTutorial();
 	void ShowTutorialPrompt(
 		const FText& Title,
@@ -106,6 +108,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<URLTutorialPromptWidget> TutorialPromptWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URLOffscreenEnemyWidget> OffscreenEnemyWidget;
 
 	UPROPERTY(Transient)
 	TObjectPtr<class ARLPlayerCharacter> TutorialBoundPlayer;

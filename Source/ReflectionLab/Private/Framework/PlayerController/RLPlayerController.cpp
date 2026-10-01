@@ -21,6 +21,7 @@
 #include "UI/RLParryComboWidget.h"
 #include "UI/RLPlayerHealthWidget.h"
 #include "UI/RLRunStatusWidget.h"
+#include "UI/RLOffscreenEnemyWidget.h"
 #include "UI/RLTutorialPromptWidget.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -86,6 +87,7 @@ void ARLPlayerController::BeginPlay()
 	CreateOrBindPlayerHealthWidget();
 	CreateOrBindRunStatusWidget();
 	CreateOrBindTutorialPromptWidget();
+	CreateOffscreenEnemyWidget();
 }
 
 void ARLPlayerController::OnPossess(APawn* InPawn)
@@ -96,6 +98,20 @@ void ARLPlayerController::OnPossess(APawn* InPawn)
 	CreateOrBindPlayerHealthWidget();
 	CreateOrBindRunStatusWidget();
 	CreateOrBindTutorialPromptWidget();
+	CreateOffscreenEnemyWidget();
+}
+
+void ARLPlayerController::CreateOffscreenEnemyWidget()
+{
+	if (IsLocalController() && !OffscreenEnemyWidget)
+	{
+		OffscreenEnemyWidget = CreateWidget<URLOffscreenEnemyWidget>(
+			this, URLOffscreenEnemyWidget::StaticClass());
+		if (OffscreenEnemyWidget)
+		{
+			OffscreenEnemyWidget->AddToViewport(5);
+		}
+	}
 }
 
 void ARLPlayerController::RestoreGameplayInputMode()
@@ -193,6 +209,10 @@ void ARLPlayerController::SetGameplayHUDVisible(bool bVisible)
 	if (PlayerHealthWidget)
 	{
 		PlayerHealthWidget->SetVisibility(Visibility);
+	}
+	if (OffscreenEnemyWidget)
+	{
+		OffscreenEnemyWidget->SetVisibility(Visibility);
 	}
 }
 
