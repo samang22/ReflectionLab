@@ -601,6 +601,11 @@ void URLRunStatusWidget::HandleRewardChoiceThreeClicked()
 
 void URLRunStatusWidget::BeginRewardSelectionAnimation(int32 ChoiceIndex)
 {
+	if (BoundGameMode && BoundGameMode->IsCurrentRoundTutorial())
+	{
+		const ARLPlayerController* Controller = Cast<ARLPlayerController>(GetOwningPlayer());
+		if (Controller && !Controller->IsTutorialRewardChoiceAllowed()) { return; }
+	}
 	if (!IsValid(BoundGameMode) || !BoundGameMode->IsChoosingReward() ||
 		SelectedRewardIndex != INDEX_NONE || ChoiceIndex < 0 ||
 		ChoiceIndex >= BoundGameMode->GetRewardChoiceCount())

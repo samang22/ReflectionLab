@@ -1,7 +1,9 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Data/RLEnemyAttackVariation.h"
 #include "Data/RLProjectileDefinitionDataAsset.h"
+#include "Data/RLRingAttackDataAsset.h"
 #include "Engine/DataAsset.h"
 #include "RLDifficultyScheduleDataAsset.generated.h"
 
@@ -68,6 +70,12 @@ struct REFLECTIONLAB_API FRLDifficultyPhase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Projectiles")
 	TArray<FRLProjectileSpawnRule> ProjectileRules;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Ring Attack")
+	FRLRingAttackSpawnRule RingAttack;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Combat")
+	FRLEnemyAttackVariation AttackVariation;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Enemy Mechanics", meta = (ClampMin = "0"))
 	int32 ShieldEnemyInterval = 0;
 
@@ -109,6 +117,12 @@ struct REFLECTIONLAB_API FRLWaveDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Projectiles")
 	TArray<FRLProjectileSpawnRule> ProjectileRules;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Ring Attack")
+	FRLRingAttackSpawnRule RingAttack;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Combat")
+	FRLEnemyAttackVariation AttackVariation;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Enemy Mechanics", meta = (ClampMin = "0"))
 	int32 ShieldEnemyInterval = 0;

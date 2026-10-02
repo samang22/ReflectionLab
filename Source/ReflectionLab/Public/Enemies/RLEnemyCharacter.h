@@ -11,11 +11,16 @@
 class USceneComponent;
 class USoundBase;
 class UMaterialInterface;
-class UMaterialInstanceDynamic;
 class UStaticMesh;
 class UStaticMeshComponent;
 class ARLProjectile;
+class ARLExpandingRingAttack;
 class URLEnemyPoolSubsystem;
+class URLHealthComponent;
+class URLEnemyAttackComponent;
+class URLEnemyMovementComponent;
+class URLEnemyShieldComponent;
+class URLEnemyFeedbackComponent;
 
 UCLASS()
 class REFLECTIONLAB_API ARLEnemyCharacter : public ACharacter
@@ -24,7 +29,6 @@ class REFLECTIONLAB_API ARLEnemyCharacter : public ACharacter
 
 public:
 	ARLEnemyCharacter();
-	virtual void Tick(float DeltaSeconds) override;
 
 	virtual float TakeDamage(
 		float DamageAmount,
@@ -48,7 +52,7 @@ public:
 	void SetShieldEmitter(bool bEnabled);
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|Shield")
-	bool IsShieldEmitterActive() const { return bShieldEmitterActive; }
+	bool IsShieldEmitterActive() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Tutorial")
 	void SetTutorialMovementLocked(bool bLocked);
@@ -62,11 +66,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Tutorial")
 	bool FireTutorialProjectile(URLProjectileDefinitionDataAsset* ProjectileDefinition);
 
+	ARLExpandingRingAttack* FireTutorialRingAttack();
+
 	bool TryAbsorbReflectedProjectile();
 
 protected:
 	virtual void BeginPlay() override;
 
+	// Keep authored blueprint defaults on the character until an explicit asset migration.
+	// Runtime behavior and state live in the role-specific components below.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Config", meta = (RowType = "/Script/ReflectionLab.RLEnemyCombatRow"))
 	FDataTableRowHandle CombatConfig;
 
@@ -130,50 +138,29 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Feedback|Death")
 	FLinearColor DeathEffectColor = FLinearColor(1.0f, 0.015f, 0.005f, 1.0f);
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Components")
+	TObjectPtr<URLHealthComponent> HealthComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Components")
+	TObjectPtr<URLEnemyAttackComponent> AttackComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Components")
+	TObjectPtr<URLEnemyMovementComponent> EnemyMovementComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Components")
+	TObjectPtr<URLEnemyShieldComponent> ShieldComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Components")
+	TObjectPtr<URLEnemyFeedbackComponent> FeedbackComponent;
+
 private:
 	friend class URLEnemyPoolSubsystem;
 
-	void ApplyCombatConfig();
-	void UpdateFacingPlayer();
-	void CacheBaseCombatValues();
-	void SpawnDeathEffect();
-	bool IsProtectedByShield() const;
-	void UpdateShieldVisual();
+	void ConfigureEnemyComponents();
 	void ActivateFromPool(const FTransform& SpawnTransform);
 	void DeactivateForPool();
-	void BeginBurst();
-	void FireNextShot();
-	bool SpawnProjectile(
-		URLProjectileDefinitionDataAsset* ProjectileDefinition,
-		ERLShotPattern ShotPattern = ERLShotPattern::Single,
-		float CrossLateralOffset = 90.0f,
-		float CrossTargetOffset = 110.0f);
 
-	FTimerHandle AttackTimerHandle;
-	FTimerHandle BurstTimerHandle;
-	float MaxHealth = 1.0f;
-	int32 ProjectilePoolPrewarmCount = 16;
-	float AttackInterval = 3.0f;
-	int32 ShotsPerBurst = 1;
-	float TimeBetweenShots = 0.5f;
-	float InitialFireDelay = 1.0f;
-	float BaseAttackInterval = 3.0f;
-	int32 BaseShotsPerBurst = 1;
-	float BaseTimeBetweenShots = 0.5f;
-	int32 RemainingShotsInBurst = 0;
-	int32 ShotsFiredSinceActivation = 0;
+	UFUNCTION()
+	void HandleHealthChanged(float NewHealth, float NewMaxHealth);
+	UFUNCTION()
+	void HandleDeath();
+
 	bool bIsPoolActive = true;
-	bool bShieldEmitterActive = false;
-	bool bTutorialMovementLocked = false;
-	bool bTutorialCombatControlled = false;
 	bool bTutorialInvulnerable = false;
-
-	UPROPERTY(Transient)
-	TObjectPtr<URLProjectileDefinitionDataAsset> DefaultProjectileDefinition;
-
-	UPROPERTY(Transient)
-	TArray<FRLProjectileSpawnRule> ProjectileRules;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> ShieldMaterialInstance;
 };

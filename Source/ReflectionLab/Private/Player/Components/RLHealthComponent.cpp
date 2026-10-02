@@ -16,6 +16,12 @@ void URLHealthComponent::InitializeHealth(float NewMaxHealth)
 	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
 }
 
+void URLHealthComponent::ClearHealth()
+{
+	CurrentHealth = 0.0f;
+	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+}
+
 void URLHealthComponent::SetMaxHealth(float NewMaxHealth, bool bRestoreAddedHealth)
 {
 	if (!FMath::IsFinite(NewMaxHealth))

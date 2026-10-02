@@ -5,6 +5,7 @@
 
 #include "Camera/PlayerCameraManager.h"
 #include "Combat/RLProjectile.h"
+#include "Combat/RLExpandingRingAttack.h"
 #include "Data/RLProjectileDefinitionDataAsset.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -181,6 +182,8 @@ void ARLPlayerController::CreateOrBindRunStatusWidget()
 
 void ARLPlayerController::OnUnPossess()
 {
+	if (TutorialRing.IsValid()) { TutorialRing->BeginFadeOut(); }
+	TutorialRing.Reset();
 	if (bTutorialPromptVisible)
 	{
 		DismissTutorialPrompt();
@@ -364,8 +367,7 @@ void ARLPlayerController::Move(const FVector2D& Direction)
 	ControlledPawn->AddMovementInput(RightDirection, Direction.X);
 	if (TutorialStage == ERLTutorialStage::WaitingForMovement)
 	{
-		TutorialStage = ERLTutorialStage::WaitingForNormalProjectile;
-		NextTutorialProjectileRequestTimeSeconds = 0.0f;
+		bTutorialMovementObserved = true;
 	}
 }
 
@@ -388,8 +390,13 @@ void ARLPlayerController::ActivateRoll()
 		const FRotator YawRotation(0.0, ViewRotation.Yaw, 0.0);
 		const FVector RollDirection = (FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X) * ForwardInput +
 			FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y) * RightInput).GetSafeNormal2D();
+		const bool bWasRolling = RollingCharacter->IsRolling();
 		RollingCharacter->StartRoll(RollDirection.IsNearlyZero()
 			? RollingCharacter->GetActorForwardVector() : RollDirection);
+		if (TutorialStage == ERLTutorialStage::WaitingForRoll && !bWasRolling && RollingCharacter->IsRolling())
+		{
+			bTutorialRollStarted = true;
+		}
 	}
 }
 
@@ -441,6 +448,18 @@ void ARLPlayerController::UpdateAimRotation()
 	if (!AimDirection.IsNearlyZero())
 	{
 		SetControlRotation(AimDirection.Rotation());
+		if (TutorialStage == ERLTutorialStage::WaitingForMovement)
+		{
+			float MouseX = 0.0f;
+			float MouseY = 0.0f;
+			if (GetMousePosition(MouseX, MouseY))
+			{
+				const FVector2D MousePosition(MouseX, MouseY);
+				bTutorialAimObserved |= bTutorialMousePositionValid && !MousePosition.Equals(TutorialMousePosition, 0.1f);
+				TutorialMousePosition = MousePosition;
+				bTutorialMousePositionValid = true;
+			}
+		}
 	}
 }
 
@@ -460,6 +479,14 @@ void ARLPlayerController::BindTutorialPlayer(ARLPlayerCharacter* PlayerCharacter
 	}
 }
 
+void ARLPlayerController::QueueTutorialStage(ERLTutorialStage NextStage)
+{
+	if (!GetWorld() || TutorialStage == ERLTutorialStage::WaitingForStageDelay) { return; }
+	PendingTutorialStage = NextStage;
+	TutorialStage = ERLTutorialStage::WaitingForStageDelay;
+	TutorialPromptReadyTimeSeconds = GetWorld()->GetTimeSeconds() + TutorialStageDelaySeconds;
+}
+
 void ARLPlayerController::UpdateTutorial()
 {
 	if (!bTutorialPromptsEnabled || bTutorialPromptVisible || !GetWorld())
@@ -472,8 +499,19 @@ void ARLPlayerController::UpdateTutorial()
 	{
 		return;
 	}
+	if (TutorialStage == ERLTutorialStage::WaitingForStageDelay)
+	{
+		if (GetWorld()->GetTimeSeconds() < TutorialPromptReadyTimeSeconds) { return; }
+		TutorialStage = PendingTutorialStage;
+		NextTutorialProjectileRequestTimeSeconds = 0.0f;
+	}
 	if (GameMode->IsChoosingReward() && TutorialStage != ERLTutorialStage::WaitingForRewardChoice)
 	{
+		if (TutorialStage != ERLTutorialStage::WaitingForRewardExplanation)
+		{
+			QueueTutorialStage(ERLTutorialStage::WaitingForRewardExplanation);
+			return;
+		}
 		ShowTutorialPrompt(
 			LOCTEXT("RoundRewardTitle", "ROUND CLEAR — CHOOSE A REWARD"),
 			LOCTEXT("RoundRewardBody",
@@ -485,29 +523,32 @@ void ARLPlayerController::UpdateTutorial()
 	{
 		return;
 	}
-	if (TutorialStage == ERLTutorialStage::WaitingForExplosiveDelay)
+	if (TutorialStage == ERLTutorialStage::WaitingForMovement &&
+		bTutorialMovementObserved && bTutorialAimObserved)
 	{
-		if (GetWorld()->GetTimeSeconds() < TutorialPromptReadyTimeSeconds)
-		{
-			return;
-		}
-		TutorialStage = ERLTutorialStage::WaitingForExplosiveProjectile;
-		NextTutorialProjectileRequestTimeSeconds = 0.0f;
+		QueueTutorialStage(ERLTutorialStage::WaitingForRollExplanation);
+		return;
+	}
+	if (TutorialStage == ERLTutorialStage::WaitingForRollExplanation)
+	{
+		ShowTutorialPrompt(LOCTEXT("RollTitle", "DODGE ROLL"),
+			LOCTEXT("RollBody", "Hold WASD and press SPACE to roll in that movement direction.\nWithout movement input, you roll forward in the direction you face.\nYou are invulnerable while rolling.\nClose this message and complete one roll to continue."),
+			ERLTutorialStage::WaitingForRoll);
+		return;
+	}
+	if (TutorialStage == ERLTutorialStage::WaitingForRoll && bTutorialRollStarted &&
+		TutorialBoundPlayer && !TutorialBoundPlayer->IsRolling())
+	{
+		QueueTutorialStage(ERLTutorialStage::WaitingForNormalProjectile);
+		return;
 	}
 	if (TutorialStage == ERLTutorialStage::WaitingForPerfectExplanation)
 	{
-		if (GetWorld()->GetTimeSeconds() >= TutorialPromptReadyTimeSeconds)
-		{
-			ShowPerfectParryTutorial();
-		}
+		ShowPerfectParryTutorial();
 		return;
 	}
 	if (TutorialStage == ERLTutorialStage::WaitingForCloseRangeExplanation)
 	{
-		if (GetWorld()->GetTimeSeconds() < TutorialPromptReadyTimeSeconds)
-		{
-			return;
-		}
 		ShowTutorialPrompt(
 			LOCTEXT("CloseParryTitle", "CLOSE-RANGE PARRY"),
 			LOCTEXT("CloseParryBody",
@@ -522,7 +563,7 @@ void ARLPlayerController::UpdateTutorial()
 			LOCTEXT("MovementTitle", "MOVE & AIM"),
 			LOCTEXT(
 				"MovementBody",
-				"Use WASD to move. Your character faces the mouse cursor.\nMove once after closing this message to continue."),
+				"Use WASD to move. Your character faces the mouse cursor.\nMove and move the mouse after closing this message to continue."),
 			ERLTutorialStage::WaitingForMovement);
 		return;
 	}
@@ -534,8 +575,7 @@ void ARLPlayerController::UpdateTutorial()
 			LogTemp,
 			Display,
 			TEXT("Tutorial advanced after polling a successful parry."));
-		TutorialStage = ERLTutorialStage::WaitingForPerfectExplanation;
-		TutorialPromptReadyTimeSeconds = GetWorld()->GetTimeSeconds() + 2.0f;
+		QueueTutorialStage(ERLTutorialStage::WaitingForPerfectExplanation);
 		return;
 	}
 
@@ -543,12 +583,12 @@ void ARLPlayerController::UpdateTutorial()
 	{
 		if (!HasActiveTutorialProjectile(ERLProjectileBehavior::Explosive))
 		{
-			TutorialStage = ERLTutorialStage::WaitingForGuardProjectile;
-			NextTutorialProjectileRequestTimeSeconds = 0.0f;
+			QueueTutorialStage(ERLTutorialStage::WaitingForGuardProjectile);
 			UE_LOG(
 				LogTemp,
 				Display,
 				TEXT("Tutorial explosive resolved; guard projectile stage started."));
+			return;
 		}
 		else
 		{
@@ -556,11 +596,36 @@ void ARLPlayerController::UpdateTutorial()
 		}
 	}
 
-	UpdateTutorialProjectileRequest(*GameMode);
-	if (TutorialStage == ERLTutorialStage::WaitingForCombo && TutorialBoundPlayer &&
-		TutorialBoundPlayer->GetParryComboCount() >= 2)
+	if (TutorialStage == ERLTutorialStage::WaitingForComboExplanation)
 	{
 		ShowComboTutorial();
+		return;
+	}
+	if (TutorialStage == ERLTutorialStage::WaitingForRingExplanation)
+	{
+		ShowTutorialPrompt(LOCTEXT("RingTitle", "UNPARRYABLE RING"),
+			LOCTEXT("RingBody", "The expanding red ring cannot be parried.\nOnly the ring's band deals damage; the inside is safe.\nHold WASD toward the other side and press SPACE to roll through it.\nSuccessfully avoid the ring while rolling to continue."),
+			ERLTutorialStage::WaitingForRingDodge);
+		return;
+	}
+	if (TutorialStage == ERLTutorialStage::WaitingForRingDodge)
+	{
+		UpdateTutorialRingRequest(*GameMode);
+		return;
+	}
+	if (TutorialStage == ERLTutorialStage::WaitingForFinalCombatExplanation)
+	{
+		ShowTutorialPrompt(LOCTEXT("FinalCombatTitle", "FINISH THE ROUND"),
+			LOCTEXT("FinalCombatBody", "You have learned the attacks and how to dodge the ring.\nDefeat the enemy with reflected shots to clear the round\nand choose a reward card."),
+			ERLTutorialStage::Complete);
+		return;
+	}
+	UpdateTutorialProjectileRequest(*GameMode);
+	if (TutorialStage == ERLTutorialStage::WaitingForCombo && TutorialBoundPlayer &&
+		TutorialBoundPlayer->GetParryComboCount() >= TutorialComboBaseline + 2)
+	{
+		QueueTutorialStage(ERLTutorialStage::WaitingForComboExplanation);
+		return;
 	}
 
 	if (TutorialStage != ERLTutorialStage::WaitingForNormalProjectile &&
@@ -627,6 +692,37 @@ void ARLPlayerController::UpdateTutorial()
 			return;
 		}
 	}
+}
+
+void ARLPlayerController::UpdateTutorialRingRequest(ARLGameModeBase& GameMode)
+{
+	if (TutorialRing.IsValid() && !TutorialRing->IsActorBeingDestroyed()) { return; }
+	const float Now = GetWorld()->GetTimeSeconds();
+	if (Now < NextTutorialProjectileRequestTimeSeconds) { return; }
+	ARLExpandingRingAttack* Ring = GameMode.RequestTutorialRingAttack();
+	if (!Ring)
+	{
+		NextTutorialProjectileRequestTimeSeconds = Now + 0.25f;
+		return;
+	}
+	TutorialRing = Ring;
+	Ring->OnPlayerDodged.AddUniqueDynamic(this, &ThisClass::HandleTutorialRingDodged);
+	// Bind before activation so an immediate contact cannot lose the success event.
+	if (!Ring->StartAttack())
+	{
+		Ring->Destroy();
+		TutorialRing.Reset();
+	}
+	NextTutorialProjectileRequestTimeSeconds = Now + 0.75f;
+}
+
+void ARLPlayerController::HandleTutorialRingDodged(ARLPlayerCharacter* PlayerCharacter)
+{
+	if (TutorialStage != ERLTutorialStage::WaitingForRingDodge || PlayerCharacter != GetPawn()) { return; }
+	QueueTutorialStage(ERLTutorialStage::WaitingForFinalCombatExplanation);
+	// Successful practice ends this hazard; do not damage the player during the delay.
+	if (TutorialRing.IsValid()) { TutorialRing->BeginFadeOut(); }
+	TutorialRing.Reset();
 }
 
 void ARLPlayerController::UpdateTutorialProjectileRequest(ARLGameModeBase& GameMode)
@@ -745,9 +841,21 @@ void ARLPlayerController::DismissTutorialPrompt()
 
 	bTutorialPromptVisible = false;
 	TutorialStage = TutorialStageAfterDismiss;
+	if (TutorialStage == ERLTutorialStage::WaitingForMovement)
+	{
+		bTutorialMovementObserved = false;
+		bTutorialAimObserved = false;
+		bTutorialMousePositionValid = false;
+	}
+	if (TutorialStage == ERLTutorialStage::WaitingForRoll) { bTutorialRollStarted = false; }
 	if (TutorialStage == ERLTutorialStage::WaitingForCombo)
 	{
-		TutorialPromptReadyTimeSeconds = GetWorld()->GetTimeSeconds() + 2.0f;
+		TutorialComboBaseline = TutorialBoundPlayer ? TutorialBoundPlayer->GetParryComboCount() : 0;
+		QueueTutorialStage(ERLTutorialStage::WaitingForCombo);
+	}
+	else if (TutorialStage == ERLTutorialStage::WaitingForRingExplanation)
+	{
+		QueueTutorialStage(ERLTutorialStage::WaitingForRingExplanation);
 	}
 	NextTutorialProjectileRequestTimeSeconds = 0.0f;
 	UE_LOG(
@@ -785,6 +893,10 @@ void ARLPlayerController::HandleTutorialParryComboChanged(
 {
 	(void)MultiParryCount;
 	(void)EnhancementLevel;
+	if (TutorialStage == ERLTutorialStage::WaitingForCombo && ComboCount == 0)
+	{
+		TutorialComboBaseline = 0;
+	}
 
 	if (ComboCount > 0 &&
 		TutorialStage == ERLTutorialStage::WaitingForSuccessfulParry)
@@ -794,39 +906,36 @@ void ARLPlayerController::HandleTutorialParryComboChanged(
 			Display,
 			TEXT("Tutorial advanced from parry success event. Combo: %d."),
 			ComboCount);
-		TutorialStage = ERLTutorialStage::WaitingForPerfectExplanation;
-		TutorialPromptReadyTimeSeconds = GetWorld()->GetTimeSeconds() + 2.0f;
+		QueueTutorialStage(ERLTutorialStage::WaitingForPerfectExplanation);
 		return;
 	}
 	if (bPerfectParry && TutorialStage == ERLTutorialStage::WaitingForPerfectParry)
 	{
-		TutorialStage = ERLTutorialStage::WaitingForCloseRangeExplanation;
-		TutorialPromptReadyTimeSeconds = GetWorld()->GetTimeSeconds() + 2.0f;
+		QueueTutorialStage(ERLTutorialStage::WaitingForCloseRangeExplanation);
 		return;
 	}
 
 	if (bCloseRangeParry && TutorialStage == ERLTutorialStage::WaitingForCloseRangeParry)
 	{
-		TutorialStage = ERLTutorialStage::WaitingForExplosiveDelay;
-		TutorialPromptReadyTimeSeconds = GetWorld()->GetTimeSeconds() + 2.0f;
+		QueueTutorialStage(ERLTutorialStage::WaitingForExplosiveProjectile);
 		return;
 	}
-	if (ComboCount >= 2 && TutorialStage == ERLTutorialStage::WaitingForCombo)
+	if (ComboCount >= TutorialComboBaseline + 2 && TutorialStage == ERLTutorialStage::WaitingForCombo)
 	{
-		ShowComboTutorial();
+		QueueTutorialStage(ERLTutorialStage::WaitingForComboExplanation);
 	}
 }
 
 void ARLPlayerController::ShowComboTutorial()
 {
-	if (GetWorld() && GetWorld()->GetTimeSeconds() >= TutorialPromptReadyTimeSeconds)
+	if (GetWorld())
 	{
 		ShowTutorialPrompt(
 			LOCTEXT("ComboTitle", "BUILD THE COMBO"),
 			LOCTEXT(
 				"ComboBody",
 				"Your combo continues until you miss a swing.\nReach 3, 5, and 8 consecutive parries to trigger stronger rewards."),
-			ERLTutorialStage::Complete);
+			ERLTutorialStage::WaitingForRingExplanation);
 	}
 }
 

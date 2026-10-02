@@ -7,6 +7,7 @@
 #include "Enemies/RLEnemySpawner.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Framework/PlayerController/RLPlayerController.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/RLPlayerCharacter.h"
@@ -1054,6 +1055,11 @@ TOptional<ERLRunRewardType> ARLGameModeBase::GetRewardChoiceType(int32 ChoiceInd
 
 bool ARLGameModeBase::SelectReward(int32 ChoiceIndex)
 {
+	if (IsCurrentRoundTutorial())
+	{
+		const ARLPlayerController* Controller = Cast<ARLPlayerController>(UGameplayStatics::GetPlayerController(this, 0));
+		if (Controller && !Controller->IsTutorialRewardChoiceAllowed()) { return false; }
+	}
 	if (RunState != ERLRunState::RewardSelection ||
 		!PendingRewardChoices.IsValidIndex(ChoiceIndex))
 	{
@@ -1171,6 +1177,14 @@ bool ARLGameModeBase::RequestTutorialProjectile(
 			static_cast<int32>(ProjectileBehavior));
 	}
 	return bFired;
+}
+
+ARLExpandingRingAttack* ARLGameModeBase::RequestTutorialRingAttack()
+{
+	if (!IsCurrentRoundTutorial() || RunState != ERLRunState::PlayingRound) { return nullptr; }
+	ARLEnemyCharacter* Enemy = GetTutorialEnemy();
+	if (Enemy) { ClearActiveProjectiles(); }
+	return Enemy ? Enemy->FireTutorialRingAttack() : nullptr;
 }
 
 void ARLGameModeBase::CompleteTutorialCombatIntroduction()

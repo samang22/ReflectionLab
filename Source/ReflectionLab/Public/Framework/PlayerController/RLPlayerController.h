@@ -13,23 +13,31 @@ class URLPlayerHealthWidget;
 class URLRunStatusWidget;
 class URLTutorialPromptWidget;
 class URLOffscreenEnemyWidget;
+class ARLExpandingRingAttack;
 enum class ERLProjectileBehavior : uint8;
 
 enum class ERLTutorialStage : uint8
 {
 	WaitingForTutorial,
 	WaitingForMovement,
+	WaitingForStageDelay,
+	WaitingForRollExplanation,
+	WaitingForRoll,
 	WaitingForNormalProjectile,
 	WaitingForSuccessfulParry,
 	WaitingForPerfectExplanation,
 	WaitingForPerfectParry,
 	WaitingForCloseRangeExplanation,
 	WaitingForCloseRangeParry,
-	WaitingForExplosiveDelay,
 	WaitingForExplosiveProjectile,
 	WaitingForExplosiveResolution,
 	WaitingForGuardProjectile,
 	WaitingForCombo,
+	WaitingForComboExplanation,
+	WaitingForRingExplanation,
+	WaitingForRingDodge,
+	WaitingForFinalCombatExplanation,
+	WaitingForRewardExplanation,
 	WaitingForRewardChoice,
 	Complete,
 };
@@ -46,6 +54,11 @@ public:
 
 	void DismissTutorialPrompt();
 	void SetGameplayHUDVisible(bool bVisible);
+	bool IsTutorialRewardChoiceAllowed() const
+	{
+		return !bTutorialPromptsEnabled ||
+			(TutorialStage == ERLTutorialStage::WaitingForRewardChoice && !bTutorialPromptVisible);
+	}
 
 protected:
 	virtual void BeginPlay() override;
@@ -69,6 +82,11 @@ private:
 	void CreateOrBindTutorialPromptWidget();
 	void CreateOffscreenEnemyWidget();
 	void UpdateTutorial();
+	void QueueTutorialStage(ERLTutorialStage NextStage);
+	void UpdateTutorialRingRequest(class ARLGameModeBase& GameMode);
+
+	UFUNCTION()
+	void HandleTutorialRingDodged(class ARLPlayerCharacter* PlayerCharacter);
 	void ShowTutorialPrompt(
 		const FText& Title,
 		const FText& Body,
@@ -137,4 +155,13 @@ private:
 	bool bTutorialPromptVisible = false;
 	float NextTutorialProjectileRequestTimeSeconds = 0.0f;
 	float TutorialPromptReadyTimeSeconds = 0.0f;
+	ERLTutorialStage PendingTutorialStage = ERLTutorialStage::WaitingForTutorial;
+	bool bTutorialMovementObserved = false;
+	bool bTutorialAimObserved = false;
+	bool bTutorialMousePositionValid = false;
+	FVector2D TutorialMousePosition = FVector2D::ZeroVector;
+	bool bTutorialRollStarted = false;
+	int32 TutorialComboBaseline = 0;
+	TWeakObjectPtr<ARLExpandingRingAttack> TutorialRing;
+	static constexpr float TutorialStageDelaySeconds = 2.0f;
 };

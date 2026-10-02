@@ -8,6 +8,7 @@
 
 class ARLEnemySpawner;
 class ARLEnemyCharacter;
+class ARLExpandingRingAttack;
 class URLRunDefinitionDataAsset;
 struct FRLDifficultyPhase;
 struct FRLWaveDefinition;
@@ -107,6 +108,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Run|Tutorial")
 	bool RequestTutorialProjectile(ERLProjectileBehavior ProjectileBehavior);
+
+	ARLExpandingRingAttack* RequestTutorialRingAttack();
 
 	UFUNCTION(BlueprintCallable, Category = "Run|Tutorial")
 	void CompleteTutorialCombatIntroduction();

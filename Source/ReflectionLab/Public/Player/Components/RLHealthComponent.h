@@ -24,6 +24,8 @@ public:
 
 	// Explicit initialization is the only operation allowed to revive the owner.
 	void InitializeHealth(float NewMaxHealth);
+	// Pool deactivation clears health without emitting a second death event.
+	void ClearHealth();
 	void SetMaxHealth(float NewMaxHealth, bool bRestoreAddedHealth = false);
 	float ApplyDamage(float Amount);
 	float RestoreHealth(float Amount);
