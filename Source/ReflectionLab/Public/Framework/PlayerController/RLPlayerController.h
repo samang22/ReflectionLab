@@ -59,6 +59,7 @@ private:
 	void MoveRight();
 	void Move(const FVector2D& Direction);
 	void ActivateParry();
+	void ActivateRoll();
 	void UpdateAimRotation();
 	void RestoreGameplayInputMode();
 	bool IsGameplayInputAllowed() const;

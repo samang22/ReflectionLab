@@ -272,6 +272,7 @@ void ARLPlayerController::CreateOrBindParryComboWidget()
 void ARLPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+	InputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &ThisClass::ActivateRoll);
 
 	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
 	if (!EnhancedInputComponent)
@@ -342,6 +343,10 @@ void ARLPlayerController::Move(const FVector2D& Direction)
 	}
 
 	APawn* ControlledPawn = GetPawn();
+	if (const ARLPlayerCharacter* RollingCharacter = Cast<ARLPlayerCharacter>(ControlledPawn); RollingCharacter && RollingCharacter->IsRolling())
+	{
+		return;
+	}
 	if (!ControlledPawn)
 	{
 		return;
@@ -364,6 +369,19 @@ void ARLPlayerController::Move(const FVector2D& Direction)
 	}
 }
 
+void ARLPlayerController::ActivateRoll()
+{
+	if (!IsGameplayInputAllowed())
+	{
+		return;
+	}
+	UpdateAimRotation();
+	if (ARLPlayerCharacter* RollingCharacter = Cast<ARLPlayerCharacter>(GetPawn()))
+	{
+		RollingCharacter->StartRoll(GetControlRotation().Vector());
+	}
+}
+
 void ARLPlayerController::ActivateParry()
 {
 	if (!IsGameplayInputAllowed())
@@ -379,6 +397,10 @@ void ARLPlayerController::ActivateParry()
 
 void ARLPlayerController::UpdateAimRotation()
 {
+	if (const ARLPlayerCharacter* RollingCharacter = Cast<ARLPlayerCharacter>(GetPawn()); RollingCharacter && RollingCharacter->IsRolling())
+	{
+		return;
+	}
 	APawn* ControlledPawn = GetPawn();
 	if (!IsLocalController() || !ControlledPawn || !IsGameplayInputAllowed())
 	{

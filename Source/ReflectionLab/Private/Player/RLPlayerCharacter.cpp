@@ -2,6 +2,9 @@
 
 #include "Player/RLPlayerCharacter.h"
 #include "Player/Components/RLHealthComponent.h"
+#include "Player/Components/RLDodgeRollComponent.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimInstance.h"
 
 #include "Camera/CameraComponent.h"
 #include "Combat/RLProjectile.h"
@@ -10,7 +13,6 @@
 #include "Components/DecalComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/SphereComponent.h"
-#include "Data/RLParryTuningDataAsset.h"
 #include "Data/RLPlayerStatsDataAsset.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
@@ -30,6 +32,11 @@
 #include "Engine/Engine.h"
 #include "Engine/DamageEvents.h"
 #include "Engine/GameInstance.h"
+#include "GameFramework/PlayerController.h"
+#include "Components/BoxComponent.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRLPlayerRollTest, "ReflectionLab.Player.Roll",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRLPlayerHealthTest, "ReflectionLab.Player.HealthIntegration",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -68,12 +75,158 @@ bool FRLPlayerHealthTest::RunTest(const FString& Parameters)
 	GEngine->DestroyWorldContext(World);
 	return true;
 }
+
+bool FRLPlayerRollTest::RunTest(const FString& Parameters)
+{
+	const UWorld::InitializationValues Settings = UWorld::InitializationValues()
+		.AllowAudioPlayback(false).CreatePhysicsScene(true).CreateNavigation(false)
+		.CreateAISystem(false).ShouldSimulatePhysics(false).SetTransactional(false);
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr,
+		true, ERHIFeatureLevel::Num, &Settings);
+	if (!TestNotNull(TEXT("Test world"), World)) { return false; }
+	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
+	World->SetGameInstance(NewObject<UGameInstance>(GEngine));
+	const FURL TestURL(nullptr, TEXT("?game=/Script/Engine.GameModeBase"), TRAVEL_Absolute);
+	World->SetGameMode(TestURL);
+	World->InitializeActorsForPlay(TestURL);
+	World->BeginPlay();
+	UClass* Class = LoadClass<ARLPlayerCharacter>(nullptr,
+		TEXT("/Game/ReflectionLab/Gameplay/Player/BP_RLPlayerCharacter.BP_RLPlayerCharacter_C"));
+	ARLPlayerCharacter* Character = Class ? World->SpawnActor<ARLPlayerCharacter>(Class) : nullptr;
+	if (TestNotNull(TEXT("Player blueprint"), Character))
+	{
+		APlayerController* Controller = World->SpawnActor<APlayerController>();
+		if (!TestNotNull(TEXT("Roll player controller"), Controller))
+		{
+			World->DestroyWorld(false);
+			GEngine->DestroyWorldContext(World);
+			return false;
+		}
+		Controller->Possess(Character);
+		// A commandlet has no LocalPlayer. Detach its remote-style controller so
+		// CharacterMovement can simulate this pawn using the no-controller path.
+		Controller->UnPossess();
+		Character->GetCharacterMovement()->bRunPhysicsWithNoController = true;
+		TestTrue(TEXT("Player collision enabled"), Character->GetActorEnableCollision());
+		TestTrue(TEXT("Capsule query collision enabled"), Character->GetCapsuleComponent()->IsQueryCollisionEnabled());
+		// A real floor is required: the player intentionally cannot walk off ledges.
+		AActor* Floor = World->SpawnActor<AActor>();
+		UBoxComponent* FloorCollision = NewObject<UBoxComponent>(Floor);
+		Floor->SetRootComponent(FloorCollision);
+		FloorCollision->SetBoxExtent(FVector(10000.0f, 10000.0f, 50.0f));
+		FloorCollision->SetCollisionProfileName(TEXT("BlockAll"));
+		FloorCollision->SetWorldLocation(FVector(0.0f, 0.0f,
+			-Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() - 50.0f));
+		FloorCollision->RegisterComponent();
+		auto AdvanceWorld = [World](int32 FrameCount)
+		{
+			for (int32 Frame = 0; Frame < FrameCount; ++Frame)
+			{
+				++GFrameCounter;
+				World->Tick(LEVELTICK_All, 0.05f);
+			}
+		};
+		Character->GetHealthComponent()->InitializeHealth(Character->GetMaxHealth());
+		Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+		URLDodgeRollComponent* RollComponent = Character->GetDodgeRollComponent();
+		URLPlayerStatsDataAsset* ConfiguredTuning = Character->PlayerStatsData;
+		TestNotNull(TEXT("Player blueprint assigns player stats asset"), ConfiguredTuning);
+		TestTrue(TEXT("Roll component uses the same player stats"), RollComponent->PlayerStatsData == ConfiguredTuning);
+		// Use an isolated configuration so balancing edits do not affect test timing.
+		URLPlayerStatsDataAsset* TestTuning = NewObject<URLPlayerStatsDataAsset>(Character);
+		UAnimMontage* ConfiguredMontage = RollComponent->RollMontage;
+		RollComponent->SetPlayerStats(nullptr);
+		Character->StartRoll(FVector::RightVector);
+		TestFalse(TEXT("Missing roll tuning rejected"), Character->IsRolling());
+		RollComponent->SetPlayerStats(TestTuning);
+		TestTuning->RollPlayRate = 0.0f;
+		Character->StartRoll(FVector::RightVector);
+		TestFalse(TEXT("Invalid roll play rate rejected"), Character->IsRolling());
+		TestTuning->RollPlayRate = 1.0f;
+		TestTuning->RollCooldown = -1.0f;
+		Character->StartRoll(FVector::RightVector);
+		TestFalse(TEXT("Negative roll cooldown rejected"), Character->IsRolling());
+		TestTuning->RollCooldown = 1.0f;
+		Character->StartRoll(FVector::ZeroVector);
+		TestFalse(TEXT("Zero direction rejected"), Character->IsRolling());
+		Character->bParryAttemptInProgress = true;
+		Character->StartRoll(FVector::RightVector);
+		TestFalse(TEXT("Parry blocks roll"), Character->IsRolling());
+		Character->bParryAttemptInProgress = false;
+		Character->GetCharacterMovement()->SetMovementMode(MOVE_Falling);
+		Character->StartRoll(FVector::RightVector);
+		TestFalse(TEXT("Airborne roll rejected"), Character->IsRolling());
+		Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+		const FVector Start = Character->GetActorLocation();
+		Character->StartRoll(FVector::RightVector);
+		TestTrue(TEXT("Roll started"), Character->IsRolling());
+		TestEqual(TEXT("Rolling blocks damage"), Character->TakeDamage(1.0f, FDamageEvent(), nullptr, nullptr), 0.0f);
+		Character->StartParry();
+		TestFalse(TEXT("Rolling blocks parry"), Character->bParryAttemptInProgress);
+		// A running roll must keep its own montage and cooldown if tuning is edited.
+		RollComponent->RollMontage = nullptr;
+		TestTuning->RollCooldown = 0.0f;
+		AdvanceWorld(3);
+		AddInfo(FString::Printf(TEXT("Root-motion roll delta: %s, mesh rotation: %s, actor rotation: %s"),
+			*(Character->GetActorLocation() - Start).ToString(),
+			*Character->GetMesh()->GetRelativeRotation().ToString(), *Character->GetActorRotation().ToString()));
+		TestTrue(TEXT("Roll moves in requested direction"),
+			Character->GetActorLocation().Y > Start.Y && FMath::IsNearlyEqual(Character->GetActorLocation().X, Start.X, 0.1f));
+		const UAnimMontage* ActiveMontage = Character->GetMesh()->GetAnimInstance()->GetCurrentActiveMontage();
+		TestTrue(TEXT("Roll montage extracts root motion"), ActiveMontage && ActiveMontage->HasRootMotion());
+		AdvanceWorld(30);
+		TestFalse(TEXT("Roll ends"), Character->IsRolling());
+		TestTrue(TEXT("Movement restored"), Character->GetCharacterMovement()->MovementMode != MOVE_None);
+		RollComponent->RollMontage = ConfiguredMontage;
+		TestTuning->RollCooldown = 1.0f;
+		Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+		Character->StartRoll(FVector::ForwardVector);
+		TestFalse(TEXT("Cooldown blocks another roll"), Character->IsRolling());
+		AdvanceWorld(22);
+		Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+		const FVector WallStart = Character->GetActorLocation();
+		AActor* Wall = World->SpawnActor<AActor>();
+		UBoxComponent* WallCollision = NewObject<UBoxComponent>(Wall);
+		Wall->SetRootComponent(WallCollision);
+		WallCollision->SetBoxExtent(FVector(1000.0f, 20.0f, 300.0f));
+		WallCollision->SetCollisionProfileName(TEXT("BlockAll"));
+		WallCollision->SetWorldLocation(WallStart + FVector(0.0f, 150.0f, 0.0f));
+		WallCollision->RegisterComponent();
+		Character->StartRoll(FVector::RightVector);
+		TestTrue(TEXT("Roll available after cooldown"), Character->IsRolling());
+		AdvanceWorld(30);
+		TestTrue(TEXT("Root motion respects wall collision"),
+			Character->GetActorLocation().Y > WallStart.Y &&
+			Character->GetActorLocation().Y <= WallStart.Y + 130.0f - Character->GetCapsuleComponent()->GetScaledCapsuleRadius() + 1.0f);
+		TestFalse(TEXT("Blocked roll still ends"), Character->IsRolling());
+		Wall->Destroy();
+		AdvanceWorld(22);
+		Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+		Character->StartRoll(FVector::RightVector);
+		TestTrue(TEXT("Roll before interruption"), Character->IsRolling());
+		Character->StopAnimMontage();
+		AdvanceWorld(1);
+		TestFalse(TEXT("Montage interruption ends roll"), Character->IsRolling());
+		TestTrue(TEXT("Interruption restores movement"), Character->GetCharacterMovement()->MovementMode != MOVE_None);
+		AdvanceWorld(30);
+		Character->GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+		Character->StartRoll(FVector::RightVector);
+		TestTrue(TEXT("Roll before death"), Character->IsRolling());
+		Character->GetHealthComponent()->ApplyDamage(Character->GetMaxHealth());
+		TestFalse(TEXT("Death cancels roll"), Character->IsRolling());
+		TestTrue(TEXT("Death keeps movement disabled"), Character->GetCharacterMovement()->MovementMode == MOVE_None);
+	}
+	World->DestroyWorld(false);
+	GEngine->DestroyWorldContext(World);
+	return true;
+}
 #endif
 
 // Sets default values
 ARLPlayerCharacter::ARLPlayerCharacter()
 {
 	HealthComponent = CreateDefaultSubobject<URLHealthComponent>(TEXT("HealthComponent"));
+	DodgeRollComponent = CreateDefaultSubobject<URLDodgeRollComponent>(TEXT("DodgeRollComponent"));
 	static ConstructorHelpers::FObjectFinder<USoundBase> ParryImpactSoundFinder(
 		TEXT("/Game/ReflectionLab/Audio/SFX/Combat/Parry/SC_ParryImpact.SC_ParryImpact"));
 	ParryImpactSound = ParryImpactSoundFinder.Object;
@@ -171,6 +324,7 @@ void ARLPlayerCharacter::OnConstruction(const FTransform& Transform)
 
 void ARLPlayerCharacter::ApplyPlayerStats()
 {
+	DodgeRollComponent->SetPlayerStats(PlayerStatsData);
 	if (!PlayerStatsData)
 	{
 		return;
@@ -191,104 +345,104 @@ void ARLPlayerCharacter::ApplyPlayerStats()
 
 void ARLPlayerCharacter::ApplyParryTuning()
 {
-	if (!ParryTuningData)
+	if (!PlayerStatsData)
 	{
 		return;
 	}
 
-	ReflectionCooldown = FMath::Max(0.0f, ParryTuningData->FailedParryCooldown);
-	SuccessfulParryCooldown = FMath::Max(0.0f, ParryTuningData->SuccessfulParryCooldown);
+	ReflectionCooldown = FMath::Max(0.0f, PlayerStatsData->FailedParryCooldown);
+	SuccessfulParryCooldown = FMath::Max(0.0f, PlayerStatsData->SuccessfulParryCooldown);
 	PerfectSplitProjectileCount = FMath::Clamp(
-		ParryTuningData->PerfectSplitProjectileCount,
+		PlayerStatsData->PerfectSplitProjectileCount,
 		1,
 		8);
 	PerfectSplitAngleDegrees = FMath::Clamp(
-		ParryTuningData->PerfectSplitAngleDegrees,
+		PlayerStatsData->PerfectSplitAngleDegrees,
 		0.0f,
 		90.0f);
 	PerfectHitStopDurationMultiplier = FMath::Max(
 		1.0f,
-		ParryTuningData->PerfectHitStopDurationMultiplier);
-	BasePierceCount = FMath::Max(0, ParryTuningData->BasePierceCount);
+		PlayerStatsData->PerfectHitStopDurationMultiplier);
+	BasePierceCount = FMath::Max(0, PlayerStatsData->BasePierceCount);
 	MaxReflectedSpeedMultiplier = FMath::Max(
 		1.0f,
-		ParryTuningData->MaxReflectedSpeedMultiplier);
+		PlayerStatsData->MaxReflectedSpeedMultiplier);
 	BaseReflectedProjectileScale = FMath::Max(
 		1.0f,
-		ParryTuningData->BaseReflectedProjectileScale);
-	CloseRangeThreshold = FMath::Max(0.0f, ParryTuningData->CloseRangeThreshold);
-	CloseRangePierceCount = FMath::Max(0, ParryTuningData->CloseRangePierceCount);
-	CloseRangeProjectileScale = FMath::Max(1.0f, ParryTuningData->CloseRangeProjectileScale);
-	ComboSpeedMilestone = FMath::Max(1, ParryTuningData->ComboSpeedMilestone);
+		PlayerStatsData->BaseReflectedProjectileScale);
+	CloseRangeThreshold = FMath::Max(0.0f, PlayerStatsData->CloseRangeThreshold);
+	CloseRangePierceCount = FMath::Max(0, PlayerStatsData->CloseRangePierceCount);
+	CloseRangeProjectileScale = FMath::Max(1.0f, PlayerStatsData->CloseRangeProjectileScale);
+	ComboSpeedMilestone = FMath::Max(1, PlayerStatsData->ComboSpeedMilestone);
 	ComboExtraProjectileMilestone = FMath::Max(
 		ComboSpeedMilestone,
-		ParryTuningData->ComboExtraProjectileMilestone);
-	EnhancementStage2Combo = FMath::Max(1, ParryTuningData->EnhancementStage2Combo);
+		PlayerStatsData->ComboExtraProjectileMilestone);
+	EnhancementStage2Combo = FMath::Max(1, PlayerStatsData->EnhancementStage2Combo);
 	EnhancementStage3Combo = FMath::Max(
 		EnhancementStage2Combo,
-		ParryTuningData->EnhancementStage3Combo);
+		PlayerStatsData->EnhancementStage3Combo);
 	EnhancementStage4Combo = FMath::Max(
 		EnhancementStage3Combo,
-		ParryTuningData->EnhancementStage4Combo);
+		PlayerStatsData->EnhancementStage4Combo);
 	ComboExtraProjectileSpreadAngle = FMath::Clamp(
-		ParryTuningData->ComboExtraProjectileSpreadAngle,
+		PlayerStatsData->ComboExtraProjectileSpreadAngle,
 		0.0f,
 		90.0f);
 	OverdriveComboThreshold = FMath::Max(
 		ComboExtraProjectileMilestone,
-		ParryTuningData->OverdriveComboThreshold);
-	OverdriveProjectileCount = FMath::Clamp(ParryTuningData->OverdriveProjectileCount, 1, 5);
+		PlayerStatsData->OverdriveComboThreshold);
+	OverdriveProjectileCount = FMath::Clamp(PlayerStatsData->OverdriveProjectileCount, 1, 5);
 	OverdriveSpreadAngleDegrees = FMath::Clamp(
-		ParryTuningData->OverdriveSpreadAngleDegrees,
+		PlayerStatsData->OverdriveSpreadAngleDegrees,
 		0.0f,
 		180.0f);
-	OverdriveProjectileScale = FMath::Max(1.0f, ParryTuningData->OverdriveProjectileScale);
-	OverdrivePierceCount = FMath::Max(0, ParryTuningData->OverdrivePierceCount);
+	OverdriveProjectileScale = FMath::Max(1.0f, PlayerStatsData->OverdriveProjectileScale);
+	OverdrivePierceCount = FMath::Max(0, PlayerStatsData->OverdrivePierceCount);
 	OverdriveHitStopDurationMultiplier = FMath::Max(
 		1.0f,
-		ParryTuningData->OverdriveHitStopDurationMultiplier);
-	ReflectionRange = FMath::Max(1.0f, ParryTuningData->ParryRange);
+		PlayerStatsData->OverdriveHitStopDurationMultiplier);
+	ReflectionRange = FMath::Max(1.0f, PlayerStatsData->ParryRange);
 	PerfectParryOuterBandWidth = FMath::Clamp(
-		ParryTuningData->PerfectParryOuterBandWidth,
+		PlayerStatsData->PerfectParryOuterBandWidth,
 		0.0f,
 		ReflectionRange);
 	ReflectionHalfAngleDegrees = FMath::Clamp(
-		ParryTuningData->ParryHalfAngleDegrees,
+		PlayerStatsData->ParryHalfAngleDegrees,
 		0.0f,
 		180.0f);
-	ParryIndicatorIdleOpacity = FMath::Clamp(ParryTuningData->IndicatorIdleOpacity, 0.0f, 1.0f);
-	ParryIndicatorActiveOpacity = FMath::Clamp(ParryTuningData->IndicatorActiveOpacity, 0.0f, 1.0f);
-	ParryIndicatorSuccessOpacity = FMath::Clamp(ParryTuningData->IndicatorSuccessOpacity, 0.0f, 1.0f);
+	ParryIndicatorIdleOpacity = FMath::Clamp(PlayerStatsData->IndicatorIdleOpacity, 0.0f, 1.0f);
+	ParryIndicatorActiveOpacity = FMath::Clamp(PlayerStatsData->IndicatorActiveOpacity, 0.0f, 1.0f);
+	ParryIndicatorSuccessOpacity = FMath::Clamp(PlayerStatsData->IndicatorSuccessOpacity, 0.0f, 1.0f);
 	ParryIndicatorUnavailableOpacity = FMath::Clamp(
-		ParryTuningData->IndicatorUnavailableOpacity,
+		PlayerStatsData->IndicatorUnavailableOpacity,
 		0.0f,
 		1.0f);
-	ParryImpactSoundVolume = FMath::Clamp(ParryTuningData->ImpactSoundVolume, 0.0f, 1.0f);
-	ParrySwingSound = ParryTuningData->SwingSound;
-	ParrySwingSoundVolume = FMath::Clamp(ParryTuningData->SwingSoundVolume, 0.0f, 1.0f);
-	ParryComboImpactSounds = ParryTuningData->ComboImpactSounds;
-	ParryComboImpactSoundVolumes.Reset(ParryTuningData->ComboImpactSoundVolumes.Num());
-	for (const float Volume : ParryTuningData->ComboImpactSoundVolumes)
+	ParryImpactSoundVolume = FMath::Clamp(PlayerStatsData->ImpactSoundVolume, 0.0f, 1.0f);
+	ParrySwingSound = PlayerStatsData->SwingSound;
+	ParrySwingSoundVolume = FMath::Clamp(PlayerStatsData->SwingSoundVolume, 0.0f, 1.0f);
+	ParryComboImpactSounds = PlayerStatsData->ComboImpactSounds;
+	ParryComboImpactSoundVolumes.Reset(PlayerStatsData->ComboImpactSoundVolumes.Num());
+	for (const float Volume : PlayerStatsData->ComboImpactSoundVolumes)
 	{
 		ParryComboImpactSoundVolumes.Add(FMath::Clamp(Volume, 0.0f, 2.0f));
 	}
-	ParryHitStopDuration = FMath::Max(0.0f, ParryTuningData->HitStopDuration);
-	ParryHitStopTimeDilation = FMath::Clamp(ParryTuningData->HitStopTimeDilation, 0.01f, 1.0f);
+	ParryHitStopDuration = FMath::Max(0.0f, PlayerStatsData->HitStopDuration);
+	ParryHitStopTimeDilation = FMath::Clamp(PlayerStatsData->HitStopTimeDilation, 0.01f, 1.0f);
 	if (OverdriveAuraComponent)
 	{
-		OverdriveAuraComponent->SetAsset(ParryTuningData->OverdriveAuraVFX);
+		OverdriveAuraComponent->SetAsset(PlayerStatsData->OverdriveAuraVFX);
 	}
-	OverdriveAuraBaseScale = FMath::Clamp(ParryTuningData->OverdriveAuraScale, 0.1f, 5.0f);
+	OverdriveAuraBaseScale = FMath::Clamp(PlayerStatsData->OverdriveAuraScale, 0.1f, 5.0f);
 	EnhancementAuraStage2ScaleMultiplier = FMath::Clamp(
-		ParryTuningData->EnhancementAuraStage2ScaleMultiplier,
+		PlayerStatsData->EnhancementAuraStage2ScaleMultiplier,
 		0.1f,
 		4.0f);
 	EnhancementAuraStage3ScaleMultiplier = FMath::Clamp(
-		ParryTuningData->EnhancementAuraStage3ScaleMultiplier,
+		PlayerStatsData->EnhancementAuraStage3ScaleMultiplier,
 		EnhancementAuraStage2ScaleMultiplier,
 		4.0f);
 	EnhancementAuraStage4ScaleMultiplier = FMath::Clamp(
-		ParryTuningData->EnhancementAuraStage4ScaleMultiplier,
+		PlayerStatsData->EnhancementAuraStage4ScaleMultiplier,
 		EnhancementAuraStage3ScaleMultiplier,
 		4.0f);
 	ApplyRunRewardModifiers();
@@ -602,7 +756,7 @@ float ARLPlayerCharacter::TakeDamage(
 	AController* EventInstigator,
 	AActor* DamageCauser)
 {
-	if (!FMath::IsFinite(DamageAmount) || DamageAmount <= 0.0f || IsDead() || bHitRecoveryActive)
+	if (!FMath::IsFinite(DamageAmount) || DamageAmount <= 0.0f || IsDead() || bHitRecoveryActive || IsRolling())
 	{
 		return 0.0f;
 	}
@@ -764,6 +918,7 @@ void ARLPlayerCharacter::StopHitFlash()
 
 void ARLPlayerCharacter::Die_Implementation()
 {
+	DodgeRollComponent->StopRoll();
 	GetWorldTimerManager().ClearTimer(HitRecoveryTimerHandle);
 	StopHitFlash();
 	bHitRecoveryActive = false;
@@ -807,8 +962,26 @@ void ARLPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 }
 
+void ARLPlayerCharacter::StartRoll(const FVector& Direction)
+{
+	if (IsDead() || bHitRecoveryActive || bParryAttemptInProgress || bParryActive)
+	{
+		return;
+	}
+	DodgeRollComponent->TryStartRoll(Direction);
+}
+
+bool ARLPlayerCharacter::IsRolling() const
+{
+	return DodgeRollComponent->IsRolling();
+}
+
 void ARLPlayerCharacter::StartParry()
 {
+	if (IsRolling())
+	{
+		return;
+	}
 	if (IsDead() || bHitRecoveryActive || bParryAttemptInProgress || bParryOnCooldown || !GetWorld())
 	{
 		return;

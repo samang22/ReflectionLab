@@ -13,9 +13,9 @@ class UAnimMontage;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class UNiagaraComponent;
-class URLParryTuningDataAsset;
 class URLPlayerStatsDataAsset;
 class URLHealthComponent;
+class URLDodgeRollComponent;
 class USoundBase;
 class USphereComponent;
 class USpringArmComponent;
@@ -81,6 +81,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Parry")
 	void StartParry();
+	void StartRoll(const FVector& Direction);
+	bool IsRolling() const;
+	URLDodgeRollComponent* GetDodgeRollComponent() const { return DodgeRollComponent; }
 
 	UFUNCTION(BlueprintCallable, Category = "Parry|Animation")
 	void BeginParryWindow();
@@ -127,6 +130,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player|Health")
 	TObjectPtr<URLHealthComponent> HealthComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player|Roll")
+	TObjectPtr<URLDodgeRollComponent> DodgeRollComponent;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Player|Hit Recovery")
 	float HitRecoveryDuration = 0.6f;
@@ -209,9 +215,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Feedback", meta = (AllowPrivateAccess = "true", DisplayName = "Parry Swing Sound"))
 	TObjectPtr<USoundBase> ParrySwingSound;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Config", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<URLParryTuningDataAsset> ParryTuningData;
-
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Parry|Chain")
 	int32 ParryChainCount = 0;
 
@@ -233,6 +236,7 @@ private:
 	void HandleHealthChanged(float CurrentHealth, float MaxHealth);
 	UFUNCTION()
 	void HandleDeath();
+	friend class FRLPlayerRollTest;
 	friend class FRLTutorialRewardTest;
 	void ApplyPlayerStats();
 	void ApplyParryTuning();
