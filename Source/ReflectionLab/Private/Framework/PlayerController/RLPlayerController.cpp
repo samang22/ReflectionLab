@@ -375,10 +375,21 @@ void ARLPlayerController::ActivateRoll()
 	{
 		return;
 	}
-	UpdateAimRotation();
 	if (ARLPlayerCharacter* RollingCharacter = Cast<ARLPlayerCharacter>(GetPawn()))
 	{
-		RollingCharacter->StartRoll(GetControlRotation().Vector());
+		// Read held keys directly: movement input may already have been consumed
+		// this frame, and the last input vector can remain after releasing a key.
+		const float ForwardInput = (IsInputKeyDown(EKeys::W) ? 1.0f : 0.0f) -
+			(IsInputKeyDown(EKeys::S) ? 1.0f : 0.0f);
+		const float RightInput = (IsInputKeyDown(EKeys::D) ? 1.0f : 0.0f) -
+			(IsInputKeyDown(EKeys::A) ? 1.0f : 0.0f);
+		const FRotator ViewRotation = PlayerCameraManager
+			? PlayerCameraManager->GetCameraRotation() : GetControlRotation();
+		const FRotator YawRotation(0.0, ViewRotation.Yaw, 0.0);
+		const FVector RollDirection = (FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X) * ForwardInput +
+			FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y) * RightInput).GetSafeNormal2D();
+		RollingCharacter->StartRoll(RollDirection.IsNearlyZero()
+			? RollingCharacter->GetActorForwardVector() : RollDirection);
 	}
 }
 
