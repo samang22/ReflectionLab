@@ -11,6 +11,10 @@
 #include "Kismet/GameplayStatics.h"
 #include "Player/RLPlayerCharacter.h"
 #include "Player/Components/RLHealthComponent.h"
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Player/Components/RLParryProgressionComponent.h"
+#include "Player/Components/RLRunRewardComponent.h"
+#endif
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -68,20 +72,26 @@ bool FRLTutorialRewardTest::RunTest(const FString& Parameters)
 		Player->ApplyRunReward(ERLRunRewardType::Vitality);
 		TestEqual(TEXT("Vitality increases max HP"), Player->GetMaxHealth(), BaseHealth + 2.0f);
 		TestEqual(TEXT("Vitality restores HP"), Player->GetCurrentHealth(), 7.0f);
+		auto RegisterSuccessfulParry = [Player](int32 Count, bool bPerfect, bool bClose, bool bOverdrive)
+		{
+			const FRLParryResult Result{Count, bPerfect, bClose, bOverdrive};
+			Player->GetRunRewardComponent()->ApplyPerfectRecovery(Result);
+			Player->GetParryProgressionComponent()->RegisterSuccess(Result);
+		};
 		Player->ApplyRunReward(ERLRunRewardType::PerfectRecovery);
-		Player->RegisterSuccessfulParry(3, true, false, false);
+		RegisterSuccessfulParry(3, true, false, false);
 		TestEqual(TEXT("Multi perfect parry heals once"), Player->GetCurrentHealth(), 8.0f);
-		Player->RegisterSuccessfulParry(1, false, false, false);
+		RegisterSuccessfulParry(1, false, false, false);
 		TestEqual(TEXT("Normal parry does not heal"), Player->GetCurrentHealth(), 8.0f);
 		Player->ApplyRunReward(ERLRunRewardType::PerfectRecovery);
-		Player->RegisterSuccessfulParry(1, true, false, false);
+		RegisterSuccessfulParry(1, true, false, false);
 		TestEqual(TEXT("Second recovery reward heals two HP"), Player->GetCurrentHealth(), 10.0f);
 		Player->ApplyRunReward(ERLRunRewardType::PerfectRecovery);
 		Player->GetHealthComponent()->ApplyDamage(Player->GetCurrentHealth() - 5.0f);
-		Player->RegisterSuccessfulParry(1, true, false, false);
+		RegisterSuccessfulParry(1, true, false, false);
 		TestEqual(TEXT("Third recovery reward heals three HP"), Player->GetCurrentHealth(), 8.0f);
 		Player->RestoreHealth(Player->GetMaxHealth());
-		Player->RegisterSuccessfulParry(1, true, false, false);
+		RegisterSuccessfulParry(1, true, false, false);
 		TestEqual(TEXT("Healing respects max HP"), Player->GetCurrentHealth(), Player->GetMaxHealth());
 		Player->ResetRunRewards();
 		TestEqual(TEXT("Reset restores base max HP"), Player->GetMaxHealth(), BaseHealth);
