@@ -799,7 +799,18 @@ void ARLGameModeBase::BeginWave(int32 WaveIndex)
 		return;
 	}
 
-	const FRLWaveDefinition& WaveDefinition = Schedule->Waves[WaveIndex];
+	// Balance a per-wave copy so authored schedules and retries never compound
+	// the multipliers. This also covers the runtime-generated later rounds.
+	FRLWaveDefinition WaveDefinition = Schedule->Waves[WaveIndex];
+	if (!RoundDefinition->bIsTutorial)
+	{
+		WaveDefinition.EnemyCount = static_cast<int32>(FMath::Clamp<int64>(
+			static_cast<int64>(WaveDefinition.EnemyCount) * 2, 1, MAX_int32));
+		// Scale both burst periods and shot gaps to halve the per-enemy attack
+		// frequency without changing burst size or projectile/ring selection.
+		WaveDefinition.AttackIntervalMultiplier *= 2.0f;
+		WaveDefinition.TimeBetweenShotsMultiplier *= 2.0f;
+	}
 	ApplyWaveDefinition(WaveDefinition, WaveIndex);
 
 	TArray<ARLEnemySpawner*> ValidSpawners;
