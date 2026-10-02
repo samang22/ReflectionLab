@@ -24,6 +24,7 @@
 #include "UI/RLRunStatusWidget.h"
 #include "UI/RLOffscreenEnemyWidget.h"
 #include "UI/RLTutorialPromptWidget.h"
+#include "UI/RLPauseMenuWidget.h"
 #include "UObject/ConstructorHelpers.h"
 
 #define LOCTEXT_NAMESPACE "ReflectionLabTutorial"
@@ -58,6 +59,7 @@ void ARLPlayerController::PlayerTick(float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
 
+	if (bPauseMenuVisible) { return; }
 	UpdateAimRotation();
 	UpdateTutorial();
 }
@@ -115,6 +117,110 @@ void ARLPlayerController::CreateOffscreenEnemyWidget()
 	}
 }
 
+void ARLPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (PauseMenuWidget) { PauseMenuWidget->RemoveFromParent(); }
+	bPauseMenuVisible = false;
+	Super::EndPlay(EndPlayReason);
+}
+
+void ARLPlayerController::TogglePauseMenu()
+{
+	if (!IsLocalController()) { return; }
+	if (bPauseMenuVisible)
+	{
+		if (PauseMenuWidget && PauseMenuWidget->IsConfirming())
+		{
+			PauseMenuWidget->CancelConfirmation();
+		}
+		else { ResumeFromPauseMenu(); }
+	}
+	else { OpenPauseMenu(); }
+}
+
+void ARLPlayerController::OpenPauseMenu()
+{
+	ARLGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARLGameModeBase>() : nullptr;
+	if (!GameMode || bPauseMenuVisible) { return; }
+	// Do not take ownership of pauses from another system. Tutorial prompts are
+	// our own modal UI and remain paused when this overlay is dismissed.
+	if (UGameplayStatics::IsGamePaused(this) && !bTutorialPromptVisible) { return; }
+	if (!PauseMenuWidget)
+	{
+		PauseMenuWidget = CreateWidget<URLPauseMenuWidget>(this, URLPauseMenuWidget::StaticClass());
+	}
+	if (!PauseMenuWidget) { return; }
+	if (!UGameplayStatics::IsGamePaused(this) && !UGameplayStatics::SetGamePaused(this, true))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Could not pause the game."));
+		return;
+	}
+	bPauseMenuVisible = true;
+	if (!PauseMenuWidget->IsInViewport()) { PauseMenuWidget->AddToViewport(200); }
+	PauseMenuWidget->ShowMenu(GameMode->CanReturnToMainMenu());
+	FInputModeUIOnly InputMode;
+	InputMode.SetWidgetToFocus(PauseMenuWidget->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	SetInputMode(InputMode);
+	DefaultMouseCursor = EMouseCursor::Default;
+	bShowMouseCursor = true;
+}
+
+void ARLPlayerController::ResumeFromPauseMenu()
+{
+	if (!bPauseMenuVisible) { return; }
+	if (!bTutorialPromptVisible && !UGameplayStatics::SetGamePaused(this, false))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Could not resume the game."));
+		return;
+	}
+	bPauseMenuVisible = false;
+	if (PauseMenuWidget) { PauseMenuWidget->RemoveFromParent(); }
+	RestoreModalInputMode();
+}
+
+void ARLPlayerController::RestoreModalInputMode()
+{
+	if (bTutorialPromptVisible && TutorialPromptWidget)
+	{
+		FInputModeGameAndUI InputMode;
+		InputMode.SetWidgetToFocus(TutorialPromptWidget->TakeWidget());
+		InputMode.SetHideCursorDuringCapture(false);
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		SetInputMode(InputMode);
+		DefaultMouseCursor = EMouseCursor::Default;
+		bShowMouseCursor = true;
+	}
+	else { RestoreGameplayInputMode(); }
+}
+
+bool ARLPlayerController::PreparePauseMenuTravel()
+{
+	if (!bPauseMenuVisible || !UGameplayStatics::SetGamePaused(this, false)) { return false; }
+	bPauseMenuVisible = false;
+	if (PauseMenuWidget) { PauseMenuWidget->RemoveFromParent(); }
+	// Travel abandons the lesson; do not advance its stage or fire completion.
+	bTutorialPromptVisible = false;
+	if (TutorialPromptWidget) { TutorialPromptWidget->SetVisibility(ESlateVisibility::Collapsed); }
+	RestoreGameplayInputMode();
+	return true;
+}
+
+void ARLPlayerController::RestartFromPauseMenu()
+{
+	ARLGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARLGameModeBase>() : nullptr;
+	if (GameMode && PreparePauseMenuTravel()) { GameMode->RestartRun(); }
+}
+
+void ARLPlayerController::ReturnToMainMenuFromPauseMenu()
+{
+	ARLGameModeBase* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ARLGameModeBase>() : nullptr;
+	if (GameMode && GameMode->CanReturnToMainMenu() && PreparePauseMenuTravel())
+	{
+		GameMode->ReturnToMainMenu();
+	}
+}
+
 void ARLPlayerController::RestoreGameplayInputMode()
 {
 	if (!IsLocalController())
@@ -128,6 +234,7 @@ void ARLPlayerController::RestoreGameplayInputMode()
 	InputMode.SetHideCursorDuringCapture(false);
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	SetInputMode(InputMode);
+	DefaultMouseCursor = EMouseCursor::Crosshairs;
 	bShowMouseCursor = true;
 	UE_LOG(LogTemp, Display, TEXT("Gameplay input mode restored for RLPlayerController."));
 }
@@ -182,6 +289,7 @@ void ARLPlayerController::CreateOrBindRunStatusWidget()
 
 void ARLPlayerController::OnUnPossess()
 {
+	if (bPauseMenuVisible) { ResumeFromPauseMenu(); }
 	if (TutorialRing.IsValid()) { TutorialRing->BeginFadeOut(); }
 	TutorialRing.Reset();
 	if (bTutorialPromptVisible)
@@ -275,6 +383,10 @@ void ARLPlayerController::CreateOrBindParryComboWidget()
 void ARLPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+	if (!InputComponent) { return; }
+	FInputKeyBinding& PauseBinding = InputComponent->BindKey(
+		EKeys::Escape, IE_Pressed, this, &ThisClass::TogglePauseMenu);
+	PauseBinding.bExecuteWhenPaused = true;
 	InputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &ThisClass::ActivateRoll);
 
 	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
@@ -489,7 +601,7 @@ void ARLPlayerController::QueueTutorialStage(ERLTutorialStage NextStage)
 
 void ARLPlayerController::UpdateTutorial()
 {
-	if (!bTutorialPromptsEnabled || bTutorialPromptVisible || !GetWorld())
+	if (!bTutorialPromptsEnabled || bTutorialPromptVisible || bPauseMenuVisible || !GetWorld())
 	{
 		return;
 	}
@@ -795,7 +907,7 @@ void ARLPlayerController::ShowTutorialPrompt(
 	const FText& Body,
 	ERLTutorialStage StageAfterDismiss)
 {
-	if (!TutorialPromptWidget || bTutorialPromptVisible)
+	if (!TutorialPromptWidget || bTutorialPromptVisible || bPauseMenuVisible)
 	{
 		return;
 	}
@@ -834,7 +946,7 @@ void ARLPlayerController::ShowPerfectParryTutorial()
 
 void ARLPlayerController::DismissTutorialPrompt()
 {
-	if (!bTutorialPromptVisible)
+	if (!bTutorialPromptVisible || bPauseMenuVisible)
 	{
 		return;
 	}
@@ -944,7 +1056,7 @@ bool ARLPlayerController::IsGameplayInputAllowed() const
 	const ARLGameModeBase* GameMode = GetWorld()
 		? GetWorld()->GetAuthGameMode<ARLGameModeBase>()
 		: nullptr;
-	return !bTutorialPromptVisible &&
+	return !bPauseMenuVisible && !bTutorialPromptVisible && !UGameplayStatics::IsGamePaused(this) &&
 		(!GameMode || GameMode->GetRunState() == ERLRunState::PlayingRound);
 }
 

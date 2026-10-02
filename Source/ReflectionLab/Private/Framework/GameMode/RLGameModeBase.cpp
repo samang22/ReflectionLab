@@ -404,7 +404,9 @@ void ARLGameModeBase::RestartRun()
 		return;
 	}
 
-	UGameplayStatics::OpenLevel(this, CurrentLevelName);
+	// Restarting tutorial-only mode should not silently switch to the main run.
+	UGameplayStatics::OpenLevel(this, CurrentLevelName, true,
+		bTutorialOnlyMode ? TEXT("RunMode=Tutorial") : TEXT("RunMode=Main"));
 }
 
 void ARLGameModeBase::ReturnToMainMenu()

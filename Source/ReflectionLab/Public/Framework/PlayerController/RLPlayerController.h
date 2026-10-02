@@ -12,6 +12,7 @@ class URLParryComboWidget;
 class URLPlayerHealthWidget;
 class URLRunStatusWidget;
 class URLTutorialPromptWidget;
+class URLPauseMenuWidget;
 class URLOffscreenEnemyWidget;
 class ARLExpandingRingAttack;
 enum class ERLProjectileBehavior : uint8;
@@ -54,18 +55,26 @@ public:
 
 	void DismissTutorialPrompt();
 	void SetGameplayHUDVisible(bool bVisible);
+	void TogglePauseMenu();
+	void ResumeFromPauseMenu();
+	void RestartFromPauseMenu();
+	void ReturnToMainMenuFromPauseMenu();
 	bool IsTutorialRewardChoiceAllowed() const
 	{
-		return !bTutorialPromptsEnabled ||
-			(TutorialStage == ERLTutorialStage::WaitingForRewardChoice && !bTutorialPromptVisible);
+		return !bPauseMenuVisible && (!bTutorialPromptsEnabled ||
+			(TutorialStage == ERLTutorialStage::WaitingForRewardChoice && !bTutorialPromptVisible));
 	}
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PlayerTick(float DeltaTime) override;
 	virtual void SetupInputComponent() override;
 
 private:
+	void OpenPauseMenu();
+	void RestoreModalInputMode();
+	bool PreparePauseMenuTravel();
 	void MoveForward();
 	void MoveBackward();
 	void MoveLeft();
@@ -134,6 +143,11 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<URLTutorialPromptWidget> TutorialPromptWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<URLPauseMenuWidget> PauseMenuWidget;
+
+	bool bPauseMenuVisible = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URLOffscreenEnemyWidget> OffscreenEnemyWidget;
