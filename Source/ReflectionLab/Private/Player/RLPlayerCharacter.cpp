@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Player/RLPlayerCharacter.h"
+#include "Player/Components/RLHealthComponent.h"
 
 #include "Camera/CameraComponent.h"
 #include "Combat/RLProjectile.h"
@@ -24,9 +25,55 @@
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
+#if WITH_DEV_AUTOMATION_TESTS
+#include "Misc/AutomationTest.h"
+#include "Engine/Engine.h"
+#include "Engine/DamageEvents.h"
+#include "Engine/GameInstance.h"
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRLPlayerHealthTest, "ReflectionLab.Player.HealthIntegration",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRLPlayerHealthTest::RunTest(const FString& Parameters)
+{
+	const UWorld::InitializationValues Settings = UWorld::InitializationValues()
+		.AllowAudioPlayback(false).CreatePhysicsScene(true).CreateNavigation(false)
+		.CreateAISystem(false).ShouldSimulatePhysics(false).SetTransactional(false);
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr,
+		true, ERHIFeatureLevel::Num, &Settings);
+	if (!TestNotNull(TEXT("Test world"), World))
+	{
+		return false;
+	}
+	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
+	World->SetGameInstance(NewObject<UGameInstance>(GEngine));
+	const FURL TestURL(nullptr, TEXT("?game=/Script/Engine.GameModeBase"), TRAVEL_Absolute);
+	World->SetGameMode(TestURL);
+	World->InitializeActorsForPlay(TestURL);
+	World->BeginPlay();
+	ARLPlayerCharacter* Character = World->SpawnActor<ARLPlayerCharacter>();
+	if (TestNotNull(TEXT("Player"), Character))
+	{
+		TestEqual(TEXT("BeginPlay initializes HP"), Character->GetCurrentHealth(), Character->GetMaxHealth());
+		Character->TakeDamage(2.0f, FDamageEvent(), nullptr, nullptr);
+		TestEqual(TEXT("Damage forwarded"), Character->GetCurrentHealth(), Character->GetMaxHealth() - 2.0f);
+		TestEqual(TEXT("Hit recovery blocks damage"), Character->TakeDamage(1.0f, FDamageEvent(), nullptr, nullptr), 0.0f);
+		Character->RestoreHealth(1.0f);
+		TestEqual(TEXT("Recovery forwarded"), Character->GetCurrentHealth(), Character->GetMaxHealth() - 1.0f);
+		Character->GetHealthComponent()->ApplyDamage(Character->GetMaxHealth());
+		TestTrue(TEXT("Death disables collision through event"), !Character->GetActorEnableCollision());
+		TestTrue(TEXT("Death disables movement through event"), Character->GetCharacterMovement()->MovementMode == MOVE_None);
+	}
+	World->DestroyWorld(false);
+	GEngine->DestroyWorldContext(World);
+	return true;
+}
+#endif
+
 // Sets default values
 ARLPlayerCharacter::ARLPlayerCharacter()
 {
+	HealthComponent = CreateDefaultSubobject<URLHealthComponent>(TEXT("HealthComponent"));
 	static ConstructorHelpers::FObjectFinder<USoundBase> ParryImpactSoundFinder(
 		TEXT("/Game/ReflectionLab/Audio/SFX/Combat/Parry/SC_ParryImpact.SC_ParryImpact"));
 	ParryImpactSound = ParryImpactSoundFinder.Object;
@@ -89,11 +136,12 @@ ARLPlayerCharacter::ARLPlayerCharacter()
 void ARLPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	HealthComponent->OnHealthChanged.AddUniqueDynamic(this, &ThisClass::HandleHealthChanged);
+	HealthComponent->OnDeath.AddUniqueDynamic(this, &ThisClass::HandleDeath);
 
 	ApplyPlayerStats();
 	ApplyParryTuning();
-	CurrentHealth = MaxHealth;
-	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+	HealthComponent->InitializeHealth(GetMaxHealth());
 	ReflectionZone->SetSphereRadius(ReflectionRange);
 	if (ParryRangeIndicator && ParryRangeIndicatorMaterial)
 	{
@@ -128,7 +176,7 @@ void ARLPlayerCharacter::ApplyPlayerStats()
 		return;
 	}
 
-	MaxHealth = FMath::Max(1.0f, PlayerStatsData->MaxHealth) + RunRewardMaxHealthBonus;
+	HealthComponent->SetMaxHealth(FMath::Max(1.0f, PlayerStatsData->MaxHealth) + RunRewardMaxHealthBonus);
 	HitRecoveryDuration = FMath::Max(0.0f, PlayerStatsData->HitRecoveryDuration);
 	HitRecoveryMovementSpeedMultiplier = FMath::Clamp(
 		PlayerStatsData->HitRecoveryMovementSpeedMultiplier,
@@ -248,12 +296,32 @@ void ARLPlayerCharacter::ApplyParryTuning()
 
 void ARLPlayerCharacter::RestoreHealth(float Amount)
 {
-	if (!FMath::IsFinite(Amount) || Amount <= 0.0f || IsDead() || CurrentHealth >= MaxHealth)
-	{
-		return;
-	}
-	CurrentHealth = FMath::Min(MaxHealth, CurrentHealth + Amount);
+	HealthComponent->RestoreHealth(Amount);
+}
+
+float ARLPlayerCharacter::GetCurrentHealth() const
+{
+	return HealthComponent->GetCurrentHealth();
+}
+
+float ARLPlayerCharacter::GetMaxHealth() const
+{
+	return HealthComponent->GetMaxHealth();
+}
+
+bool ARLPlayerCharacter::IsDead() const
+{
+	return HealthComponent->IsDead();
+}
+
+void ARLPlayerCharacter::HandleHealthChanged(float CurrentHealth, float MaxHealth)
+{
 	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+}
+
+void ARLPlayerCharacter::HandleDeath()
+{
+	Die();
 }
 
 void ARLPlayerCharacter::ApplyRunReward(ERLRunRewardType RewardType)
@@ -280,9 +348,7 @@ void ARLPlayerCharacter::ApplyRunReward(ERLRunRewardType RewardType)
 		break;
 	case ERLRunRewardType::Vitality:
 		RunRewardMaxHealthBonus += 2.0f;
-		MaxHealth += 2.0f;
-		CurrentHealth = FMath::Min(MaxHealth, CurrentHealth + 2.0f);
-		OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+		HealthComponent->SetMaxHealth(GetMaxHealth() + 2.0f, true);
 		break;
 	case ERLRunRewardType::PerfectRecovery:
 		++RunRewardPerfectRecoveryAmount;
@@ -307,11 +373,9 @@ void ARLPlayerCharacter::ResetRunRewards()
 	RunRewardPerfectSplitBonus = 0;
 	RunRewardReflectedSpeedBonus = 0.0f;
 	RunRewardCloseRangeBonus = 0.0f;
-	MaxHealth = FMath::Max(1.0f, MaxHealth - RunRewardMaxHealthBonus);
+	HealthComponent->SetMaxHealth(GetMaxHealth() - RunRewardMaxHealthBonus);
 	RunRewardMaxHealthBonus = 0.0f;
 	RunRewardPerfectRecoveryAmount = 0;
-	CurrentHealth = FMath::Min(CurrentHealth, MaxHealth);
-	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
 	ApplyParryTuning();
 	if (ReflectionZone)
 	{
@@ -538,7 +602,7 @@ float ARLPlayerCharacter::TakeDamage(
 	AController* EventInstigator,
 	AActor* DamageCauser)
 {
-	if (DamageAmount <= 0.0f || IsDead() || bHitRecoveryActive)
+	if (!FMath::IsFinite(DamageAmount) || DamageAmount <= 0.0f || IsDead() || bHitRecoveryActive)
 	{
 		return 0.0f;
 	}
@@ -548,13 +612,12 @@ float ARLPlayerCharacter::TakeDamage(
 		DamageEvent,
 		EventInstigator,
 		DamageCauser);
-	if (AppliedDamage <= 0.0f)
+	if (!FMath::IsFinite(AppliedDamage) || AppliedDamage <= 0.0f)
 	{
 		return 0.0f;
 	}
 
-	CurrentHealth = FMath::Max(0.0f, CurrentHealth - AppliedDamage);
-	OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+	HealthComponent->ApplyDamage(AppliedDamage);
 	if (HitSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(
@@ -572,14 +635,10 @@ float ARLPlayerCharacter::TakeDamage(
 		Display,
 		TEXT("Player took %.1f damage. Health: %.1f / %.1f"),
 		AppliedDamage,
-		CurrentHealth,
-		MaxHealth);
+		GetCurrentHealth(),
+		GetMaxHealth());
 
-	if (IsDead())
-	{
-		Die();
-	}
-	else
+	if (!IsDead())
 	{
 		BeginHitRecovery();
 	}
@@ -1119,10 +1178,9 @@ void ARLPlayerCharacter::RegisterSuccessfulParry(
 	bool bOverdrive)
 {
 	++ParryChainCount;
-	if (bPerfectParry && RunRewardPerfectRecoveryAmount > 0 && !IsDead() && CurrentHealth < MaxHealth)
+	if (bPerfectParry && RunRewardPerfectRecoveryAmount > 0)
 	{
-		CurrentHealth = FMath::Min(MaxHealth, CurrentHealth + RunRewardPerfectRecoveryAmount);
-		OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+		RestoreHealth(RunRewardPerfectRecoveryAmount);
 	}
 	if (!bOverdrive)
 	{

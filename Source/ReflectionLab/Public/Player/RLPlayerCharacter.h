@@ -15,6 +15,7 @@ class UMaterialInstanceDynamic;
 class UNiagaraComponent;
 class URLParryTuningDataAsset;
 class URLPlayerStatsDataAsset;
+class URLHealthComponent;
 class USoundBase;
 class USphereComponent;
 class USpringArmComponent;
@@ -61,15 +62,16 @@ public:
 		AActor* DamageCauser) override;
 
 	UFUNCTION(BlueprintPure, Category = "Player|Health")
-	float GetCurrentHealth() const { return CurrentHealth; }
+	float GetCurrentHealth() const;
 
 	UFUNCTION(BlueprintPure, Category = "Player|Health")
-	float GetMaxHealth() const { return MaxHealth; }
+	float GetMaxHealth() const;
+	URLHealthComponent* GetHealthComponent() const { return HealthComponent; }
 	void RestoreHealth(float Amount);
 	bool HasPerfectRecoveryReward() const { return RunRewardPerfectRecoveryAmount > 0; }
 
 	UFUNCTION(BlueprintPure, Category = "Player|Health")
-	bool IsDead() const { return CurrentHealth <= 0.0f; }
+	bool IsDead() const;
 
 	UFUNCTION(BlueprintPure, Category = "Player|Hit Recovery")
 	bool IsInHitRecovery() const { return bHitRecoveryActive; }
@@ -123,11 +125,8 @@ protected:
 	void Die();
 	virtual void Die_Implementation();
 
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Player|Health")
-	float MaxHealth = 10.0f;
-
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Player|Health")
-	float CurrentHealth = 0.0f;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player|Health")
+	TObjectPtr<URLHealthComponent> HealthComponent;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Player|Hit Recovery")
 	float HitRecoveryDuration = 0.6f;
@@ -230,6 +229,10 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 private:
+	UFUNCTION()
+	void HandleHealthChanged(float CurrentHealth, float MaxHealth);
+	UFUNCTION()
+	void HandleDeath();
 	friend class FRLTutorialRewardTest;
 	void ApplyPlayerStats();
 	void ApplyParryTuning();

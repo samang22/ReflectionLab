@@ -10,6 +10,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/RLPlayerCharacter.h"
+#include "Player/Components/RLHealthComponent.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -62,7 +63,8 @@ bool FRLTutorialRewardTest::RunTest(const FString& Parameters)
 		Player->ResetRunRewards();
 		const float BaseHealth = Player->GetMaxHealth();
 		TestEqual(TEXT("Default max HP"), BaseHealth, 10.0f);
-		Player->CurrentHealth = 5.0f;
+		Player->GetHealthComponent()->InitializeHealth(Player->GetMaxHealth());
+		Player->GetHealthComponent()->ApplyDamage(Player->GetMaxHealth() - 5.0f);
 		Player->ApplyRunReward(ERLRunRewardType::Vitality);
 		TestEqual(TEXT("Vitality increases max HP"), Player->GetMaxHealth(), BaseHealth + 2.0f);
 		TestEqual(TEXT("Vitality restores HP"), Player->GetCurrentHealth(), 7.0f);
@@ -75,10 +77,10 @@ bool FRLTutorialRewardTest::RunTest(const FString& Parameters)
 		Player->RegisterSuccessfulParry(1, true, false, false);
 		TestEqual(TEXT("Second recovery reward heals two HP"), Player->GetCurrentHealth(), 10.0f);
 		Player->ApplyRunReward(ERLRunRewardType::PerfectRecovery);
-		Player->CurrentHealth = 5.0f;
+		Player->GetHealthComponent()->ApplyDamage(Player->GetCurrentHealth() - 5.0f);
 		Player->RegisterSuccessfulParry(1, true, false, false);
 		TestEqual(TEXT("Third recovery reward heals three HP"), Player->GetCurrentHealth(), 8.0f);
-		Player->CurrentHealth = Player->GetMaxHealth();
+		Player->RestoreHealth(Player->GetMaxHealth());
 		Player->RegisterSuccessfulParry(1, true, false, false);
 		TestEqual(TEXT("Healing respects max HP"), Player->GetCurrentHealth(), Player->GetMaxHealth());
 		Player->ResetRunRewards();
