@@ -3,6 +3,7 @@
 
 # Rider / IntelliJ user-specific project state
 .idea/
+*.DotSettings.user
 
 # Compiled Object files
 *.slo
