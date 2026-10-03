@@ -4,6 +4,7 @@
 #include "Kismet/KismetSystemLibrary.h"
 
 #include "Blueprint/WidgetTree.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Combat/RLProjectile.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -25,6 +26,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Framework/PlayerController/RLPlayerController.h"
+#include "Player/RLPlayerCharacter.h"
 
 void URLRunStatusWidget::NativeOnInitialized()
 {
@@ -52,6 +54,7 @@ void URLRunStatusWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 	UpdateExplosiveWarning(InDeltaTime);
 	UpdateRewardEntrance(InDeltaTime);
 	UpdateRewardSelectionAnimation(InDeltaTime);
+	UpdateInvincibilityDisplay();
 }
 
 void URLRunStatusWidget::BindToGameMode(ARLGameModeBase* GameMode)
@@ -113,6 +116,32 @@ void URLRunStatusWidget::HandleWaveChanged(
 	}
 }
 
+void URLRunStatusWidget::HandleInvincibilityClicked()
+{
+	if (ARLPlayerController* Controller = GetOwningPlayer<ARLPlayerController>())
+	{
+		Controller->TogglePlayerInvincibility();
+		UpdateInvincibilityDisplay();
+		UWidgetBlueprintLibrary::SetFocusToGameViewport();
+	}
+}
+
+void URLRunStatusWidget::UpdateInvincibilityDisplay()
+{
+	if (!InvincibilityButton || !InvincibilityText) { return; }
+	const ARLPlayerCharacter* Character = Cast<ARLPlayerCharacter>(GetOwningPlayerPawn());
+	const bool bPlaying = Character && !Character->IsDead() && BoundGameMode &&
+		BoundGameMode->GetRunState() == ERLRunState::PlayingRound;
+	InvincibilityButton->SetVisibility(bPlaying ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	const bool bEnabled = Character && Character->IsInvincibilityEnabled();
+	const FText Label = bEnabled
+		? NSLOCTEXT("ReflectionLab", "InvincibilityOn", "INVINCIBILITY: ON [P]")
+		: NSLOCTEXT("ReflectionLab", "InvincibilityOff", "INVINCIBILITY: OFF [P]");
+	if (!InvincibilityText->GetText().EqualTo(Label)) { InvincibilityText->SetText(Label); }
+	InvincibilityText->SetColorAndOpacity(bEnabled
+		? FLinearColor(0.1f, 1.0f, 0.5f) : FLinearColor::White);
+}
+
 void URLRunStatusWidget::BuildWidgetTree()
 {
 	if (!WidgetTree || WidgetTree->RootWidget)
@@ -124,6 +153,22 @@ void URLRunStatusWidget::BuildWidgetTree()
 		UCanvasPanel::StaticClass(),
 		TEXT("RootCanvas"));
 	WidgetTree->RootWidget = RootCanvas;
+	InvincibilityButton = WidgetTree->ConstructWidget<UButton>(
+		UButton::StaticClass(), TEXT("InvincibilityButton"));
+	InvincibilityButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleInvincibilityClicked);
+	InvincibilityText = WidgetTree->ConstructWidget<UTextBlock>(
+		UTextBlock::StaticClass(), TEXT("InvincibilityText"));
+	InvincibilityText->SetJustification(ETextJustify::Center);
+	FSlateFontInfo InvincibilityFont = InvincibilityText->GetFont();
+	InvincibilityFont.Size = 18;
+	InvincibilityText->SetFont(InvincibilityFont);
+	InvincibilityButton->AddChild(InvincibilityText);
+	UCanvasPanelSlot* InvincibilitySlot = RootCanvas->AddChildToCanvas(InvincibilityButton);
+	InvincibilitySlot->SetAnchors(FAnchors(1.0f, 0.0f));
+	InvincibilitySlot->SetAlignment(FVector2D(1.0f, 0.0f));
+	InvincibilitySlot->SetPosition(FVector2D(-24.0f, 24.0f));
+	InvincibilitySlot->SetSize(FVector2D(260.0f, 44.0f));
+	UpdateInvincibilityDisplay();
 
 	StatusContainer = WidgetTree->ConstructWidget<UVerticalBox>(
 		UVerticalBox::StaticClass(),

@@ -58,6 +58,7 @@ public:
 	void DismissTutorialPrompt();
 	void SetGameplayHUDVisible(bool bVisible);
 	void TogglePauseMenu();
+	void TogglePlayerInvincibility();
 	void ResumeFromPauseMenu();
 	void RestartFromPauseMenu();
 	void ReturnToMainMenuFromPauseMenu();

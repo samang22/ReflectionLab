@@ -150,7 +150,8 @@ float ARLPlayerCharacter::TakeDamage(
 	AController* EventInstigator,
 	AActor* DamageCauser)
 {
-	if (!FMath::IsFinite(DamageAmount) || DamageAmount <= 0.0f || IsDead() || IsInHitRecovery() || IsRolling())
+	if (!FMath::IsFinite(DamageAmount) || DamageAmount <= 0.0f || IsDead() ||
+		bInvincibilityEnabled || IsInHitRecovery() || IsRolling())
 	{
 		return 0.0f;
 	}

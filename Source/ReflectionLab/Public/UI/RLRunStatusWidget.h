@@ -43,6 +43,14 @@ private:
 	void HandleMainMenuClicked();
 
 	UFUNCTION()
+	void HandleInvincibilityClicked();
+	void UpdateInvincibilityDisplay();
+	UPROPERTY(Transient)
+	TObjectPtr<UButton> InvincibilityButton;
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> InvincibilityText;
+
+	UFUNCTION()
 	void HandleRewardChoiceOneClicked();
 
 	UFUNCTION()

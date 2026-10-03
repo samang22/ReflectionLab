@@ -388,6 +388,7 @@ void ARLPlayerController::SetupInputComponent()
 		EKeys::Escape, IE_Pressed, this, &ThisClass::TogglePauseMenu);
 	PauseBinding.bExecuteWhenPaused = true;
 	InputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &ThisClass::ActivateRoll);
+	InputComponent->BindKey(EKeys::P, IE_Pressed, this, &ThisClass::TogglePlayerInvincibility);
 
 	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
 	if (!EnhancedInputComponent)
@@ -427,6 +428,17 @@ void ARLPlayerController::SetupInputComponent()
 			ETriggerEvent::Started,
 			this,
 			&ThisClass::ActivateParry);
+	}
+}
+
+void ARLPlayerController::TogglePlayerInvincibility()
+{
+	if (!IsGameplayInputAllowed()) { return; }
+	if (ARLPlayerCharacter* PlayerCharacter = Cast<ARLPlayerCharacter>(GetPawn()); PlayerCharacter && !PlayerCharacter->IsDead())
+	{
+		PlayerCharacter->ToggleInvincibility();
+		UE_LOG(LogTemp, Display, TEXT("Player invincibility: %s"),
+			PlayerCharacter->IsInvincibilityEnabled() ? TEXT("ON") : TEXT("OFF"));
 	}
 }
 

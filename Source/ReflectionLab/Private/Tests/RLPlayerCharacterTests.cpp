@@ -45,6 +45,13 @@ bool FRLPlayerHealthTest::RunTest(const FString& Parameters)
 	if (TestNotNull(TEXT("Player"), Character))
 	{
 		TestEqual(TEXT("BeginPlay initializes HP"), Character->GetCurrentHealth(), Character->GetMaxHealth());
+		TestFalse(TEXT("Invincibility starts disabled"), Character->IsInvincibilityEnabled());
+		Character->ToggleInvincibility();
+		TestEqual(TEXT("Toggle invincibility blocks incoming damage"), Character->TakeDamage(2.0f, FDamageEvent(), nullptr, nullptr), 0.0f);
+		TestEqual(TEXT("Invincibility preserves HP"), Character->GetCurrentHealth(), Character->GetMaxHealth());
+		TestFalse(TEXT("Invincibility does not start hit recovery"), Character->IsInHitRecovery());
+		Character->ToggleInvincibility();
+		TestFalse(TEXT("Second toggle disables invincibility"), Character->IsInvincibilityEnabled());
 		Character->TakeDamage(2.0f, FDamageEvent(), nullptr, nullptr);
 		TestEqual(TEXT("Damage forwarded"), Character->GetCurrentHealth(), Character->GetMaxHealth() - 2.0f);
 		TestTrue(TEXT("Damage starts hit recovery component"), Character->IsInHitRecovery());

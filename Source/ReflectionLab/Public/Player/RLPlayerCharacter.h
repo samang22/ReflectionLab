@@ -67,6 +67,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Player|Health")
 	bool IsDead() const;
+	bool IsInvincibilityEnabled() const { return bInvincibilityEnabled; }
+	void ToggleInvincibility() { bInvincibilityEnabled = !bInvincibilityEnabled; }
 
 	UFUNCTION(BlueprintPure, Category = "Player|Hit Recovery")
 	bool IsInHitRecovery() const;
@@ -149,6 +151,8 @@ protected:
 	TObjectPtr<URLParryFeedbackComponent> ParryFeedbackComponent;
 
 private:
+	UPROPERTY(Transient)
+	bool bInvincibilityEnabled = false;
 	UFUNCTION()
 	void HandleHealthChanged(float CurrentHealth, float MaxHealth);
 	UFUNCTION()
