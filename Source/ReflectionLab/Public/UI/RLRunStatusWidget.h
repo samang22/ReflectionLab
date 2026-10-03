@@ -100,6 +100,10 @@ private:
 	TObjectPtr<UButton> MainMenuButton;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> MainMenuButtonLabel;
+	bool bConfirmingClearExit = false;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UHorizontalBox> RewardContainer;
 
 	UPROPERTY(Transient)

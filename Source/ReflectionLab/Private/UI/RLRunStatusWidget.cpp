@@ -1,6 +1,8 @@
 #include "UI/RLRunStatusWidget.h"
 #include "Data/RLRunRewardDataAsset.h"
 
+#include "Kismet/KismetSystemLibrary.h"
+
 #include "Blueprint/WidgetTree.h"
 #include "Combat/RLProjectile.h"
 #include "Components/CanvasPanel.h"
@@ -85,6 +87,7 @@ void URLRunStatusWidget::HandleRunStateChanged(
 	int32 RoundIndex)
 {
 	(void)RoundIndex;
+	bConfirmingClearExit = false;
 	RoundClearMessageRemaining =
 		NewState == ERLRunState::Intermission || NewState == ERLRunState::RunCompleted
 			? RoundClearMessageDuration
@@ -251,6 +254,7 @@ void URLRunStatusWidget::BuildWidgetTree()
 	UTextBlock* MainMenuLabel = WidgetTree->ConstructWidget<UTextBlock>(
 		UTextBlock::StaticClass(),
 		TEXT("MainMenuLabel"));
+	MainMenuButtonLabel = MainMenuLabel;
 	MainMenuLabel->SetText(FText::FromString(TEXT("MAIN MENU")));
 	MainMenuLabel->SetJustification(ETextJustify::Center);
 	MainMenuButton->AddChild(MainMenuLabel);
@@ -445,6 +449,7 @@ void URLRunStatusWidget::RefreshDisplay()
 	const ERLRunState RunState = BoundGameMode->GetRunState();
 	const bool bShowingResults =
 		RunState == ERLRunState::TutorialCompleted ||
+		RunState == ERLRunState::CampaignCleared ||
 		RunState == ERLRunState::RunCompleted || RunState == ERLRunState::GameOver;
 	const bool bChoosingReward = RunState == ERLRunState::RewardSelection;
 	SetVisibility((bShowingResults || bChoosingReward)
@@ -455,6 +460,9 @@ void URLRunStatusWidget::RefreshDisplay()
 	{
 		RoundText->SetText(BoundGameMode->IsCurrentRoundTutorial()
 			? FText::FromString(TEXT("TUTORIAL"))
+			: BoundGameMode->IsEndlessRun()
+			? FText::FromString(FString::Printf(TEXT("ROUND %d"),
+				FMath::Max(1, BoundGameMode->GetCurrentRoundNumber())))
 			: FText::FromString(FString::Printf(
 				TEXT("ROUND %d / %d"),
 				FMath::Max(1, BoundGameMode->GetCurrentRoundNumber()),
@@ -480,6 +488,15 @@ void URLRunStatusWidget::HandleRestartClicked()
 		{
 			BoundGameMode->StartMainGame();
 		}
+		else if (BoundGameMode->GetRunState() == ERLRunState::CampaignCleared)
+		{
+			if (bConfirmingClearExit)
+			{
+				bConfirmingClearExit = false;
+				UpdateResultsPanel();
+			}
+			else { BoundGameMode->ContinueInEndlessMode(); }
+		}
 		else
 		{
 			BoundGameMode->RestartRun();
@@ -491,6 +508,20 @@ void URLRunStatusWidget::HandleMainMenuClicked()
 {
 	if (BoundGameMode)
 	{
+		if (BoundGameMode->GetRunState() == ERLRunState::CampaignCleared)
+		{
+			if (bConfirmingClearExit)
+			{
+				UKismetSystemLibrary::QuitGame(this, GetOwningPlayer(), EQuitPreference::Quit, false);
+			}
+			else
+			{
+				bConfirmingClearExit = true;
+				UpdateResultsPanel();
+				if (RestartButton) { RestartButton->SetKeyboardFocus(); }
+			}
+			return;
+		}
 		BoundGameMode->ReturnToMainMenu();
 	}
 }
@@ -618,6 +649,7 @@ void URLRunStatusWidget::UpdateResultsPanel()
 	const ERLRunState RunState = BoundGameMode->GetRunState();
 	const bool bShowingResults =
 		RunState == ERLRunState::TutorialCompleted ||
+		RunState == ERLRunState::CampaignCleared ||
 		RunState == ERLRunState::RunCompleted || RunState == ERLRunState::GameOver;
 	ResultsContainer->SetVisibility(
 		bShowingResults ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
@@ -626,6 +658,25 @@ void URLRunStatusWidget::UpdateResultsPanel()
 		return;
 	}
 
+	if (RunState == ERLRunState::CampaignCleared)
+	{
+		ResultsText->SetText(FText::FromString(bConfirmingClearExit
+			? TEXT("EXIT GAME?\nYour current run will end.")
+			: TEXT("ALL 10 ROUNDS CLEARED!\nContinue with your upgrades in Endless Mode?")));
+		if (RestartButtonLabel)
+		{
+			RestartButtonLabel->SetText(FText::FromString(bConfirmingClearExit
+				? TEXT("CANCEL") : TEXT("CONTINUE ENDLESS MODE")));
+		}
+		if (MainMenuButtonLabel)
+		{
+			MainMenuButtonLabel->SetText(FText::FromString(bConfirmingClearExit
+				? TEXT("CONFIRM EXIT") : TEXT("EXIT GAME")));
+		}
+		MainMenuButton->SetIsEnabled(true);
+		return;
+	}
+	if (MainMenuButtonLabel) { MainMenuButtonLabel->SetText(FText::FromString(TEXT("MAIN MENU"))); }
 	if (RunState == ERLRunState::TutorialCompleted)
 	{
 		ResultsText->SetText(FText::FromString(TEXT(
@@ -637,7 +688,10 @@ void URLRunStatusWidget::UpdateResultsPanel()
 	}
 	else
 	{
-		ResultsText->SetText(FText::FromString(FString::Printf(
+		ResultsText->SetText(FText::FromString(BoundGameMode->IsEndlessRun()
+			? FString::Printf(TEXT("ROUNDS CLEARED  %d\nBEST COMBO  %d"),
+				BoundGameMode->GetRoundsCleared(), BoundGameMode->GetBestParryCombo())
+			: FString::Printf(
 			TEXT("ROUNDS  %d / %d\nBEST COMBO  %d"),
 			BoundGameMode->GetRoundsCleared(),
 			BoundGameMode->GetRoundCount(),
@@ -762,9 +816,14 @@ void URLRunStatusWidget::UpdateInputMode()
 		PlayerController->bShowMouseCursor = true;
 	}
 	else if (RunState == ERLRunState::TutorialCompleted ||
+		RunState == ERLRunState::CampaignCleared ||
 		RunState == ERLRunState::RunCompleted || RunState == ERLRunState::GameOver)
 	{
 		FInputModeUIOnly InputMode;
+		if (RunState == ERLRunState::CampaignCleared && RestartButton)
+		{
+			InputMode.SetWidgetToFocus(RestartButton->GetCachedWidget());
+		}
 		PlayerController->SetInputMode(InputMode);
 		PlayerController->bShowMouseCursor = true;
 	}
@@ -896,6 +955,10 @@ void URLRunStatusWidget::UpdateStateText()
 			FText::FromString(TEXT("TUTORIAL COMPLETE")),
 			FLinearColor(0.1f, 0.9f, 1.0f),
 			64);
+		break;
+	case ERLRunState::CampaignCleared:
+		SetStateMessage(FText::FromString(TEXT("GAME CLEAR")),
+			FLinearColor(0.1f, 0.9f, 1.0f), 64);
 		break;
 	case ERLRunState::RunCompleted:
 		SetStateMessage(

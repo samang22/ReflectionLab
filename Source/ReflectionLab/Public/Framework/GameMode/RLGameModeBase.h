@@ -26,6 +26,7 @@ enum class ERLRunState : uint8
 	TutorialCompleted,
 	RunCompleted,
 	GameOver,
+	CampaignCleared,
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
@@ -81,6 +82,9 @@ public:
 	void StartMainGame();
 
 	UFUNCTION(BlueprintCallable, Category = "Run")
+	void ContinueInEndlessMode();
+
+	UFUNCTION(BlueprintCallable, Category = "Run")
 	void NotifyPlayerDied();
 
 	UFUNCTION(BlueprintPure, Category = "Run")
@@ -91,6 +95,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Run")
 	int32 GetRoundCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Run")
+	bool IsEndlessRun() const;
 
 	UFUNCTION(BlueprintPure, Category = "Run")
 	int32 GetCurrentRoundNumber() const;
@@ -237,6 +244,7 @@ private:
 	void BindPlayerStats();
 	void ResetRunRecord();
 	void PrepareShortRounds();
+	float GetRoundAttackFrequencyMultiplier() const;
 	friend class FRLShortRoundsTest;
 	friend class FRLTutorialRewardTest;
 	bool bShortRoundsPrepared = false;
@@ -255,6 +263,8 @@ private:
 	FTimerHandle CountdownTimerHandle;
 	ERLRunState RunState = ERLRunState::Waiting;
 	int32 CurrentRoundIndex = INDEX_NONE;
+	int32 RepeatedRoundCount = 0;
+	bool bEndlessModeEntered = false;
 	int32 CurrentPhaseIndex = INDEX_NONE;
 	int32 CurrentWaveIndex = INDEX_NONE;
 	float RoundStartTimeSeconds = 0.0f;

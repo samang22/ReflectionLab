@@ -211,6 +211,8 @@ void ARLGameModeBase::StartRun()
 	GetWorldTimerManager().ClearTimer(CountdownTimerHandle);
 	PendingRewardChoices.Reset();
 	ResetRunRecord();
+	RepeatedRoundCount = 0;
+	bEndlessModeEntered = false;
 	BindPlayerStats();
 	if (ARLPlayerCharacter* PlayerCharacter = Cast<ARLPlayerCharacter>(
 		UGameplayStatics::GetPlayerCharacter(this, 0)))
@@ -399,6 +401,38 @@ int32 ARLGameModeBase::GetRoundCount() const
 	return RoundCount;
 }
 
+bool ARLGameModeBase::IsEndlessRun() const
+{
+	return RunDefinition && RunDefinition->bRepeatFinalRound && bEndlessModeEntered && !bTutorialOnlyMode;
+}
+
+void ARLGameModeBase::ContinueInEndlessMode()
+{
+	if (RunState != ERLRunState::CampaignCleared || !RunDefinition ||
+		!RunDefinition->bRepeatFinalRound || bTutorialOnlyMode ||
+		CurrentRoundIndex != RunDefinition->Rounds.Num() - 1 || IsCurrentRoundTutorial())
+	{
+		return;
+	}
+	bEndlessModeEntered = true;
+	// Preserve upgrades and award the final campaign round's card before round 11.
+	BeginRewardSelection();
+}
+
+float ARLGameModeBase::GetRoundAttackFrequencyMultiplier() const
+{
+	if (!RunDefinition || IsCurrentRoundTutorial()) { return 1.0f; }
+	const float Growth = FMath::IsFinite(RunDefinition->AttackFrequencyGrowthPerRound)
+		? FMath::Clamp(RunDefinition->AttackFrequencyGrowthPerRound, 1.0f, 2.0f) : 1.0f;
+	const float Maximum = FMath::IsFinite(RunDefinition->MaxAttackFrequencyMultiplier)
+		? FMath::Clamp(RunDefinition->MaxAttackFrequencyMultiplier, 1.0f, 100.0f) : 1.0f;
+	// Clamp in logarithmic space before exponentiation to avoid overflow in long runs.
+	const double Steps = FMath::Max(0, GetCurrentRoundNumber() - 1);
+	return static_cast<float>(FMath::Exp(FMath::Min(
+		Steps * FMath::Loge(static_cast<double>(Growth)),
+		FMath::Loge(static_cast<double>(Maximum)))));
+}
+
 int32 ARLGameModeBase::GetCurrentRoundNumber() const
 {
 	if (!RunDefinition || !RunDefinition->Rounds.IsValidIndex(CurrentRoundIndex))
@@ -414,7 +448,7 @@ int32 ARLGameModeBase::GetCurrentRoundNumber() const
 			++RoundNumber;
 		}
 	}
-	return RoundNumber;
+	return RoundNumber + RepeatedRoundCount;
 }
 
 bool ARLGameModeBase::IsCurrentRoundTutorial() const
@@ -710,16 +744,17 @@ void ARLGameModeBase::BeginWave(int32 WaveIndex)
 	}
 
 	// Balance a per-wave copy so authored schedules and retries never compound
-	// the multipliers. This also covers the runtime-generated later rounds.
+	// the multipliers, including when the final round is repeated.
 	FRLWaveDefinition WaveDefinition = Schedule->Waves[WaveIndex];
 	if (!RoundDefinition->bIsTutorial)
 	{
 		WaveDefinition.EnemyCount = static_cast<int32>(FMath::Clamp<int64>(
 			static_cast<int64>(WaveDefinition.EnemyCount) * 2, 1, MAX_int32));
-		// Scale both burst periods and shot gaps to halve the per-enemy attack
-		// frequency without changing burst size or projectile/ring selection.
-		WaveDefinition.AttackIntervalMultiplier *= 2.0f;
-		WaveDefinition.TimeBetweenShotsMultiplier *= 2.0f;
+		// Round one retains the existing half-frequency baseline. Later rounds
+		// accelerate without mutating the schedule or compounding per wave.
+		const float AttackTimingScale = 2.0f / GetRoundAttackFrequencyMultiplier();
+		WaveDefinition.AttackIntervalMultiplier *= AttackTimingScale;
+		WaveDefinition.TimeBetweenShotsMultiplier *= AttackTimingScale;
 	}
 	ApplyWaveDefinition(WaveDefinition, WaveIndex);
 
@@ -816,9 +851,10 @@ void ARLGameModeBase::FinishRound()
 		}
 	}
 
-	if (!RunDefinition || CurrentRoundIndex + 1 >= RunDefinition->Rounds.Num())
+	if (!RunDefinition || (CurrentRoundIndex + 1 >= RunDefinition->Rounds.Num() && !IsEndlessRun()))
 	{
-		SetRunState(ERLRunState::RunCompleted);
+		SetRunState(RunDefinition && RunDefinition->bRepeatFinalRound && !bTutorialOnlyMode
+			? ERLRunState::CampaignCleared : ERLRunState::RunCompleted);
 		return;
 	}
 	if (!RoundDefinition->bIsTutorial)
@@ -984,6 +1020,18 @@ void ARLGameModeBase::FinishIntermission()
 {
 	GetWorldTimerManager().ClearTimer(IntermissionTimerHandle);
 	IntermissionEndTimeSeconds = 0.0f;
+	if (IsEndlessRun() && RunDefinition->Rounds.IsValidIndex(CurrentRoundIndex) &&
+		CurrentRoundIndex == RunDefinition->Rounds.Num() - 1 && !IsCurrentRoundTutorial())
+	{
+		if (RepeatedRoundCount >= MAX_int32 - GetRoundCount())
+		{
+			SetRunState(ERLRunState::RunCompleted);
+			return;
+		}
+		++RepeatedRoundCount;
+		BeginRoundCountdown(CurrentRoundIndex);
+		return;
+	}
 	BeginRoundCountdown(CurrentRoundIndex + 1);
 }
 

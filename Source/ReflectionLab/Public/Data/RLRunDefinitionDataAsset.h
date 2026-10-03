@@ -44,6 +44,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Rewards")
 	TArray<TObjectPtr<URLRunRewardDataAsset>> RewardPool;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Progression")
+	bool bRepeatFinalRound = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Progression", meta = (ClampMin = "1.0", ClampMax = "2.0"))
+	float AttackFrequencyGrowthPerRound = 1.1f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Progression", meta = (ClampMin = "1.0", ClampMax = "100.0"))
+	float MaxAttackFrequencyMultiplier = 3.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run")
 	TArray<FRLRoundDefinition> Rounds;
 };
