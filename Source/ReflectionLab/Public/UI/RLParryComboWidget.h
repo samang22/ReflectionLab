@@ -15,6 +15,7 @@ class REFLECTIONLAB_API URLParryComboWidget : public UUserWidget
 
 public:
 	void BindToPlayer(ARLPlayerCharacter* PlayerCharacter);
+	bool IsFeedbackActive() const { return bFeedbackActive; }
 
 protected:
 	virtual void NativeOnInitialized() override;
@@ -52,6 +53,10 @@ private:
 	TObjectPtr<ARLPlayerCharacter> BoundPlayerCharacter;
 
 	float PopTimeRemaining = 0.0f;
+	FTimerHandle FeedbackTimerHandle;
+	bool bFeedbackActive = false;
+	static constexpr float FeedbackDisplaySeconds = 2.0f;
+	static constexpr float FeedbackFadeOutSeconds = 0.2f;
 	float ComboBreakTimeRemaining = 0.0f;
 	int32 DisplayedComboCount = 0;
 };

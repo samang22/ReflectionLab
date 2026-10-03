@@ -9,6 +9,8 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Player/RLPlayerCharacter.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 
 void URLParryComboWidget::NativeOnInitialized()
 {
@@ -31,6 +33,19 @@ void URLParryComboWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaT
 		}
 	}
 
+	if (bFeedbackActive)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			float DisplayTimeRemaining = World->GetTimerManager().GetTimerRemaining(FeedbackTimerHandle);
+			if (ComboBreakTimeRemaining > 0.0f)
+			{
+				DisplayTimeRemaining = FMath::Min(DisplayTimeRemaining, ComboBreakTimeRemaining);
+			}
+			SetRenderOpacity(FMath::Clamp(DisplayTimeRemaining / FeedbackFadeOutSeconds, 0.0f, 1.0f));
+		}
+	}
+
 	PopTimeRemaining = FMath::Max(0.0f, PopTimeRemaining - InDeltaTime);
 	const float PopAlpha = FMath::Clamp(PopTimeRemaining / 0.12f, 0.0f, 1.0f);
 	SetRenderScale(FVector2D(FMath::Lerp(1.0f, 1.25f, PopAlpha)));
@@ -46,9 +61,9 @@ void URLParryComboWidget::BindToPlayer(ARLPlayerCharacter* PlayerCharacter)
 	}
 
 	BoundPlayerCharacter = PlayerCharacter;
+	ResetDisplay();
 	if (!BoundPlayerCharacter)
 	{
-		ResetDisplay();
 		return;
 	}
 
@@ -113,6 +128,13 @@ void URLParryComboWidget::HandleParryComboChanged(
 
 	DisplayedComboCount = ComboCount;
 	ComboBreakTimeRemaining = 0.0f;
+	bFeedbackActive = true;
+	SetRenderOpacity(1.0f);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			FeedbackTimerHandle, this, &ThisClass::ResetDisplay, FeedbackDisplaySeconds, false);
+	}
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 	PopTimeRemaining = 0.12f;
 
@@ -301,10 +323,16 @@ void URLParryComboWidget::BuildWidgetTree()
 
 void URLParryComboWidget::ResetDisplay()
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(FeedbackTimerHandle);
+	}
+	bFeedbackActive = false;
 	PopTimeRemaining = 0.0f;
 	ComboBreakTimeRemaining = 0.0f;
 	DisplayedComboCount = 0;
 	SetRenderScale(FVector2D(1.0f));
+	SetRenderOpacity(1.0f);
 	SetVisibility(ESlateVisibility::Collapsed);
 	if (ComboProgressBar)
 	{
