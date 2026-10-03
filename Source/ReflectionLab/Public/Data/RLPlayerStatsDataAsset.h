@@ -5,6 +5,7 @@
 #include "RLPlayerStatsDataAsset.generated.h"
 
 class USoundBase;
+class UMaterialInterface;
 class UNiagaraSystem;
 
 UCLASS(BlueprintType)
@@ -13,6 +14,7 @@ class REFLECTIONLAB_API URLPlayerStatsDataAsset : public UDataAsset
 	GENERATED_BODY()
 
 public:
+	URLPlayerStatsDataAsset();
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Health", meta = (ClampMin = "1.0"))
 	float MaxHealth = 10.0f;
 
@@ -31,6 +33,25 @@ public:
 	// Cooldown starts after the roll ends.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Roll", meta = (ClampMin = "0.0"))
 	float RollCooldown = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Roll|Feedback")
+	TObjectPtr<USoundBase> RollSound;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Roll|Feedback", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float RollSoundVolume = 0.3f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Roll|Feedback", meta = (ClampMin = "0.1", ClampMax = "2.0"))
+	float RollSoundPitch = 0.85f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Roll|Afterimage")
+	bool bRollAfterimagesEnabled = true;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Roll|Afterimage")
+	TObjectPtr<UMaterialInterface> RollAfterimageMaterial;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Roll|Afterimage")
+	FLinearColor RollAfterimageColor = FLinearColor(0.05f, 0.8f, 1.0f, 1.0f);
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Roll|Afterimage", meta = (ClampMin = "0.03", ClampMax = "0.5"))
+	float RollAfterimageInterval = 0.075f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Roll|Afterimage", meta = (ClampMin = "0.02", ClampMax = "1.0"))
+	float RollAfterimageLifetime = 0.22f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Player|Roll|Afterimage", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float RollAfterimageOpacity = 0.25f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Timing", meta = (ClampMin = "0.0", DisplayName = "Failed Parry Cooldown"))
 	float FailedParryCooldown = 0.5f;

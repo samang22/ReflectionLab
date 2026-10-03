@@ -7,6 +7,7 @@
 class ACharacter;
 class UAnimMontage;
 class URLPlayerStatsDataAsset;
+class UMaterialInterface;
 
 UCLASS(ClassGroup = (ReflectionLab), meta = (BlueprintSpawnableComponent))
 class REFLECTIONLAB_API URLDodgeRollComponent : public UActorComponent
@@ -35,6 +36,15 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAnimMontage> ActiveRollMontage;
 	float ActiveRollCooldown = 0.0f;
+	void StartRollFeedback(ACharacter& Character, const URLPlayerStatsDataAsset& Tuning);
+	void SpawnAfterimage(ACharacter& Character);
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> ActiveAfterimageMaterial;
+	FLinearColor ActiveAfterimageColor;
+	float ActiveAfterimageInterval = 0.075f;
+	float ActiveAfterimageLifetime = 0.22f;
+	float ActiveAfterimageOpacity = 0.25f;
+	double NextAfterimageTime = 0.0;
 	void HandleMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
 	void HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 	TWeakObjectPtr<ACharacter> RollingCharacter;

@@ -7,6 +7,10 @@
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Player/RLRollAfterimagePoolSubsystem.h"
+#include "Materials/MaterialInterface.h"
+#include "Sound/SoundBase.h"
 #include "UObject/ConstructorHelpers.h"
 
 URLDodgeRollComponent::URLDodgeRollComponent()
@@ -65,6 +69,8 @@ bool URLDodgeRollComponent::TryStartRoll(const FVector& Direction)
 	EndDelegate.BindUObject(this, &ThisClass::HandleMontageEnded);
 	AnimInstance->Montage_SetEndDelegate(EndDelegate, RollMontage);
 	SetComponentTickEnabled(true);
+	AddTickPrerequisiteComponent(Character->GetMesh());
+	StartRollFeedback(*Character, *Tuning);
 	return true;
 }
 
@@ -83,6 +89,13 @@ void URLDodgeRollComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	if (!AnimInstance || !AnimInstance->Montage_IsActive(ActiveRollMontage))
 	{
 		StopRoll();
+		return;
+	}
+	if (ActiveAfterimageMaterial && GetWorld() && GetWorld()->GetTimeSeconds() >= NextAfterimageTime)
+	{
+		SpawnAfterimage(*Character);
+		// Emit at most one snapshot per frame; don't catch up after a hitch.
+		NextAfterimageTime = GetWorld()->GetTimeSeconds() + ActiveAfterimageInterval;
 	}
 }
 
@@ -94,6 +107,7 @@ void URLDodgeRollComponent::StopRoll()
 		return;
 	}
 	bRolling = false;
+	ActiveAfterimageMaterial = nullptr;
 	if (UWorld* World = GetWorld())
 	{
 		NextRollTime = World->GetTimeSeconds() + ActiveRollCooldown;
@@ -101,6 +115,7 @@ void URLDodgeRollComponent::StopRoll()
 	SetComponentTickEnabled(false);
 	if (ACharacter* Character = RollingCharacter.Get())
 	{
+		RemoveTickPrerequisiteComponent(Character->GetMesh());
 		if (UAnimInstance* AnimInstance = Character->GetMesh()->GetAnimInstance())
 		{
 			// Cancellation must not leave root motion active after roll invulnerability ends.
@@ -112,6 +127,46 @@ void URLDodgeRollComponent::StopRoll()
 	}
 	RollingCharacter.Reset();
 	ActiveRollMontage = nullptr;
+}
+
+void URLDodgeRollComponent::StartRollFeedback(ACharacter& Character, const URLPlayerStatsDataAsset& Tuning)
+{
+	if (Tuning.RollSound && FMath::IsFinite(Tuning.RollSoundVolume) && FMath::IsFinite(Tuning.RollSoundPitch))
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, Tuning.RollSound, Character.GetActorLocation(),
+			FMath::Clamp(Tuning.RollSoundVolume, 0.0f, 1.0f), FMath::Clamp(Tuning.RollSoundPitch, 0.1f, 2.0f));
+	}
+	ActiveAfterimageMaterial = nullptr;
+	if (!Tuning.bRollAfterimagesEnabled || !Tuning.RollAfterimageMaterial ||
+		!FMath::IsFinite(Tuning.RollAfterimageInterval) || !FMath::IsFinite(Tuning.RollAfterimageLifetime) ||
+		!FMath::IsFinite(Tuning.RollAfterimageOpacity))
+	{
+		return;
+	}
+	ActiveAfterimageMaterial = Tuning.RollAfterimageMaterial;
+	ActiveAfterimageColor = Tuning.RollAfterimageColor;
+	ActiveAfterimageInterval = FMath::Clamp(Tuning.RollAfterimageInterval, 0.03f, 0.5f);
+	ActiveAfterimageLifetime = FMath::Clamp(Tuning.RollAfterimageLifetime, 0.02f, 1.0f);
+	ActiveAfterimageOpacity = FMath::Clamp(Tuning.RollAfterimageOpacity, 0.0f, 1.0f);
+	if (URLRollAfterimagePoolSubsystem* Pool = GetWorld()->GetSubsystem<URLRollAfterimagePoolSubsystem>())
+	{
+		const int32 PoolSize = FMath::CeilToInt(ActiveAfterimageLifetime / ActiveAfterimageInterval) + 1;
+		Pool->PrewarmPool(PoolSize, Character.GetMesh(), ActiveAfterimageMaterial);
+	}
+	// Wait for the first evaluated roll pose instead of snapshotting the idle pose.
+	NextAfterimageTime = GetWorld()->GetTimeSeconds() + ActiveAfterimageInterval;
+}
+
+void URLDodgeRollComponent::SpawnAfterimage(ACharacter& Character)
+{
+	USkeletalMeshComponent* Mesh = Character.GetMesh();
+	UWorld* World = GetWorld();
+	if (!World || !Mesh || !ActiveAfterimageMaterial) { return; }
+	if (URLRollAfterimagePoolSubsystem* Pool = World->GetSubsystem<URLRollAfterimagePoolSubsystem>())
+	{
+		Pool->AcquireAfterimage(Mesh, ActiveAfterimageMaterial, ActiveAfterimageColor,
+			ActiveAfterimageLifetime, ActiveAfterimageOpacity);
+	}
 }
 
 void URLDodgeRollComponent::HandleMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted)
