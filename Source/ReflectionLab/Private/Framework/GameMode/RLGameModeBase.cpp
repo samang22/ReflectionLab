@@ -3,6 +3,7 @@
 #include "Combat/RLProjectile.h"
 #include "Data/RLDifficultyScheduleDataAsset.h"
 #include "Data/RLRunDefinitionDataAsset.h"
+#include "Data/RLRunRewardDataAsset.h"
 #include "Enemies/RLEnemyCharacter.h"
 #include "Enemies/RLEnemySpawner.h"
 #include "Engine/World.h"
@@ -12,9 +13,9 @@
 #include "Kismet/GameplayStatics.h"
 #include "Player/RLPlayerCharacter.h"
 #include "Player/Components/RLHealthComponent.h"
+#include "Player/Components/RLRunRewardComponent.h"
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Player/Components/RLParryProgressionComponent.h"
-#include "Player/Components/RLRunRewardComponent.h"
 #endif
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
@@ -49,11 +50,29 @@ bool FRLTutorialRewardTest::RunTest(const FString& Parameters)
 		&& TestNotNull(TEXT("Player"), Player))
 	{
 		Controller->Possess(Player);
+		URLRunRewardComponent* TestRewards = Player->GetRunRewardComponent();
+		TestRewards->Initialize(Player->GetHealthComponent());
+		auto ApplyTestReward = [Mode, TestRewards](ERLRunRewardType Type, float Amount)
+		{
+			URLRunRewardDataAsset* Reward = NewObject<URLRunRewardDataAsset>(Mode);
+			Reward->RewardType = Type;
+			Reward->Amount = Amount;
+			return TestRewards->TryApplyReward(Reward);
+		};
 		// This isolated world has not begun play, so register its player explicitly.
 		World->AddController(Controller);
 		TestTrue(TEXT("Player available to gameplay lookup"),
 			UGameplayStatics::GetPlayerCharacter(Mode, 0) == Player);
 		Mode->RunDefinition = NewObject<URLRunDefinitionDataAsset>(Mode);
+		for (ERLRunRewardType Type : {ERLRunRewardType::WiderArc,
+			ERLRunRewardType::ExtendedRange, ERLRunRewardType::PiercingReturn})
+		{
+			URLRunRewardDataAsset* Reward = NewObject<URLRunRewardDataAsset>(Mode->RunDefinition);
+			Reward->RewardType = Type;
+			Reward->Amount = 1.0f;
+			Reward->Title = FText::FromString(TEXT("Test reward"));
+			Mode->RunDefinition->RewardPool.Add(Reward);
+		}
 		Mode->RunDefinition->Rounds.AddDefaulted_GetRef().bIsTutorial = true;
 		Mode->CurrentRoundIndex = 0;
 		Mode->bTutorialOnlyMode = true;
@@ -65,12 +84,12 @@ bool FRLTutorialRewardTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Practice reward applied"), Mode->SelectReward(0));
 		TestTrue(TEXT("Selection completes tutorial"), Mode->GetRunState() == ERLRunState::TutorialCompleted);
 		TestFalse(TEXT("Duplicate selection rejected"), Mode->SelectReward(0));
-		Player->ResetRunRewards();
+		TestRewards->ResetRunRewards();
 		const float BaseHealth = Player->GetMaxHealth();
 		TestEqual(TEXT("Default max HP"), BaseHealth, 10.0f);
 		Player->GetHealthComponent()->InitializeHealth(Player->GetMaxHealth());
 		Player->GetHealthComponent()->ApplyDamage(Player->GetMaxHealth() - 5.0f);
-		Player->ApplyRunReward(ERLRunRewardType::Vitality);
+		TestTrue(TEXT("Vitality applies through component"), ApplyTestReward(ERLRunRewardType::Vitality, 2.0f));
 		TestEqual(TEXT("Vitality increases max HP"), Player->GetMaxHealth(), BaseHealth + 2.0f);
 		TestEqual(TEXT("Vitality restores HP"), Player->GetCurrentHealth(), 7.0f);
 		auto RegisterSuccessfulParry = [Player](int32 Count, bool bPerfect, bool bClose, bool bOverdrive)
@@ -79,22 +98,22 @@ bool FRLTutorialRewardTest::RunTest(const FString& Parameters)
 			Player->GetRunRewardComponent()->ApplyPerfectRecovery(Result);
 			Player->GetParryProgressionComponent()->RegisterSuccess(Result);
 		};
-		Player->ApplyRunReward(ERLRunRewardType::PerfectRecovery);
+		TestTrue(TEXT("Healing reward applies"), ApplyTestReward(ERLRunRewardType::PerfectRecovery, 1.0f));
 		RegisterSuccessfulParry(3, true, false, false);
 		TestEqual(TEXT("Multi perfect parry heals once"), Player->GetCurrentHealth(), 8.0f);
 		RegisterSuccessfulParry(1, false, false, false);
 		TestEqual(TEXT("Normal parry does not heal"), Player->GetCurrentHealth(), 8.0f);
-		Player->ApplyRunReward(ERLRunRewardType::PerfectRecovery);
+		TestTrue(TEXT("Healing reward stacks"), ApplyTestReward(ERLRunRewardType::PerfectRecovery, 1.0f));
 		RegisterSuccessfulParry(1, true, false, false);
 		TestEqual(TEXT("Second recovery reward heals two HP"), Player->GetCurrentHealth(), 10.0f);
-		Player->ApplyRunReward(ERLRunRewardType::PerfectRecovery);
+		TestTrue(TEXT("Healing reward stacks again"), ApplyTestReward(ERLRunRewardType::PerfectRecovery, 1.0f));
 		Player->GetHealthComponent()->ApplyDamage(Player->GetCurrentHealth() - 5.0f);
 		RegisterSuccessfulParry(1, true, false, false);
 		TestEqual(TEXT("Third recovery reward heals three HP"), Player->GetCurrentHealth(), 8.0f);
 		Player->RestoreHealth(Player->GetMaxHealth());
 		RegisterSuccessfulParry(1, true, false, false);
 		TestEqual(TEXT("Healing respects max HP"), Player->GetCurrentHealth(), Player->GetMaxHealth());
-		Player->ResetRunRewards();
+		TestRewards->ResetRunRewards();
 		TestEqual(TEXT("Reset restores base max HP"), Player->GetMaxHealth(), BaseHealth);
 		TestFalse(TEXT("Reset clears recovery reward"), Player->HasPerfectRecoveryReward());
 	}
@@ -196,7 +215,10 @@ void ARLGameModeBase::StartRun()
 	if (ARLPlayerCharacter* PlayerCharacter = Cast<ARLPlayerCharacter>(
 		UGameplayStatics::GetPlayerCharacter(this, 0)))
 	{
-		PlayerCharacter->ResetRunRewards();
+		if (URLRunRewardComponent* Rewards = PlayerCharacter->GetRunRewardComponent())
+		{
+			Rewards->ResetRunRewards();
+		}
 	}
 	const int32 StartingRoundIndex = ResolveStartingRoundIndex();
 	if (!RunDefinition->Rounds.IsValidIndex(StartingRoundIndex))
@@ -863,93 +885,58 @@ void ARLGameModeBase::BeginIntermission()
 void ARLGameModeBase::BuildRewardChoices()
 {
 	PendingRewardChoices.Reset();
-	TArray<ERLRunRewardType> AvailableRewards = {
-		ERLRunRewardType::WiderArc,
-		ERLRunRewardType::ExtendedRange,
-		ERLRunRewardType::PiercingReturn,
-		ERLRunRewardType::PerfectFocus,
-		ERLRunRewardType::VelocityDrive,
-		ERLRunRewardType::CloseCall,
-		ERLRunRewardType::Vitality,
-		ERLRunRewardType::PerfectRecovery,
-	};
-
+	if (!RunDefinition) { return; }
+	TArray<URLRunRewardDataAsset*> AvailableRewards;
+	TSet<ERLRunRewardType> RegisteredTypes;
+	for (URLRunRewardDataAsset* Reward : RunDefinition->RewardPool)
+	{
+		if (!IsValid(Reward) || !Reward->bEnabled || Reward->Count <= 0 || !Reward->HasValidEffect() ||
+			Reward->Title.IsEmpty() || RegisteredTypes.Contains(Reward->RewardType)) { continue; }
+		RegisteredTypes.Add(Reward->RewardType);
+		AvailableRewards.Add(Reward);
+	}
 	while (!AvailableRewards.IsEmpty() && PendingRewardChoices.Num() < 3)
 	{
-		const int32 Index = FMath::RandRange(0, AvailableRewards.Num() - 1);
-		PendingRewardChoices.Add(AvailableRewards[Index]);
-		AvailableRewards.RemoveAtSwap(Index, 1, EAllowShrinking::No);
+		int64 TotalWeight = 0;
+		for (const URLRunRewardDataAsset* Reward : AvailableRewards) { TotalWeight += Reward->Count; }
+		// Use a cumulative draw instead of allocating Count copies of each asset.
+		int64 Ticket = FMath::RandRange(static_cast<int64>(0), TotalWeight - 1);
+		for (int32 Index = 0; Index < AvailableRewards.Num(); ++Index)
+		{
+			Ticket -= AvailableRewards[Index]->Count;
+			if (Ticket < 0)
+			{
+				PendingRewardChoices.Add(AvailableRewards[Index]);
+				// Remove the whole reward so later cards cannot repeat its effect.
+				AvailableRewards.RemoveAtSwap(Index, 1, EAllowShrinking::No);
+				break;
+			}
+		}
 	}
+}
+
+const URLRunRewardDataAsset* ARLGameModeBase::GetRewardChoiceDefinition(int32 ChoiceIndex) const
+{
+	return PendingRewardChoices.IsValidIndex(ChoiceIndex) && IsValid(PendingRewardChoices[ChoiceIndex])
+		? PendingRewardChoices[ChoiceIndex].Get() : nullptr;
 }
 
 FText ARLGameModeBase::GetRewardChoiceTitle(int32 ChoiceIndex) const
 {
-	if (!PendingRewardChoices.IsValidIndex(ChoiceIndex))
-	{
-		return FText::GetEmpty();
-	}
-
-	switch (PendingRewardChoices[ChoiceIndex])
-	{
-	case ERLRunRewardType::WiderArc:
-		return FText::FromString(TEXT("WIDE SWING"));
-	case ERLRunRewardType::ExtendedRange:
-		return FText::FromString(TEXT("LONG REACH"));
-	case ERLRunRewardType::PiercingReturn:
-		return FText::FromString(TEXT("PIERCING RETURN"));
-	case ERLRunRewardType::PerfectFocus:
-		return FText::FromString(TEXT("PERFECT VOLLEY"));
-	case ERLRunRewardType::VelocityDrive:
-		return FText::FromString(TEXT("VELOCITY DRIVE"));
-	case ERLRunRewardType::CloseCall:
-		return FText::FromString(TEXT("CLOSE CALL"));
-	case ERLRunRewardType::Vitality:
-		return FText::FromString(TEXT("VITALITY"));
-	case ERLRunRewardType::PerfectRecovery:
-		return FText::FromString(TEXT("PERFECT RECOVERY"));
-	default:
-		return FText::GetEmpty();
-	}
+	const URLRunRewardDataAsset* Reward = GetRewardChoiceDefinition(ChoiceIndex);
+	return Reward ? Reward->Title : FText::GetEmpty();
 }
 
 FText ARLGameModeBase::GetRewardChoiceDescription(int32 ChoiceIndex) const
 {
-	if (!PendingRewardChoices.IsValidIndex(ChoiceIndex))
-	{
-		return FText::GetEmpty();
-	}
-
-	switch (PendingRewardChoices[ChoiceIndex])
-	{
-	case ERLRunRewardType::WiderArc:
-		return FText::FromString(TEXT("Parry angle +12 degrees"));
-	case ERLRunRewardType::ExtendedRange:
-		return FText::FromString(TEXT("Parry range +18%"));
-	case ERLRunRewardType::PiercingReturn:
-		return FText::FromString(TEXT("Reflected projectile pierce +1"));
-	case ERLRunRewardType::PerfectFocus:
-		return FText::FromString(TEXT("Perfect parry split projectile +1"));
-	case ERLRunRewardType::VelocityDrive:
-		return FText::FromString(TEXT("Maximum reflected speed +0.2x"));
-	case ERLRunRewardType::CloseCall:
-		return FText::FromString(TEXT("Close-range parry zone +12 cm"));
-	case ERLRunRewardType::Vitality:
-		return FText::FromString(TEXT("Max HP +2 and restore 2 HP"));
-	case ERLRunRewardType::PerfectRecovery:
-		return FText::FromString(TEXT("Perfect parry healing +1 HP (stacks)"));
-	default:
-		return FText::GetEmpty();
-	}
+	const URLRunRewardDataAsset* Reward = GetRewardChoiceDefinition(ChoiceIndex);
+	return Reward ? Reward->Description : FText::GetEmpty();
 }
 
 TOptional<ERLRunRewardType> ARLGameModeBase::GetRewardChoiceType(int32 ChoiceIndex) const
 {
-	if (!PendingRewardChoices.IsValidIndex(ChoiceIndex))
-	{
-		return TOptional<ERLRunRewardType>();
-	}
-
-	return PendingRewardChoices[ChoiceIndex];
+	const URLRunRewardDataAsset* Reward = GetRewardChoiceDefinition(ChoiceIndex);
+	return Reward ? TOptional<ERLRunRewardType>(Reward->RewardType) : TOptional<ERLRunRewardType>();
 }
 
 bool ARLGameModeBase::SelectReward(int32 ChoiceIndex)
@@ -972,13 +959,14 @@ bool ARLGameModeBase::SelectReward(int32 ChoiceIndex)
 		return false;
 	}
 
-	const ERLRunRewardType SelectedReward = PendingRewardChoices[ChoiceIndex];
-	PlayerCharacter->ApplyRunReward(SelectedReward);
+	const URLRunRewardDataAsset* SelectedReward = GetRewardChoiceDefinition(ChoiceIndex);
+	URLRunRewardComponent* Rewards = PlayerCharacter->GetRunRewardComponent();
+	if (!IsValid(Rewards) || !Rewards->TryApplyReward(SelectedReward)) { return false; }
 	UE_LOG(
 		LogTemp,
 		Display,
 		TEXT("Selected run reward %d after round %d."),
-		static_cast<int32>(SelectedReward),
+		static_cast<int32>(SelectedReward->RewardType),
 		GetCurrentRoundNumber());
 	if (IsCurrentRoundTutorial() && bTutorialOnlyMode)
 	{

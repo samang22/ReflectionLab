@@ -1,4 +1,5 @@
 #include "UI/RLRunStatusWidget.h"
+#include "Data/RLRunRewardDataAsset.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "Combat/RLProjectile.h"
@@ -22,59 +23,6 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Framework/PlayerController/RLPlayerController.h"
-
-namespace
-{
-	const TCHAR* GetRewardArtPath(ERLRunRewardType RewardType)
-	{
-		switch (RewardType)
-		{
-		case ERLRunRewardType::WiderArc:
-			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_WideSwing.T_Reward_WideSwing");
-		case ERLRunRewardType::ExtendedRange:
-			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_LongReach.T_Reward_LongReach");
-		case ERLRunRewardType::PiercingReturn:
-			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_PiercingReturn.T_Reward_PiercingReturn");
-		case ERLRunRewardType::PerfectFocus:
-			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_PerfectVolley.T_Reward_PerfectVolley");
-		case ERLRunRewardType::PerfectRecovery:
-			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/parry-heal-robot-grid.parry-heal-robot-grid");
-		case ERLRunRewardType::VelocityDrive:
-			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_VelocityDrive.T_Reward_VelocityDrive");
-		case ERLRunRewardType::CloseCall:
-			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/T_Reward_CloseCall.T_Reward_CloseCall");
-		case ERLRunRewardType::Vitality:
-			return TEXT("/Game/ReflectionLab/UI/Rewards/Textures/max-health-heart-grid.max-health-heart-grid");
-		default:
-			return nullptr;
-		}
-	}
-
-	FLinearColor GetRewardAccentColor(ERLRunRewardType RewardType)
-	{
-		switch (RewardType)
-		{
-		case ERLRunRewardType::WiderArc:
-			return FLinearColor(0.1f, 0.85f, 1.0f);
-		case ERLRunRewardType::ExtendedRange:
-			return FLinearColor(0.25f, 1.0f, 0.55f);
-		case ERLRunRewardType::PiercingReturn:
-			return FLinearColor(0.72f, 0.35f, 1.0f);
-		case ERLRunRewardType::PerfectFocus:
-			return FLinearColor(1.0f, 0.72f, 0.12f);
-		case ERLRunRewardType::VelocityDrive:
-			return FLinearColor(1.0f, 0.38f, 0.08f);
-		case ERLRunRewardType::CloseCall:
-			return FLinearColor(1.0f, 0.12f, 0.08f);
-		case ERLRunRewardType::Vitality:
-			return FLinearColor(0.2f, 1.0f, 0.4f);
-		case ERLRunRewardType::PerfectRecovery:
-			return FLinearColor(1.0f, 0.4f, 0.7f);
-		default:
-			return FLinearColor(0.2f, 0.9f, 1.0f);
-		}
-	}
-}
 
 void URLRunStatusWidget::NativeOnInitialized()
 {
@@ -344,15 +292,6 @@ void URLRunStatusWidget::BuildWidgetTree()
 	RewardSlot->SetAnchors(FAnchors(0.06f, 0.16f, 0.94f, 0.86f));
 	RewardSlot->SetOffsets(FMargin(0.0f));
 	RewardContainer->SetVisibility(ESlateVisibility::Collapsed);
-	RewardArtTextures.SetNum(static_cast<int32>(ERLRunRewardType::PerfectRecovery) + 1);
-	for (int32 RewardIndex = 0; RewardIndex < RewardArtTextures.Num(); ++RewardIndex)
-	{
-		const ERLRunRewardType RewardType = static_cast<ERLRunRewardType>(RewardIndex);
-		if (const TCHAR* ArtPath = GetRewardArtPath(RewardType))
-		{
-			RewardArtTextures[RewardIndex] = LoadObject<UTexture2D>(nullptr, ArtPath);
-		}
-	}
 
 	for (int32 ChoiceIndex = 0; ChoiceIndex < 3; ++ChoiceIndex)
 	{
@@ -777,11 +716,10 @@ void URLRunStatusWidget::UpdateRewardChoices()
 			RewardDescriptionTexts[ChoiceIndex]->SetText(
 				bValidChoice ? BoundGameMode->GetRewardChoiceDescription(ChoiceIndex) : FText::GetEmpty());
 		}
-		const TOptional<ERLRunRewardType> RewardType = bValidChoice
-			? BoundGameMode->GetRewardChoiceType(ChoiceIndex)
-			: TOptional<ERLRunRewardType>();
-		const FLinearColor CardAccent = RewardType.IsSet()
-			? GetRewardAccentColor(RewardType.GetValue())
+		const URLRunRewardDataAsset* Reward = bValidChoice
+			? BoundGameMode->GetRewardChoiceDefinition(ChoiceIndex) : nullptr;
+		const FLinearColor CardAccent = Reward
+			? Reward->AccentColor
 			: FLinearColor(0.2f, 0.9f, 1.0f);
 		if (RewardArtPanels.IsValidIndex(ChoiceIndex) && RewardArtPanels[ChoiceIndex])
 		{
@@ -794,15 +732,7 @@ void URLRunStatusWidget::UpdateRewardChoices()
 		}
 		if (RewardArtImages.IsValidIndex(ChoiceIndex) && RewardArtImages[ChoiceIndex])
 		{
-			UTexture2D* ArtTexture = nullptr;
-			if (RewardType.IsSet())
-			{
-				const int32 RewardIndex = static_cast<int32>(RewardType.GetValue());
-				if (RewardArtTextures.IsValidIndex(RewardIndex))
-				{
-					ArtTexture = RewardArtTextures[RewardIndex];
-				}
-			}
+			UTexture2D* ArtTexture = Reward ? Reward->Illustration.Get() : nullptr;
 			RewardArtImages[ChoiceIndex]->SetBrushFromTexture(ArtTexture, true);
 			RewardArtImages[ChoiceIndex]->SetVisibility(ArtTexture
 				? ESlateVisibility::HitTestInvisible

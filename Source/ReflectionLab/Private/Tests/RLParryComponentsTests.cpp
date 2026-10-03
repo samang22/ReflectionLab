@@ -1,6 +1,7 @@
 #include "Player/Components/RLParryComponent.h"
 #include "Player/Components/RLParryProgressionComponent.h"
 #include "Player/Components/RLRunRewardComponent.h"
+#include "Data/RLRunRewardDataAsset.h"
 #include "Player/Components/RLHealthComponent.h"
 #include "Data/RLPlayerStatsDataAsset.h"
 
@@ -51,9 +52,16 @@ bool FRLRunRewardComponentTest::RunTest(const FString& Parameters)
 	Stats->PerfectParryOuterBandWidth = 180.0f;
 	Health->InitializeHealth(10.0f);
 	Rewards->Initialize(Health);
+	auto ApplyReward = [Rewards](ERLRunRewardType Type, float Amount)
+	{
+		URLRunRewardDataAsset* Definition = NewObject<URLRunRewardDataAsset>();
+		Definition->RewardType = Type;
+		Definition->Amount = Amount;
+		return Rewards->TryApplyReward(Definition);
+	};
 	Parry->Initialize(nullptr, Rewards, nullptr);
-	Rewards->ApplyRunReward(ERLRunRewardType::ExtendedRange);
-	Rewards->ApplyRunReward(ERLRunRewardType::ExtendedRange);
+	TestTrue(TEXT("Range reward applies"), ApplyReward(ERLRunRewardType::ExtendedRange, 0.18f));
+	TestTrue(TEXT("Range reward applies"), ApplyReward(ERLRunRewardType::ExtendedRange, 0.18f));
 	Parry->Configure(Stats);
 	const FRLParryStats First = Parry->GetViewState().Stats;
 	TestTrue(TEXT("Two range rewards add on base range"), FMath::IsNearlyEqual(First.ReflectionRange, 272.0f));
@@ -62,11 +70,11 @@ bool FRLRunRewardComponentTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Reconfiguration never reapplies bonuses to effective stats"),
 		Parry->GetViewState().Stats.ReflectionRange, First.ReflectionRange);
 	Health->ApplyDamage(5.0f);
-	Rewards->ApplyRunReward(ERLRunRewardType::Vitality);
+	TestTrue(TEXT("Vitality reward applies"), ApplyReward(ERLRunRewardType::Vitality, 2.0f));
 	TestEqual(TEXT("Vitality restores only added capacity"), Health->GetCurrentHealth(), 7.0f);
 	for (int32 Index = 0; Index < 3; ++Index)
 	{
-		Rewards->ApplyRunReward(ERLRunRewardType::PerfectRecovery);
+		TestTrue(TEXT("Recovery reward applies"), ApplyReward(ERLRunRewardType::PerfectRecovery, 1.0f));
 	}
 	Rewards->ApplyPerfectRecovery(FRLParryResult{5, true, false, false});
 	TestEqual(TEXT("Stacked healing once for multi-parry"), Health->GetCurrentHealth(), 10.0f);

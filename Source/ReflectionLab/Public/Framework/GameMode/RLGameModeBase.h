@@ -10,6 +10,7 @@ class ARLEnemySpawner;
 class ARLEnemyCharacter;
 class ARLExpandingRingAttack;
 class URLRunDefinitionDataAsset;
+class URLRunRewardDataAsset;
 struct FRLDifficultyPhase;
 struct FRLWaveDefinition;
 struct FRLRoundDefinition;
@@ -175,6 +176,7 @@ public:
 	FText GetRewardChoiceDescription(int32 ChoiceIndex) const;
 
 	TOptional<ERLRunRewardType> GetRewardChoiceType(int32 ChoiceIndex) const;
+	const URLRunRewardDataAsset* GetRewardChoiceDefinition(int32 ChoiceIndex) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Run|Rewards")
 	bool SelectReward(int32 ChoiceIndex);
@@ -269,6 +271,7 @@ private:
 	bool bWaveTransitionPending = false;
 	bool bTutorialEnemyMovementLocked = false;
 	bool bTutorialOnlyMode = false;
-	TArray<ERLRunRewardType> PendingRewardChoices;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<URLRunRewardDataAsset>> PendingRewardChoices;
 	TWeakObjectPtr<ARLEnemyCharacter> TutorialEnemy;
 };

@@ -127,9 +127,6 @@ private:
 	TArray<TObjectPtr<UImage>> RewardArtImages;
 
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UTexture2D>> RewardArtTextures;
-
-	UPROPERTY(Transient)
 	TObjectPtr<ARLGameModeBase> BoundGameMode;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Warning", meta = (ClampMin = "100.0"))

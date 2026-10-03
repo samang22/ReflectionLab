@@ -5,6 +5,7 @@
 #include "RLRunDefinitionDataAsset.generated.h"
 
 class URLDifficultyScheduleDataAsset;
+class URLRunRewardDataAsset;
 
 USTRUCT(BlueprintType)
 struct REFLECTIONLAB_API FRLRoundDefinition
@@ -40,6 +41,9 @@ class REFLECTIONLAB_API URLRunDefinitionDataAsset : public UDataAsset
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Rewards")
+	TArray<TObjectPtr<URLRunRewardDataAsset>> RewardPool;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run")
 	TArray<FRLRoundDefinition> Rounds;
 };

@@ -89,7 +89,6 @@ void ARLPlayerCharacter::OnConstruction(const FTransform& Transform)
 
 void ARLPlayerCharacter::ApplyPlayerStats()
 {
-	RunRewardComponent->Initialize(HealthComponent);
 	ParryComponent->Initialize(ParryProgressionComponent, RunRewardComponent, ParryFeedbackComponent);
 	DodgeRollComponent->SetPlayerStats(PlayerStatsData);
 	HitRecoveryComponent->SetPlayerStats(PlayerStatsData);
@@ -241,15 +240,13 @@ bool ARLPlayerCharacter::HasPerfectRecoveryReward() const { return RunRewardComp
 
 void ARLPlayerCharacter::ApplyRunReward(ERLRunRewardType RewardType)
 {
-	// Also supports reward previews/tests before BeginPlay.
-	RunRewardComponent->Initialize(HealthComponent);
+	// Compatibility wrapper; gameplay selection talks to the component directly.
 	RunRewardComponent->ApplyRunReward(RewardType);
 	if (!HasActorBegunPlay()) { HandleRewardsChanged(); }
 }
 
 void ARLPlayerCharacter::ResetRunRewards()
 {
-	RunRewardComponent->Initialize(HealthComponent);
 	RunRewardComponent->ResetRunRewards();
 	if (!HasActorBegunPlay()) { HandleRewardsChanged(); }
 }

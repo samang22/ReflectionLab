@@ -7,6 +7,7 @@
 #include "RLRunRewardComponent.generated.h"
 
 class URLHealthComponent;
+class URLRunRewardDataAsset;
 
 DECLARE_MULTICAST_DELEGATE(FRLRunRewardsChangedSignature);
 
@@ -17,8 +18,14 @@ class REFLECTIONLAB_API URLRunRewardComponent : public UActorComponent
 
 public:
 	URLRunRewardComponent();
+	virtual void InitializeComponent() override;
+	// Explicit dependency injection for standalone components/previews; runtime
+	// initialization resolves the owner's health component automatically.
 	void Initialize(URLHealthComponent* Health);
+	// Compatibility API for existing Blueprint-facing character wrappers.
 	void ApplyRunReward(ERLRunRewardType RewardType);
+	UFUNCTION(BlueprintCallable, Category = "Run|Rewards")
+	bool TryApplyReward(const URLRunRewardDataAsset* Definition);
 	void ResetRunRewards();
 	void ApplyModifiers(FRLParryStats& Stats) const;
 	void ApplyPerfectRecovery(const FRLParryResult& Result);
@@ -27,6 +34,7 @@ public:
 	FRLRunRewardsChangedSignature OnRewardsChanged;
 
 private:
+	bool ApplyRewardEffect(ERLRunRewardType RewardType, float Amount);
 	UPROPERTY(Transient)
 	TObjectPtr<URLHealthComponent> HealthComponent;
 	float RunRewardRangeMultiplier = 1.0f;
