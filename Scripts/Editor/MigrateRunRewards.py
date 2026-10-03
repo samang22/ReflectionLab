@@ -63,7 +63,7 @@ for path, asset, effect, amount, title, description, texture, color in prepared:
         if not asset:
             raise RuntimeError(f"Could not create {path}")
         asset.set_editor_property("reward_type", effect)
-        asset.set_editor_property("count", 1)
+        asset.set_editor_property("weight", 1)
         asset.set_editor_property("amount", amount)
         asset.set_editor_property("title", unreal.Text(title))
         asset.set_editor_property("description", unreal.Text(description))

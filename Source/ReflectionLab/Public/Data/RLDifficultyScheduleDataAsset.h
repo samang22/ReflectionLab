@@ -16,6 +16,9 @@ struct REFLECTIONLAB_API FRLProjectileSpawnRule
 	TObjectPtr<URLProjectileDefinitionDataAsset> ProjectileDefinition;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile Rule", meta = (ClampMin = "0"))
+	int32 Weight = 3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile Rule", meta = (ClampMin = "0", DisplayName = "Legacy Shot Interval"))
 	int32 ShotInterval = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile Rule")
@@ -32,6 +35,12 @@ USTRUCT(BlueprintType)
 struct REFLECTIONLAB_API FRLDifficultyPhase
 {
 	GENERATED_BODY()
+
+	// Opt in after migrating old interval rules to weights.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Patterns")
+	bool bUseWeightedPatterns = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Patterns", meta = (ClampMin = "0"))
+	int32 DefaultProjectileWeight = 12;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty")
 	FName PhaseName = NAME_None;
@@ -66,7 +75,7 @@ struct REFLECTIONLAB_API FRLDifficultyPhase
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Projectiles")
 	TObjectPtr<URLProjectileDefinitionDataAsset> DefaultProjectileDefinition;
 
-	// Rules are evaluated in array order. The first matching interval wins.
+	// Interval ordering is used only by legacy/tutorial selection.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Difficulty|Projectiles")
 	TArray<FRLProjectileSpawnRule> ProjectileRules;
 
@@ -87,6 +96,12 @@ USTRUCT(BlueprintType)
 struct REFLECTIONLAB_API FRLWaveDefinition
 {
 	GENERATED_BODY()
+
+	// Opt in after migrating old interval rules to weights.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Patterns")
+	bool bUseWeightedPatterns = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave|Patterns", meta = (ClampMin = "0"))
+	int32 DefaultProjectileWeight = 12;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave")
 	FName WaveName = NAME_None;

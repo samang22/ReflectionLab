@@ -926,7 +926,7 @@ void ARLGameModeBase::BuildRewardChoices()
 	TSet<ERLRunRewardType> RegisteredTypes;
 	for (URLRunRewardDataAsset* Reward : RunDefinition->RewardPool)
 	{
-		if (!IsValid(Reward) || !Reward->bEnabled || Reward->Count <= 0 || !Reward->HasValidEffect() ||
+		if (!IsValid(Reward) || !Reward->bEnabled || Reward->Weight <= 0 || !Reward->HasValidEffect() ||
 			Reward->Title.IsEmpty() || RegisteredTypes.Contains(Reward->RewardType)) { continue; }
 		RegisteredTypes.Add(Reward->RewardType);
 		AvailableRewards.Add(Reward);
@@ -934,12 +934,12 @@ void ARLGameModeBase::BuildRewardChoices()
 	while (!AvailableRewards.IsEmpty() && PendingRewardChoices.Num() < 3)
 	{
 		int64 TotalWeight = 0;
-		for (const URLRunRewardDataAsset* Reward : AvailableRewards) { TotalWeight += Reward->Count; }
-		// Use a cumulative draw instead of allocating Count copies of each asset.
+		for (const URLRunRewardDataAsset* Reward : AvailableRewards) { TotalWeight += Reward->Weight; }
+		// Use a cumulative draw instead of allocating Weight copies of each asset.
 		int64 Ticket = FMath::RandRange(static_cast<int64>(0), TotalWeight - 1);
 		for (int32 Index = 0; Index < AvailableRewards.Num(); ++Index)
 		{
-			Ticket -= AvailableRewards[Index]->Count;
+			Ticket -= AvailableRewards[Index]->Weight;
 			if (Ticket < 0)
 			{
 				PendingRewardChoices.Add(AvailableRewards[Index]);

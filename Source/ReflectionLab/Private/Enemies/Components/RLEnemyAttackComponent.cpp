@@ -44,6 +44,7 @@ void URLEnemyAttackComponent::ActivateForPool()
 	bTutorialCombatControlled = false;
 	ShotsFiredSinceActivation = 0;
 	RandomizePatternStart();
+	NextRingAttackTime = 0.0;
 	if (bAutoStartFiring) { StartFiring(); }
 }
 
@@ -54,6 +55,7 @@ void URLEnemyAttackComponent::DeactivateForPool()
 	ShotsFiredSinceActivation = 0;
 	PatternShotOffset = 0;
 	RingAttackRule = FRLRingAttackSpawnRule();
+	NextRingAttackTime = 0.0;
 }
 
 void URLEnemyAttackComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -85,8 +87,14 @@ void URLEnemyAttackComponent::ApplyDifficultyPhase(const FRLDifficultyPhase& Dif
 		FMath::Max(0.1f, DifficultyPhase.TimeBetweenShotsMultiplier);
 	DefaultProjectileDefinition = DifficultyPhase.DefaultProjectileDefinition;
 	ProjectileRules = DifficultyPhase.ProjectileRules;
+	bUseWeightedPatterns = DifficultyPhase.bUseWeightedPatterns;
+	DefaultProjectileWeight = DifficultyPhase.DefaultProjectileWeight;
 	RingAttackRule = DifficultyPhase.RingAttack;
-	if (DifficultyPhase.bBreatherPhase) { RingAttackRule.ShotInterval = 0; }
+	if (DifficultyPhase.bBreatherPhase)
+	{
+		RingAttackRule.ShotInterval = 0;
+		RingAttackRule.Weight = 0;
+	}
 	AttackVariation = DifficultyPhase.AttackVariation;
 	RandomizePatternStart();
 
@@ -111,6 +119,8 @@ void URLEnemyAttackComponent::ApplyWaveDefinition(const FRLWaveDefinition& WaveD
 		FMath::Max(0.1f, WaveDefinition.TimeBetweenShotsMultiplier);
 	DefaultProjectileDefinition = WaveDefinition.DefaultProjectileDefinition;
 	ProjectileRules = WaveDefinition.ProjectileRules;
+	bUseWeightedPatterns = WaveDefinition.bUseWeightedPatterns;
+	DefaultProjectileWeight = WaveDefinition.DefaultProjectileWeight;
 	RingAttackRule = WaveDefinition.RingAttack;
 	AttackVariation = WaveDefinition.AttackVariation;
 	RandomizePatternStart();
@@ -214,6 +224,7 @@ bool URLEnemyAttackComponent::UsesAttackVariation() const
 void URLEnemyAttackComponent::RandomizePatternStart()
 {
 	PatternShotOffset = 0;
+	if (bUseWeightedPatterns) { return; }
 	if (!AttackVariation.bRandomizePatternStart || !UsesAttackVariation()) { return; }
 	TArray<int32> Intervals;
 	Intervals.Add(RingAttackRule.ShotInterval);
@@ -236,7 +247,14 @@ void URLEnemyAttackComponent::Fire()
 
 	const ARLGameModeBase* GameMode = Cast<ARLGameModeBase>(UGameplayStatics::GetGameMode(this));
 	if (GameMode && GameMode->GetRunState() != ERLRunState::PlayingRound) { return; }
-	++ShotsFiredSinceActivation;
+	if (bUseWeightedPatterns && (!GameMode || !GameMode->IsCurrentRoundTutorial()))
+	{
+		FireWeightedPattern();
+		return;
+	}
+	// Bound legacy counters so unusually long sessions cannot overflow.
+	ShotsFiredSinceActivation = ShotsFiredSinceActivation >= MAX_int32 - 4096
+		? 1 : ShotsFiredSinceActivation + 1;
 	const int32 PatternShotNumber = ShotsFiredSinceActivation + (UsesAttackVariation() ? PatternShotOffset : 0);
 	// Emit alongside the selected projectile so matching ring intervals cannot
 	// permanently suppress existing special-projectile rules.
@@ -261,6 +279,47 @@ void URLEnemyAttackComponent::Fire()
 		SelectedRule ? SelectedRule->ShotPattern : ERLShotPattern::Single,
 		SelectedRule ? SelectedRule->CrossLateralOffset : 90.0f,
 		SelectedRule ? SelectedRule->CrossTargetOffset : 110.0f);
+}
+
+void URLEnemyAttackComponent::FireWeightedPattern()
+{
+	UWorld* World = GetWorld();
+	if (!World) { return; }
+	const double Now = World->GetTimeSeconds();
+	const int64 DefaultWeight = IsValid(DefaultProjectileDefinition)
+		? FMath::Max(0, DefaultProjectileWeight) : 0;
+	const int64 RingWeight = Now >= NextRingAttackTime ? FMath::Max(0, RingAttackRule.Weight) : 0;
+	int64 TotalWeight = DefaultWeight + RingWeight;
+	for (const FRLProjectileSpawnRule& Rule : ProjectileRules)
+	{
+		if (IsValid(Rule.ProjectileDefinition)) { TotalWeight += FMath::Max(0, Rule.Weight); }
+	}
+	if (TotalWeight <= 0) { return; }
+	int64 Ticket = FMath::RandRange(static_cast<int64>(0), TotalWeight - 1);
+	if (Ticket < DefaultWeight)
+	{
+		SpawnProjectile(DefaultProjectileDefinition.Get());
+		return;
+	}
+	Ticket -= DefaultWeight;
+	for (const FRLProjectileSpawnRule& Rule : ProjectileRules)
+	{
+		const int64 Weight = IsValid(Rule.ProjectileDefinition) ? FMath::Max(0, Rule.Weight) : 0;
+		if (Ticket < Weight)
+		{
+			SpawnProjectile(Rule.ProjectileDefinition.Get(), Rule.ShotPattern,
+				Rule.CrossLateralOffset, Rule.CrossTargetOffset);
+			return;
+		}
+		Ticket -= Weight;
+	}
+	if (RingWeight > 0 && Ticket < RingWeight)
+	{
+		// A ring replaces this shot; it is never emitted alongside a projectile.
+		const float Cooldown = FMath::IsFinite(RingAttackRule.MinimumIntervalSeconds)
+			? FMath::Max(0.0f, RingAttackRule.MinimumIntervalSeconds) : 20.0f;
+		if (SpawnRingAttack()) { NextRingAttackTime = Now + Cooldown; }
+	}
 }
 
 ARLExpandingRingAttack* URLEnemyAttackComponent::SpawnRingAttack(bool bAutoStart)

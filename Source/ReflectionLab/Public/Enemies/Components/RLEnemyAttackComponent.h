@@ -45,6 +45,7 @@ private:
 	void FireNextShot();
 	void RandomizePatternStart();
 	bool UsesAttackVariation() const;
+	void FireWeightedPattern();
 	ARLExpandingRingAttack* SpawnRingAttack(bool bAutoStart = true);
 	bool SpawnProjectile(URLProjectileDefinitionDataAsset* ProjectileDefinition,
 		ERLShotPattern ShotPattern = ERLShotPattern::Single,
@@ -73,6 +74,9 @@ private:
 	float BaseTimeBetweenShots = 0.5f;
 	float CurrentBurstInterval = 3.0f;
 	double BurstStartTime = 0.0;
+	double NextRingAttackTime = 0.0;
+	int32 DefaultProjectileWeight = 12;
+	bool bUseWeightedPatterns = false;
 	int32 RemainingShotsInBurst = 0;
 	int32 ShotsFiredSinceActivation = 0;
 	int32 PatternShotOffset = 0;

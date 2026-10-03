@@ -18,7 +18,7 @@ public:
 	// Relative draw weight, not the number of times this reward can be acquired.
 	// Zero excludes this reward from the pool.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reward", meta = (ClampMin = "0"))
-	int32 Count = 1;
+	int32 Weight = 1;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Reward|Effect")
 	ERLRunRewardType RewardType = ERLRunRewardType::WiderArc;
 	// Degrees, additive range ratio (0.18 = 18%), count, speed ratio, cm, or HP.

@@ -41,8 +41,14 @@ struct FRLRingAttackSpawnRule
 {
 	GENERATED_BODY()
 
-	// Zero disables the attack. Existing waves inherit the default interval.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ring Attack", meta = (ClampMin = "0"))
+	int32 Weight = 1;
+	// Per-enemy minimum interval, unaffected by round attack-speed scaling.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ring Attack", meta = (ClampMin = "0.0"))
+	float MinimumIntervalSeconds = 20.0f;
+
+	// Legacy interval selection only. Zero disables the legacy attack.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ring Attack", meta = (ClampMin = "0", DisplayName = "Legacy Shot Interval"))
 	int32 ShotInterval = 12;
 	// Null uses the ring actor's built-in settings.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ring Attack")
