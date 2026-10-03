@@ -234,7 +234,6 @@ private:
 	void CleanupRoundActors(const FRLRoundDefinition& RoundDefinition);
 	void BindPlayerStats();
 	void ResetRunRecord();
-	void EnsureExtendedRounds();
 	void PrepareShortRounds();
 	friend class FRLShortRoundsTest;
 	friend class FRLTutorialRewardTest;

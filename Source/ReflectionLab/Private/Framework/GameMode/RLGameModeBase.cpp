@@ -113,7 +113,6 @@ bool FRLShortRoundsTest::RunTest(const FString& Parameters)
 	const bool bWasPrepared = Mode->bShortRoundsPrepared;
 	Mode->RunDefinition = DuplicateObject<URLRunDefinitionDataAsset>(Original, GetTransientPackage());
 	Mode->bShortRoundsPrepared = false;
-	Mode->EnsureExtendedRounds();
 	const TArray<FRLRoundDefinition> Before = Mode->RunDefinition->Rounds;
 	Mode->PrepareShortRounds();
 	int32 OutputIndex = 0;
@@ -221,7 +220,6 @@ void ARLGameModeBase::PrepareShortRounds()
 
 	// Keep shared editor assets untouched and do not split again on run restart.
 	RunDefinition = DuplicateObject<URLRunDefinitionDataAsset>(RunDefinition, this);
-	EnsureExtendedRounds();
 	TArray<FRLRoundDefinition> ShortRounds;
 	for (const FRLRoundDefinition& Round : RunDefinition->Rounds)
 	{
@@ -255,118 +253,6 @@ void ARLGameModeBase::PrepareShortRounds()
 	bShortRoundsPrepared = true;
 	UE_LOG(LogTemp, Display, TEXT("Prepared short rounds: %d rounds including tutorial."),
 		RunDefinition->Rounds.Num());
-}
-
-void ARLGameModeBase::EnsureExtendedRounds()
-{
-	if (!RunDefinition)
-	{
-		return;
-	}
-
-	int32 MainRoundCount = 0;
-	for (const FRLRoundDefinition& Round : RunDefinition->Rounds)
-	{
-		if (!Round.bIsTutorial)
-		{
-			++MainRoundCount;
-		}
-	}
-	if (MainRoundCount >= 5)
-	{
-		return;
-	}
-
-	auto LoadProjectileDefinition = [](const TCHAR* AssetPath)
-	{
-		return LoadObject<URLProjectileDefinitionDataAsset>(nullptr, AssetPath);
-	};
-	URLProjectileDefinitionDataAsset* Normal = LoadProjectileDefinition(
-		TEXT("/Game/ReflectionLab/Data/Projectiles/DA_Projectile_Normal.DA_Projectile_Normal"));
-	URLProjectileDefinitionDataAsset* Explosive = LoadProjectileDefinition(
-		TEXT("/Game/ReflectionLab/Data/Projectiles/DA_Projectile_Explosive.DA_Projectile_Explosive"));
-	URLProjectileDefinitionDataAsset* DelayedExplosive = LoadProjectileDefinition(
-		TEXT("/Game/ReflectionLab/Data/Projectiles/DA_Projectile_DelayedExplosive.DA_Projectile_DelayedExplosive"));
-	URLProjectileDefinitionDataAsset* Fake = LoadProjectileDefinition(
-		TEXT("/Game/ReflectionLab/Data/Projectiles/DA_Projectile_Fake.DA_Projectile_Fake"));
-	URLProjectileDefinitionDataAsset* Guard = LoadProjectileDefinition(
-		TEXT("/Game/ReflectionLab/Data/Projectiles/DA_Projectile_Guard.DA_Projectile_Guard"));
-	URLProjectileDefinitionDataAsset* ParrySplit = LoadProjectileDefinition(
-		TEXT("/Game/ReflectionLab/Data/Projectiles/DA_Projectile_ParrySplit.DA_Projectile_ParrySplit"));
-	URLProjectileDefinitionDataAsset* Rally = LoadProjectileDefinition(
-		TEXT("/Game/ReflectionLab/Data/Projectiles/DA_Projectile_Rally.DA_Projectile_Rally"));
-	if (!Normal || !Explosive || !DelayedExplosive || !Fake || !Guard || !ParrySplit || !Rally)
-	{
-		UE_LOG(LogTemp, Error, TEXT("Unable to build rounds 4 and 5: a projectile definition is missing."));
-		return;
-	}
-
-	auto AddRule = [](FRLWaveDefinition& Wave, URLProjectileDefinitionDataAsset* Definition, int32 Interval)
-	{
-		FRLProjectileSpawnRule& Rule = Wave.ProjectileRules.AddDefaulted_GetRef();
-		Rule.ProjectileDefinition = Definition;
-		Rule.ShotInterval = Interval;
-	};
-	auto AddWave = [&AddRule](
-		URLDifficultyScheduleDataAsset* Schedule,
-		FName Name,
-		int32 EnemyCount,
-		URLProjectileDefinitionDataAsset* DefaultProjectile,
-		float AttackIntervalMultiplier,
-		int32 ShieldInterval)
-	{
-		FRLWaveDefinition& Wave = Schedule->Waves.AddDefaulted_GetRef();
-		Wave.WaveName = Name;
-		Wave.EnemyCount = EnemyCount;
-		Wave.NextWaveDelaySeconds = 2.0f;
-		Wave.MinimumSpawnDistance = 760.0f;
-		Wave.MaximumSpawnDistance = 1200.0f;
-		Wave.AttackIntervalMultiplier = AttackIntervalMultiplier;
-		Wave.DefaultProjectileDefinition = DefaultProjectile;
-		Wave.ShieldEnemyInterval = ShieldInterval;
-		return &Wave;
-	};
-
-	URLDifficultyScheduleDataAsset* Round04Schedule = NewObject<URLDifficultyScheduleDataAsset>(this);
-	FRLWaveDefinition* Round04Wave1 = AddWave(
-		Round04Schedule, TEXT("RALLY LINE"), 5, Rally, 0.92f, 0);
-	AddRule(*Round04Wave1, Normal, 3);
-	FRLWaveDefinition* Round04Wave2 = AddWave(
-		Round04Schedule, TEXT("SPLIT PRESSURE"), 6, ParrySplit, 0.88f, 3);
-	AddRule(*Round04Wave2, Rally, 4);
-	FRLWaveDefinition* Round04Wave3 = AddWave(
-		Round04Schedule, TEXT("RALLY BREAK"), 7, Rally, 0.84f, 2);
-	AddRule(*Round04Wave3, Guard, 5);
-	AddRule(*Round04Wave3, ParrySplit, 3);
-
-	URLDifficultyScheduleDataAsset* Round05Schedule = NewObject<URLDifficultyScheduleDataAsset>(this);
-	FRLWaveDefinition* Round05Wave1 = AddWave(
-		Round05Schedule, TEXT("FALSE SIGNAL"), 6, Fake, 0.88f, 0);
-	AddRule(*Round05Wave1, DelayedExplosive, 4);
-	FRLWaveDefinition* Round05Wave2 = AddWave(
-		Round05Schedule, TEXT("DANGER CLOSE"), 7, Explosive, 0.82f, 3);
-	AddRule(*Round05Wave2, Guard, 5);
-	AddRule(*Round05Wave2, Normal, 2);
-	FRLWaveDefinition* Round05Wave3 = AddWave(
-		Round05Schedule, TEXT("LAST REFLECTION"), 8, Rally, 0.78f, 2);
-	AddRule(*Round05Wave3, ParrySplit, 3);
-	AddRule(*Round05Wave3, DelayedExplosive, 5);
-
-	FRLRoundDefinition& Round04 = RunDefinition->Rounds.AddDefaulted_GetRef();
-	Round04.RoundName = TEXT("RALLY GAUNTLET");
-	Round04.IntermissionDurationSeconds = 3.0f;
-	Round04.DifficultySchedule = Round04Schedule;
-	Round04.bClearEnemiesOnComplete = true;
-	Round04.bClearProjectilesOnComplete = true;
-
-	FRLRoundDefinition& Round05 = RunDefinition->Rounds.AddDefaulted_GetRef();
-	Round05.RoundName = TEXT("LAST REFLECTION");
-	Round05.IntermissionDurationSeconds = 3.0f;
-	Round05.DifficultySchedule = Round05Schedule;
-	Round05.bClearEnemiesOnComplete = true;
-	Round05.bClearProjectilesOnComplete = true;
-
-	UE_LOG(LogTemp, Display, TEXT("Added runtime round definitions: Round 4 and Round 5."));
 }
 
 void ARLGameModeBase::StopRun()
