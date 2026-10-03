@@ -10,6 +10,7 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetSystemLibrary.h"
 
 #define LOCTEXT_NAMESPACE "ReflectionLabMainMenu"
 
@@ -116,6 +117,14 @@ void URLMainMenuWidget::BuildWidgetTree()
 		LOCTEXT("OptionsButton", "OPTIONS"));
 	OptionsButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleOptionsClicked);
 
+	UButton* ExitGameButton = AddMenuButton(
+		*WidgetTree,
+		*MenuContainer,
+		TEXT("ExitGameButton"),
+		TEXT("ExitGameLabel"),
+		LOCTEXT("ExitGameButton", "EXIT GAME"));
+	ExitGameButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleExitGameClicked);
+
 	StatusText = WidgetTree->ConstructWidget<UTextBlock>(
 		UTextBlock::StaticClass(), TEXT("StatusText"));
 	StatusText->SetText(FText::GetEmpty());
@@ -147,6 +156,11 @@ void URLMainMenuWidget::HandleOptionsClicked()
 			"OptionsComingSoon",
 			"Options will be added in the next UI pass."));
 	}
+}
+
+void URLMainMenuWidget::HandleExitGameClicked()
+{
+	UKismetSystemLibrary::QuitGame(this, GetOwningPlayer(), EQuitPreference::Quit, false);
 }
 
 void URLMainMenuWidget::OpenGameplayLevel(const FString& RunMode) const

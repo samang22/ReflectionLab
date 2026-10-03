@@ -24,6 +24,9 @@ private:
 	UFUNCTION()
 	void HandleOptionsClicked();
 
+	UFUNCTION()
+	void HandleExitGameClicked();
+
 	void BuildWidgetTree();
 	void OpenGameplayLevel(const FString& RunMode) const;
 
