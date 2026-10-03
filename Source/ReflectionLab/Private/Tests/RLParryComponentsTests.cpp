@@ -69,6 +69,10 @@ bool FRLRunRewardComponentTest::RunTest(const FString& Parameters)
 	Parry->Configure(Stats);
 	TestEqual(TEXT("Reconfiguration never reapplies bonuses to effective stats"),
 		Parry->GetViewState().Stats.ReflectionRange, First.ReflectionRange);
+	TestEqual(TEXT("No speed reward bonus initially"), Rewards->GetReflectedSpeedBonus(), 0.0f);
+	TestTrue(TEXT("Speed reward applies"), ApplyReward(ERLRunRewardType::VelocityDrive, 0.2f));
+	TestTrue(TEXT("Speed reward stacks"), ApplyReward(ERLRunRewardType::VelocityDrive, 0.2f));
+	TestEqual(TEXT("Bombs can read only the accumulated reward speed bonus"), Rewards->GetReflectedSpeedBonus(), 0.4f);
 	Health->ApplyDamage(5.0f);
 	TestTrue(TEXT("Vitality reward applies"), ApplyReward(ERLRunRewardType::Vitality, 2.0f));
 	TestEqual(TEXT("Vitality restores only added capacity"), Health->GetCurrentHealth(), 7.0f);
@@ -83,6 +87,7 @@ bool FRLRunRewardComponentTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Reset removes range bonuses"), Parry->GetViewState().Stats.ReflectionRange, 200.0f);
 	TestEqual(TEXT("Reset removes max-health bonus"), Health->GetMaxHealth(), 10.0f);
 	TestFalse(TEXT("Reset removes healing reward"), Rewards->HasPerfectRecoveryReward());
+	TestEqual(TEXT("Reset removes speed reward bonus"), Rewards->GetReflectedSpeedBonus(), 0.0f);
 	return true;
 }
 #endif

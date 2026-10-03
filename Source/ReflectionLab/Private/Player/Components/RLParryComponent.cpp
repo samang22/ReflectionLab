@@ -150,11 +150,6 @@ bool URLParryComponent::TryStartParry()
 		return false;
 	}
 
-	if (DetonateExplosiveOnParryAttempt())
-	{
-		return false;
-	}
-
 	// Alternate once per successful parry attempt. This is intentionally separate
 	// from ProgressionComponent->GetChainCount() because one swing can reflect multiple projectiles.
 	UAnimMontage* MontageToPlay = ParryMontage;
@@ -293,58 +288,6 @@ bool URLParryComponent::IsProjectileWithinParryArc(const ARLProjectile* Projecti
 	return FVector::DotProduct(ForwardDirection, DirectionToProjectile) >= MinimumForwardDot;
 }
 
-bool URLParryComponent::DetonateExplosiveOnParryAttempt()
-{
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return false;
-	}
-
-	FCollisionObjectQueryParams ObjectQueryParams;
-	ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldDynamic);
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PlayerParryExplosiveCheck), false, GetOwner());
-	TArray<FOverlapResult> Overlaps;
-	World->OverlapMultiByObjectType(
-		Overlaps,
-		GetOwner()->GetActorLocation(),
-		FQuat::Identity,
-		ObjectQueryParams,
-		FCollisionShape::MakeSphere(Stats.ReflectionRange),
-		QueryParams);
-
-	ARLProjectile* ClosestExplosive = nullptr;
-	float ClosestDistanceSquared = TNumericLimits<float>::Max();
-	for (const FOverlapResult& Overlap : Overlaps)
-	{
-		ARLProjectile* Projectile = Cast<ARLProjectile>(Overlap.GetActor());
-		if (!Projectile ||
-			!Projectile->IsExplosive() ||
-			Projectile->IsReflected() ||
-			!IsProjectileWithinParryArc(Projectile))
-		{
-			continue;
-		}
-
-		const float DistanceSquared = FVector::DistSquared2D(
-			Projectile->GetActorLocation(),
-			GetOwner()->GetActorLocation());
-		if (DistanceSquared < ClosestDistanceSquared)
-		{
-			ClosestDistanceSquared = DistanceSquared;
-			ClosestExplosive = Projectile;
-		}
-	}
-
-	if (!ClosestExplosive)
-	{
-		return false;
-	}
-
-	UE_LOG(LogTemp, Display, TEXT("Parry attempt immediately triggered an explosive projectile."));
-	return ClosestExplosive->Detonate();
-}
-
 bool URLParryComponent::TryParryProjectile(
 	ARLProjectile* Projectile,
 	int32 ResultingCombo,
@@ -361,13 +304,6 @@ bool URLParryComponent::TryParryProjectile(
 	const float DistanceToProjectile = FVector::Dist2D(
 		Projectile->GetActorLocation(),
 		GetOwner()->GetActorLocation());
-
-	if (Projectile->IsExplosive())
-	{
-		UE_LOG(LogTemp, Display, TEXT("Parry attempt triggered an explosive projectile."));
-		Projectile->Detonate();
-		return false;
-	}
 
 	if (!Projectile->CanBeReflected())
 	{
@@ -386,9 +322,11 @@ bool URLParryComponent::TryParryProjectile(
 	const bool bOverdrive = ProgressionComponent->GetEnhancementLevel() >= 4;
 	const bool bMaximumSpeed = bCloseRangeParry || RewardLevel >= 2;
 
-	const float SpeedMultiplier = bMaximumSpeed
-		? Stats.MaxReflectedSpeedMultiplier
-		: Projectile->GetBaseReflectedSpeedMultiplier();
+	// Bombs retain their hostile travel speed; only purchased run rewards
+	// accelerate them, not normal reflection or close/combo speed upgrades.
+	const float SpeedMultiplier = Projectile->IsExplosive()
+		? 1.0f + (RewardComponent ? FMath::Max(0.0f, RewardComponent->GetReflectedSpeedBonus()) : 0.0f)
+		: (bMaximumSpeed ? Stats.MaxReflectedSpeedMultiplier : Projectile->GetBaseReflectedSpeedMultiplier());
 
 	FRLProjectileReflectionParams ReflectionParams;
 	ReflectionParams.SpeedMultiplier = SpeedMultiplier;
@@ -424,6 +362,12 @@ bool URLParryComponent::TryParryProjectile(
 		SplitCount = 1;
 		SplitSpreadAngle = 0.0f;
 		ReflectionParams.PierceCount = 0;
+	}
+	if (Projectile->IsRallyProjectile())
+	{
+		SplitCount = 1;
+		SplitSpreadAngle = 0.0f;
+		ReflectionParams.PierceCount = FMath::Clamp(ReflectionParams.PierceCount, 0, 1);
 	}
 	TArray<FVector> SplitDirections;
 	SplitDirections.Reserve(SplitCount);
@@ -484,8 +428,8 @@ void URLParryComponent::SpawnAdditionalReflectedProjectiles(
 		{
 			SplitProjectile->InitializeFromDefinition(
 				SourceProjectile->GetProjectileDefinition(),
-				nullptr,
-				false);
+				GetOwner(),
+				SourceProjectile->IsExplosive() || SourceProjectile->IsRallyProjectile());
 		}
 		if (!SplitProjectile ||
 			!SplitProjectile->Reflect(GetOwner(), CastChecked<ACharacter>(GetOwner()), SplitDirection, ReflectionParams))

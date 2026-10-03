@@ -17,6 +17,7 @@ class USoundBase;
 class USoundConcurrency;
 class URLProjectilePoolSubsystem;
 class URLProjectileDefinitionDataAsset;
+class ARLEnemyCharacter;
 
 USTRUCT(BlueprintType)
 struct FRLProjectileReflectionParams
@@ -87,6 +88,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Projectile|Explosive")
 	bool IsExplosive() const { return bIsExplosive; }
+
+	UFUNCTION(BlueprintPure, Category = "Projectile|Rally")
+	bool IsRallyProjectile() const { return bIsRallyProjectile; }
 
 	UFUNCTION(BlueprintPure, Category = "Projectile")
 	bool IsPoolActive() const { return bIsActive; }
@@ -358,6 +362,7 @@ private:
 	void SpawnExplosionVisual(const FVector& ExplosionLocation, float BlastRadius);
 	void Explode();
 	void TriggerExplosion(bool bDamagePlayer, bool bDamageEnemies);
+	void ApplyExplosionDamage(const FVector& ExplosionLocation, float BlastRadius, bool bDamagePlayer, bool bDamageEnemies);
 	void UpdateRally(float DeltaTime);
 	void AdvanceRally();
 	AActor* FindNextRallyTarget(AActor* RelaySource) const;
@@ -365,10 +370,14 @@ private:
 	void SetProjectileOwnerAndIgnore(AActor* NewOwner);
 	void SetProjectileSpeed(float NewSpeed, const FVector& Direction);
 	bool IsOutsidePlayArea() const;
+	void ResolveProjectileContact(AActor* OtherActor);
 	bool TryDetonateOnPlayerContact(AActor* OtherActor);
+	bool TryStopReflectedExplosiveOnContact(AActor* OtherActor);
 	bool TryExplodeOnEnemyContact(AActor* OtherActor);
 	bool ShouldIgnoreActor(const AActor* OtherActor) const;
 	void ApplyDamageAndReturn(AActor* OtherActor);
+	float ApplyDamageToActor(AActor* TargetActor, float RequestedDamage);
+	bool TryContinueAfterEnemyHit(ARLEnemyCharacter* HitEnemy, float AppliedDamage);
 	void ApplyDefinitionStats(const URLProjectileDefinitionDataAsset& Definition);
 
 	FTimerHandle LifetimeTimerHandle;
@@ -386,6 +395,7 @@ private:
 	int32 RallyCount = 0;
 	int32 MaxRallies = 0;
 	TWeakObjectPtr<AActor> RallyTarget;
+	TArray<TWeakObjectPtr<ARLEnemyCharacter>> RallyDamagedEnemies;
 	TWeakObjectPtr<AActor> RallyFinalTarget;
 	TWeakObjectPtr<AActor> DelayedExplosiveTarget;
 	TWeakObjectPtr<AActor> FakeTarget;

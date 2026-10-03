@@ -80,6 +80,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive", meta = (ClampMin = "1.0"))
 	float ExplosiveVisualScale = 2.0f;
 
+	// Also used as the fresh countdown after a successful player parry.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive", meta = (ClampMin = "0.1"))
 	float ExplosiveFuseDuration = 5.0f;
 

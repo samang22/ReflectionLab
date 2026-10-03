@@ -51,6 +51,8 @@ ARLProjectile::ARLProjectile()
 	ProjectileMesh->SetupAttachment(CollisionComponent);
 	ProjectileMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	ProjectileMesh->SetCanEverAffectNavigation(false);
+	// Projectile materials use translucency for blinking and pool fade-out.
+	ProjectileMesh->bDisallowNanite = true;
 
 	ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovement"));
 	ProjectileMovement->UpdatedComponent = CollisionComponent;
@@ -78,6 +80,12 @@ ARLProjectile::ARLProjectile()
 void ARLProjectile::BeginPlay()
 {
 	Super::BeginPlay();
+	// Enforce this for existing blueprint component defaults as well.
+	if (!ProjectileMesh->bDisallowNanite)
+	{
+		ProjectileMesh->bDisallowNanite = true;
+		ProjectileMesh->MarkRenderStateDirty();
+	}
 
 	static USoundConcurrency* SharedExplosionSoundConcurrency = nullptr;
 	if (!SharedExplosionSoundConcurrency)
@@ -154,6 +162,7 @@ void ARLProjectile::Tick(float DeltaTime)
 	{
 		UpdateRally(DeltaTime);
 	}
+	if (!bIsActive || bIsFadingOut) { return; }
 
 	if (bIsReflected || bIsRallyProjectile)
 	{
@@ -205,6 +214,7 @@ void ARLProjectile::ActivateProjectile(
 	RallyCount = 0;
 	MaxRallies = 0;
 	RallyTarget.Reset();
+	RallyDamagedEnemies.Reset();
 	RallyFinalTarget.Reset();
 	DelayedExplosiveTarget.Reset();
 	FakeTarget.Reset();
@@ -244,6 +254,7 @@ void ARLProjectile::ActivateProjectile(
 	CollisionComponent->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 
 	ProjectileMovement->StopMovementImmediately();
+	ProjectileMovement->SetUpdatedComponent(CollisionComponent);
 	ProjectileMovement->InitialSpeed = ProjectileSpeed;
 	ProjectileMovement->MaxSpeed = ProjectileSpeed;
 	ProjectileMovement->Activate(true);
@@ -385,7 +396,7 @@ bool ARLProjectile::Reflect(
 	const FVector& NewDirection,
 	const FRLProjectileReflectionParams& ReflectionParams)
 {
-	if (!bIsActive || !bCanBeReflected || !NewOwner || !NewInstigator || NewDirection.IsNearlyZero())
+	if (!bIsActive || bIsFadingOut || !bCanBeReflected || !NewOwner || !NewInstigator || NewDirection.IsNearlyZero())
 	{
 		return false;
 	}
@@ -416,8 +427,11 @@ bool ARLProjectile::Reflect(
 	const FVector ReflectedDirection = NewDirection.GetSafeNormal();
 	const float RequestedSpeedMultiplier = ReflectionParams.SpeedMultiplier > 0.0f
 		? ReflectionParams.SpeedMultiplier
-		: ReflectedSpeedMultiplier;
-	const float ReflectedSpeed = ProjectileSpeed * FMath::Max(1.0f, RequestedSpeedMultiplier);
+		: (bIsExplosive ? 1.0f : ReflectedSpeedMultiplier);
+	const float BaseReturnSpeed = bIsExplosive
+		? ProjectileSpeed * FMath::Clamp(ExplosiveSpeedMultiplier, 0.1f, 1.0f)
+		: ProjectileSpeed;
+	const float ReflectedSpeed = BaseReturnSpeed * FMath::Max(1.0f, RequestedSpeedMultiplier);
 	SetActorRotation(ReflectedDirection.Rotation());
 	ProjectileMovement->StopMovementImmediately();
 	ProjectileMovement->InitialSpeed = ReflectedSpeed;
@@ -426,25 +440,55 @@ bool ARLProjectile::Reflect(
 	ProjectileMovement->Activate(true);
 	ProjectileMovement->UpdateComponentVelocity();
 	bIsReflected = true;
-	bIsRallyProjectile = false;
 	bRallyFinalShot = false;
 	RallyTarget.Reset();
+	RallyDamagedEnemies.Reset();
 	RallyFinalTarget.Reset();
-	RemainingPierces = FMath::Max(0, ReflectionParams.PierceCount);
+	// Rally returns may hit one additional enemy, but cannot form a long relay chain.
+	RemainingPierces = bIsRallyProjectile
+		? FMath::Clamp(ReflectionParams.PierceCount, 0, 1)
+		: FMath::Max(0, ReflectionParams.PierceCount);
 	ReflectionChain = FMath::Max(0, ReflectionParams.ReflectionChain);
 	bWasPerfectParried = ReflectionParams.bPerfectParry;
 	bWasCloseRangeParried = ReflectionParams.bCloseRangeParry;
 	bWasOverdriveReflected = ReflectionParams.bOverdrive;
 	bSplitsOnParry = false;
-	const float ReflectedScale = FMath::Max(
+	const float RequestedVisualScale = FMath::Max(
 		0.1f,
 		ReflectionParams.VisualScaleMultiplier);
+	// A returned bomb must retain its large silhouette, not become a normal shot.
+	const float ReflectedScale = bIsExplosive
+		? FMath::Max(RequestedVisualScale, ExplosiveVisualScale)
+		: RequestedVisualScale;
+	const float CollisionScale = bIsExplosive
+		? FMath::Max(RequestedVisualScale, FMath::Sqrt(FMath::Max(1.0f, ExplosiveVisualScale)))
+		: RequestedVisualScale;
 	ProjectileMesh->SetRelativeScale3D(
 		DefaultProjectileMeshScale * ReflectedScale);
 	CollisionComponent->SetSphereRadius(
-		DefaultCollisionRadius * ReflectedScale,
+		DefaultCollisionRadius * CollisionScale,
 		true);
 	UpdateProjectileMaterial();
+	if (bIsExplosive)
+	{
+		// Both explosive variants become a player-owned timed bomb. Do not
+		// resume the delayed variant toward its old player target after a parry.
+		bIsDelayedExplosive = false;
+		bDelayedExplosivePaused = false;
+		bDelayedExplosiveResumed = false;
+		DelayedExplosiveTarget.Reset();
+		DelayedExplosivePauseElapsedTime = 0.0f;
+		ExplosiveElapsedTime = 0.0f;
+		ExplosiveNextBlinkTime = FMath::Max(0.01f, ExplosiveBlinkStartInterval);
+		bExplosiveBlinkWarning = false;
+		ExplosiveMaterialInstance = ProjectileMesh->CreateDynamicMaterialInstance(0);
+		ApplyExplosiveBlinkColor(false);
+	}
+	if (bIsRallyProjectile)
+	{
+		RallyCurrentSpeed = ReflectedSpeed;
+		SetRallyTarget(FindNextRallyTarget(nullptr));
+	}
 	ActivateReflectedTrail(ReflectedScale);
 	ResetReflectedAfterimages();
 	SetActorTickEnabled(true);
@@ -472,7 +516,7 @@ void ARLProjectile::ConfigureAsExplosive()
 		return;
 	}
 
-	bCanBeReflected = false;
+	bCanBeReflected = true;
 	bIsExplosive = true;
 	bIsDelayedExplosive = false;
 	bIsFakeProjectile = false;
@@ -720,6 +764,7 @@ void ARLProjectile::DeactivateForPool()
 	RallyCount = 0;
 	MaxRallies = 0;
 	RallyTarget.Reset();
+	RallyDamagedEnemies.Reset();
 	RallyFinalTarget.Reset();
 	DelayedExplosiveTarget.Reset();
 	FakeTarget.Reset();
@@ -779,6 +824,7 @@ void ARLProjectile::CreateReflectedAfterimages()
 		AfterimageMesh->SetCanEverAffectNavigation(false);
 		AfterimageMesh->SetCastShadow(false);
 		AfterimageMesh->SetReceivesDecals(false);
+		AfterimageMesh->bDisallowNanite = true;
 		AfterimageMesh->SetStaticMesh(ProjectileMesh->GetStaticMesh());
 		if (ReflectedMaterial)
 		{
@@ -973,7 +1019,9 @@ void ARLProjectile::ApplyExplosiveBlinkColor(bool bUseWarningColor)
 
 	ExplosiveMaterialInstance->SetVectorParameterValue(
 		ProjectileColorParameterName,
-		bUseWarningColor ? ExplosiveWarningColor : ExplosiveBaseColor);
+		bIsReflected
+			? (bUseWarningColor ? FLinearColor::White : FLinearColor(0.1f, 0.85f, 1.0f))
+			: (bUseWarningColor ? ExplosiveWarningColor : ExplosiveBaseColor));
 	ExplosiveMaterialInstance->SetScalarParameterValue(
 		EmissiveIntensityParameterName,
 		bUseWarningColor
@@ -1155,7 +1203,7 @@ void ARLProjectile::ConfigureAsSplitFragment(float SpeedMultiplier, float Visual
 
 void ARLProjectile::Explode()
 {
-	TriggerExplosion(true, false);
+	TriggerExplosion(!bIsReflected, bIsReflected);
 }
 
 void ARLProjectile::TriggerExplosion(bool bDamagePlayer, bool bDamageEnemies)
@@ -1194,7 +1242,25 @@ void ARLProjectile::TriggerExplosion(bool bDamagePlayer, bool bDamageEnemies)
 	}
 	SpawnExplosionVisual(ExplosionLocation, BlastRadius);
 	OnExploded(ExplosionLocation, BlastRadius);
+	ApplyExplosionDamage(ExplosionLocation, BlastRadius, bDamagePlayer, bDamageEnemies);
 
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("Projectile explosion at %s with radius %.1f. PlayerDamage=%s EnemyDamage=%s"),
+		*ExplosionLocation.ToCompactString(),
+		BlastRadius,
+		bDamagePlayer ? TEXT("true") : TEXT("false"),
+		bDamageEnemies ? TEXT("true") : TEXT("false"));
+	ReturnToPool();
+}
+
+void ARLProjectile::ApplyExplosionDamage(
+	const FVector& ExplosionLocation,
+	float BlastRadius,
+	bool bDamagePlayer,
+	bool bDamageEnemies)
+{
 	if (bDamagePlayer)
 	{
 		if (APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0))
@@ -1202,12 +1268,7 @@ void ARLProjectile::TriggerExplosion(bool bDamagePlayer, bool bDamageEnemies)
 			if (FVector::DistSquared(PlayerPawn->GetActorLocation(), ExplosionLocation) <=
 				FMath::Square(BlastRadius))
 			{
-				UGameplayStatics::ApplyDamage(
-					PlayerPawn,
-					FMath::Max(0.0f, ExplosionDamage),
-					GetInstigatorController(),
-					this,
-					UDamageType::StaticClass());
+				ApplyDamageToActor(PlayerPawn, ExplosionDamage);
 			}
 		}
 	}
@@ -1224,24 +1285,9 @@ void ARLProjectile::TriggerExplosion(bool bDamagePlayer, bool bDamageEnemies)
 				continue;
 			}
 
-			UGameplayStatics::ApplyDamage(
-				Enemy,
-				FMath::Max(0.0f, ExplosionDamage),
-				GetInstigatorController(),
-				this,
-				UDamageType::StaticClass());
+			ApplyDamageToActor(Enemy, ExplosionDamage);
 		}
 	}
-
-	UE_LOG(
-		LogTemp,
-		Display,
-		TEXT("Projectile explosion at %s with radius %.1f. PlayerDamage=%s EnemyDamage=%s"),
-		*ExplosionLocation.ToCompactString(),
-		BlastRadius,
-		bDamagePlayer ? TEXT("true") : TEXT("false"),
-		bDamageEnemies ? TEXT("true") : TEXT("false"));
-	ReturnToPool();
 }
 
 void ARLProjectile::SpawnExplosionVisual(
@@ -1290,7 +1336,7 @@ void ARLProjectile::SpawnExplosionVisual(
 		ShardMaterial,
 		DefaultProjectileMeshScale,
 		BlastRadius,
-		ExplosiveDecalColor);
+		bIsReflected ? FLinearColor(0.1f, 0.85f, 1.0f) : ExplosiveDecalColor);
 }
 
 void ARLProjectile::UpdateRally(float DeltaTime)
@@ -1298,6 +1344,27 @@ void ARLProjectile::UpdateRally(float DeltaTime)
 	(void)DeltaTime;
 
 	AActor* Target = RallyTarget.Get();
+	if (bIsReflected)
+	{
+		// Player returns home toward an enemy, never relay harmlessly through it.
+		const ARLEnemyCharacter* TargetEnemy = Cast<ARLEnemyCharacter>(Target);
+		if (!IsValid(TargetEnemy) || !TargetEnemy->IsPoolActive() || RallyDamagedEnemies.Contains(TargetEnemy))
+		{
+			SetRallyTarget(FindNextRallyTarget(nullptr));
+			return;
+		}
+		// Homing can arrive already overlapping a target without a new overlap
+		// event. Resolve arrival explicitly, just as hostile rally relays do.
+		if (FVector::DistSquared(GetActorLocation(), Target->GetActorLocation()) <=
+			FMath::Square(FMath::Max(1.0f, RallyArrivalRadius)))
+		{
+			ResolveProjectileContact(Target);
+			return;
+		}
+		SetProjectileSpeed(RallyCurrentSpeed,
+			(Target->GetActorLocation() - GetActorLocation()).GetSafeNormal());
+		return;
+	}
 	if (!IsValid(Target))
 	{
 		SetRallyTarget(RallyFinalTarget.Get());
@@ -1372,7 +1439,8 @@ AActor* ARLProjectile::FindNextRallyTarget(AActor* RelaySource) const
 	for (TActorIterator<ARLEnemyCharacter> Iterator(World); Iterator; ++Iterator)
 	{
 		ARLEnemyCharacter* Candidate = *Iterator;
-		if (!IsValid(Candidate) || !Candidate->IsPoolActive() || Candidate == RelaySource)
+		if (!IsValid(Candidate) || !Candidate->IsPoolActive() || Candidate == RelaySource ||
+			(bIsReflected && RallyDamagedEnemies.Contains(Candidate)))
 		{
 			continue;
 		}
@@ -1394,7 +1462,8 @@ void ARLProjectile::SetRallyTarget(AActor* NewTarget)
 {
 	if (!IsValid(NewTarget))
 	{
-		ReturnToPool();
+		RallyTarget.Reset();
+		if (!bIsReflected || !RallyDamagedEnemies.IsEmpty()) { ReturnToPool(); }
 		return;
 	}
 
@@ -1464,40 +1533,7 @@ void ARLProjectile::HandleProjectileHit(
 	FVector NormalImpulse,
 	const FHitResult& Hit)
 {
-	if (!bIsActive)
-	{
-		return;
-	}
-
-	if (TryDetonateOnPlayerContact(OtherActor))
-	{
-		return;
-	}
-
-	if (bIsRallyProjectile && OtherActor &&
-		OtherActor == RallyTarget.Get() && OtherActor->IsA<ARLEnemyCharacter>())
-	{
-		AdvanceRally();
-		return;
-	}
-
-	if (ShouldIgnoreActor(OtherActor))
-	{
-		return;
-	}
-
-	if (TryExplodeOnEnemyContact(OtherActor))
-	{
-		return;
-	}
-
-	if (bIsExplosive)
-	{
-		Explode();
-		return;
-	}
-
-	ApplyDamageAndReturn(OtherActor);
+	ResolveProjectileContact(OtherActor);
 }
 
 void ARLProjectile::HandleProjectileOverlap(
@@ -1508,7 +1544,12 @@ void ARLProjectile::HandleProjectileOverlap(
 	bool bFromSweep,
 	const FHitResult& SweepResult)
 {
-	if (!bIsActive)
+	ResolveProjectileContact(OtherActor);
+}
+
+void ARLProjectile::ResolveProjectileContact(AActor* OtherActor)
+{
+	if (!bIsActive || bIsFadingOut || !IsValid(OtherActor))
 	{
 		return;
 	}
@@ -1518,7 +1559,7 @@ void ARLProjectile::HandleProjectileOverlap(
 		return;
 	}
 
-	if (bIsRallyProjectile && OtherActor &&
+	if (bIsRallyProjectile && !bIsReflected &&
 		OtherActor == RallyTarget.Get() && OtherActor->IsA<ARLEnemyCharacter>())
 	{
 		AdvanceRally();
@@ -1534,6 +1575,8 @@ void ARLProjectile::HandleProjectileOverlap(
 	{
 		return;
 	}
+
+	if (TryStopReflectedExplosiveOnContact(OtherActor)) { return; }
 
 	if (bIsExplosive)
 	{
@@ -1546,7 +1589,7 @@ void ARLProjectile::HandleProjectileOverlap(
 
 bool ARLProjectile::TryDetonateOnPlayerContact(AActor* OtherActor)
 {
-	if (!bIsExplosive || !IsValid(OtherActor))
+	if (!bIsExplosive || bIsReflected || !IsValid(OtherActor))
 	{
 		return false;
 	}
@@ -1560,9 +1603,19 @@ bool ARLProjectile::TryDetonateOnPlayerContact(AActor* OtherActor)
 	return Detonate();
 }
 
+bool ARLProjectile::TryStopReflectedExplosiveOnContact(AActor* OtherActor)
+{
+	if (!bIsExplosive || !bIsReflected || !IsValid(OtherActor)) { return false; }
+	// Enemy contact detonates first; walls keep the restarted fuse running.
+	ProjectileMovement->StopMovementImmediately();
+	ProjectileMovement->Deactivate();
+	CollisionComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	return true;
+}
+
 bool ARLProjectile::TryExplodeOnEnemyContact(AActor* OtherActor)
 {
-	if (!bExplodesOnEnemyImpact || !bIsReflected ||
+	if ((!bIsExplosive && !bExplodesOnEnemyImpact) || !bIsReflected ||
 		!IsValid(OtherActor) || !OtherActor->IsA<ARLEnemyCharacter>())
 	{
 		return false;
@@ -1588,6 +1641,8 @@ bool ARLProjectile::ShouldIgnoreActor(const AActor* OtherActor) const
 void ARLProjectile::ApplyDamageAndReturn(AActor* OtherActor)
 {
 	ARLEnemyCharacter* HitEnemy = Cast<ARLEnemyCharacter>(OtherActor);
+	// Collision callbacks and the arrival fallback may resolve the same target.
+	if (bIsReflected && bIsRallyProjectile && HitEnemy && RallyDamagedEnemies.Contains(HitEnemy)) { return; }
 	if (bIsReflected && HitEnemy && HitEnemy->TryAbsorbReflectedProjectile())
 	{
 		ReturnToPool();
@@ -1600,24 +1655,40 @@ void ARLProjectile::ApplyDamageAndReturn(AActor* OtherActor)
 		return;
 	}
 
-	const bool bPiercesEnemy = bIsReflected &&
-		OtherActor &&
-		OtherActor->IsA<ARLEnemyCharacter>() &&
-		RemainingPierces > 0;
+	const float AppliedDamage = ApplyDamageToActor(OtherActor, DamageAmount);
+	if (bIsReflected && bIsRallyProjectile && HitEnemy && AppliedDamage > 0.0f)
+	{
+		RallyDamagedEnemies.AddUnique(HitEnemy);
+	}
 
-	const float AppliedDamage = UGameplayStatics::ApplyDamage(
-		OtherActor,
-		DamageAmount,
+	if (!TryContinueAfterEnemyHit(HitEnemy, AppliedDamage))
+	{
+		ReturnToPool();
+	}
+}
+
+float ARLProjectile::ApplyDamageToActor(AActor* TargetActor, float RequestedDamage)
+{
+	if (!IsValid(TargetActor)) { return 0.0f; }
+	return UGameplayStatics::ApplyDamage(
+		TargetActor,
+		FMath::Max(0.0f, RequestedDamage),
 		GetInstigatorController(),
 		this,
 		UDamageType::StaticClass());
+}
 
-	if (bPiercesEnemy && AppliedDamage > 0.0f)
+bool ARLProjectile::TryContinueAfterEnemyHit(ARLEnemyCharacter* HitEnemy, float AppliedDamage)
+{
+	if (!bIsReflected || !HitEnemy || RemainingPierces <= 0 || AppliedDamage <= 0.0f)
 	{
-		--RemainingPierces;
-		return;
+		return false;
 	}
-
-	ReturnToPool();
+	--RemainingPierces;
+	if (bIsRallyProjectile)
+	{
+		SetRallyTarget(FindNextRallyTarget(nullptr));
+	}
+	return true;
 }
 

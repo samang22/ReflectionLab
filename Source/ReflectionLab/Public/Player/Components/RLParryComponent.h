@@ -52,7 +52,6 @@ private:
 	bool CanParry() const;
 	void UpdateParry();
 	bool IsProjectileWithinParryArc(const ARLProjectile* Projectile) const;
-	bool DetonateExplosiveOnParryAttempt();
 	bool TryParryProjectile(ARLProjectile* Projectile, int32 ResultingCombo,
 		bool& bOutPerfectParry, bool& bOutCloseRangeParry);
 	void SpawnAdditionalReflectedProjectiles(ARLProjectile* SourceProjectile,

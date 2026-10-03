@@ -32,6 +32,8 @@ enum class ERLTutorialStage : uint8
 	WaitingForCloseRangeParry,
 	WaitingForExplosiveProjectile,
 	WaitingForExplosiveResolution,
+	WaitingForRallyProjectile,
+	WaitingForRallyParry,
 	WaitingForGuardProjectile,
 	WaitingForCombo,
 	WaitingForComboExplanation,
@@ -103,7 +105,7 @@ private:
 	void ShowPerfectParryTutorial();
 	void ShowComboTutorial();
 	void UpdateTutorialProjectileRequest(class ARLGameModeBase& GameMode);
-	bool HasActiveTutorialProjectile(ERLProjectileBehavior ProjectileBehavior) const;
+	bool HasActiveTutorialProjectile(ERLProjectileBehavior ProjectileBehavior, bool bReflected = false) const;
 	void BindTutorialPlayer(class ARLPlayerCharacter* PlayerCharacter);
 
 	UFUNCTION()
@@ -176,6 +178,7 @@ private:
 	FVector2D TutorialMousePosition = FVector2D::ZeroVector;
 	bool bTutorialRollStarted = false;
 	int32 TutorialComboBaseline = 0;
+	bool bTutorialExplosiveParried = false;
 	TWeakObjectPtr<ARLExpandingRingAttack> TutorialRing;
 	static constexpr float TutorialStageDelaySeconds = 2.0f;
 };

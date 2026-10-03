@@ -693,17 +693,20 @@ void ARLPlayerController::UpdateTutorial()
 
 	if (TutorialStage == ERLTutorialStage::WaitingForExplosiveResolution)
 	{
-		if (!HasActiveTutorialProjectile(ERLProjectileBehavior::Explosive))
+		bTutorialExplosiveParried |= HasActiveTutorialProjectile(ERLProjectileBehavior::Explosive, true);
+		if (bTutorialExplosiveParried &&
+			!HasActiveTutorialProjectile(ERLProjectileBehavior::Explosive, true))
 		{
-			QueueTutorialStage(ERLTutorialStage::WaitingForGuardProjectile);
+			QueueTutorialStage(ERLTutorialStage::WaitingForRallyProjectile);
 			UE_LOG(
 				LogTemp,
 				Display,
-				TEXT("Tutorial explosive resolved; guard projectile stage started."));
+				TEXT("Tutorial reflected explosive resolved; rally projectile stage queued."));
 			return;
 		}
 		else
 		{
+			if (!bTutorialExplosiveParried) { UpdateTutorialProjectileRequest(*GameMode); }
 			return;
 		}
 	}
@@ -742,6 +745,7 @@ void ARLPlayerController::UpdateTutorial()
 
 	if (TutorialStage != ERLTutorialStage::WaitingForNormalProjectile &&
 		TutorialStage != ERLTutorialStage::WaitingForExplosiveProjectile &&
+		TutorialStage != ERLTutorialStage::WaitingForRallyProjectile &&
 		TutorialStage != ERLTutorialStage::WaitingForGuardProjectile)
 	{
 		return;
@@ -784,11 +788,20 @@ void ARLPlayerController::UpdateTutorial()
 			Projectile->IsExplosive() && DistanceSquared <= SpecialDistanceSquared)
 		{
 			ShowTutorialPrompt(
-				LOCTEXT("ExplosiveTitle", "EXPLOSIVE — DODGE"),
+				LOCTEXT("ExplosiveTitle", "EXPLOSIVE — PARRY"),
 				LOCTEXT(
 					"ExplosiveBody",
-					"Large red blinking projectiles explode immediately if you try to parry them.\nUse WASD to leave the marked blast area."),
+					"Parry the blinking red shot to turn it into your bomb.\nIt keeps its speed; only speed rewards make it faster.\nIt explodes on enemy contact or when its restarted timer ends.\nThe practice enemy takes no damage. Parry one to continue."),
 				ERLTutorialStage::WaitingForExplosiveResolution);
+			return;
+		}
+
+		if (TutorialStage == ERLTutorialStage::WaitingForRallyProjectile &&
+			Projectile->IsRallyProjectile() && DistanceSquared <= SpecialDistanceSquared)
+		{
+			ShowTutorialPrompt(LOCTEXT("RallyTitle", "RALLY — HOMING RETURN"),
+				LOCTEXT("RallyBody", "Rally shots bounce between enemies before coming toward you.\nParry one to make it home toward the nearest enemy.\nIf that enemy disappears, it seeks another; with none, it flies straight.\nSuccessfully parry one to continue."),
+				ERLTutorialStage::WaitingForRallyParry);
 			return;
 		}
 
@@ -849,7 +862,12 @@ void ARLPlayerController::UpdateTutorialProjectileRequest(ARLGameModeBase& GameM
 		RequestedBehavior = ERLProjectileBehavior::Normal;
 		break;
 	case ERLTutorialStage::WaitingForExplosiveProjectile:
+	case ERLTutorialStage::WaitingForExplosiveResolution:
 		RequestedBehavior = ERLProjectileBehavior::Explosive;
+		break;
+	case ERLTutorialStage::WaitingForRallyProjectile:
+	case ERLTutorialStage::WaitingForRallyParry:
+		RequestedBehavior = ERLProjectileBehavior::Rally;
 		break;
 	case ERLTutorialStage::WaitingForGuardProjectile:
 	case ERLTutorialStage::WaitingForCombo:
@@ -881,7 +899,7 @@ void ARLPlayerController::UpdateTutorialProjectileRequest(ARLGameModeBase& GameM
 }
 
 bool ARLPlayerController::HasActiveTutorialProjectile(
-	ERLProjectileBehavior ProjectileBehavior) const
+	ERLProjectileBehavior ProjectileBehavior, bool bReflected) const
 {
 	if (!GetWorld())
 	{
@@ -893,7 +911,7 @@ bool ARLPlayerController::HasActiveTutorialProjectile(
 		const ARLProjectile* Projectile = *Iterator;
 		const URLProjectileDefinitionDataAsset* Definition =
 			Projectile->GetProjectileDefinition();
-		if (Projectile->IsPoolActive() && !Projectile->IsReflected() && Definition &&
+		if (Projectile->IsPoolActive() && Projectile->IsReflected() == bReflected && Definition &&
 			Definition->Behavior == ProjectileBehavior)
 		{
 			return true;
@@ -960,6 +978,7 @@ void ARLPlayerController::DismissTutorialPrompt()
 		bTutorialMousePositionValid = false;
 	}
 	if (TutorialStage == ERLTutorialStage::WaitingForRoll) { bTutorialRollStarted = false; }
+	if (TutorialStage == ERLTutorialStage::WaitingForExplosiveResolution) { bTutorialExplosiveParried = false; }
 	if (TutorialStage == ERLTutorialStage::WaitingForCombo)
 	{
 		TutorialComboBaseline = TutorialBoundPlayer ? TutorialBoundPlayer->GetParryComboCount() : 0;
@@ -1005,6 +1024,18 @@ void ARLPlayerController::HandleTutorialParryComboChanged(
 {
 	(void)MultiParryCount;
 	(void)EnhancementLevel;
+	if (ComboCount > 0 && TutorialStage == ERLTutorialStage::WaitingForExplosiveResolution &&
+		HasActiveTutorialProjectile(ERLProjectileBehavior::Explosive, true))
+	{
+		bTutorialExplosiveParried = true;
+		return;
+	}
+	if (ComboCount > 0 && TutorialStage == ERLTutorialStage::WaitingForRallyParry &&
+		HasActiveTutorialProjectile(ERLProjectileBehavior::Rally, true))
+	{
+		QueueTutorialStage(ERLTutorialStage::WaitingForGuardProjectile);
+		return;
+	}
 	if (TutorialStage == ERLTutorialStage::WaitingForCombo && ComboCount == 0)
 	{
 		TutorialComboBaseline = 0;

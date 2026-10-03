@@ -1168,24 +1168,37 @@ URLProjectileDefinitionDataAsset* ARLGameModeBase::FindTutorialProjectileDefinit
 	const URLDifficultyScheduleDataAsset* Schedule = RoundDefinition
 		? RoundDefinition->DifficultySchedule
 		: nullptr;
-	if (!Schedule)
+	auto FindInSchedule = [ProjectileBehavior](const URLDifficultyScheduleDataAsset* CandidateSchedule)
+		-> URLProjectileDefinitionDataAsset*
 	{
-		return nullptr;
-	}
-
-	for (const FRLWaveDefinition& WaveDefinition : Schedule->Waves)
-	{
-		if (WaveDefinition.DefaultProjectileDefinition &&
-			WaveDefinition.DefaultProjectileDefinition->Behavior == ProjectileBehavior)
+		if (!CandidateSchedule) { return nullptr; }
+		for (const FRLWaveDefinition& WaveDefinition : CandidateSchedule->Waves)
 		{
-			return WaveDefinition.DefaultProjectileDefinition;
-		}
-		for (const FRLProjectileSpawnRule& Rule : WaveDefinition.ProjectileRules)
-		{
-			if (Rule.ProjectileDefinition &&
-				Rule.ProjectileDefinition->Behavior == ProjectileBehavior)
+			if (WaveDefinition.DefaultProjectileDefinition &&
+				WaveDefinition.DefaultProjectileDefinition->Behavior == ProjectileBehavior)
 			{
-				return Rule.ProjectileDefinition;
+				return WaveDefinition.DefaultProjectileDefinition;
+			}
+			for (const FRLProjectileSpawnRule& Rule : WaveDefinition.ProjectileRules)
+			{
+				if (Rule.ProjectileDefinition &&
+					Rule.ProjectileDefinition->Behavior == ProjectileBehavior)
+				{
+					return Rule.ProjectileDefinition;
+				}
+			}
+		}
+		return nullptr;
+	};
+	if (URLProjectileDefinitionDataAsset* Definition = FindInSchedule(Schedule)) { return Definition; }
+	// Practice newly introduced shots without changing the tutorial's regular waves.
+	if (RunDefinition)
+	{
+		for (const FRLRoundDefinition& Round : RunDefinition->Rounds)
+		{
+			if (URLProjectileDefinitionDataAsset* Definition = FindInSchedule(Round.DifficultySchedule))
+			{
+				return Definition;
 			}
 		}
 	}

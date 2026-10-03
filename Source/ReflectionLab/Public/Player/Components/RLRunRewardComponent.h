@@ -30,6 +30,7 @@ public:
 	void ApplyModifiers(FRLParryStats& Stats) const;
 	void ApplyPerfectRecovery(const FRLParryResult& Result);
 	float GetMaxHealthBonus() const { return RunRewardMaxHealthBonus; }
+	float GetReflectedSpeedBonus() const { return RunRewardReflectedSpeedBonus; }
 	bool HasPerfectRecoveryReward() const { return RunRewardPerfectRecoveryAmount > 0; }
 	FRLRunRewardsChangedSignature OnRewardsChanged;
 

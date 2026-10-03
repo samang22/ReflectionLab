@@ -1028,7 +1028,7 @@ void URLRunStatusWidget::UpdateExplosiveWarning(float DeltaTime)
 	for (TActorIterator<ARLProjectile> Iterator(World); Iterator; ++Iterator)
 	{
 		const ARLProjectile* Projectile = *Iterator;
-		if (!Projectile->IsPoolActive() || !Projectile->IsExplosive())
+		if (!Projectile->IsPoolActive() || !Projectile->IsExplosive() || Projectile->IsReflected())
 		{
 			continue;
 		}
