@@ -31,7 +31,7 @@ private:
 	void OpenGameplayLevel(const FString& RunMode) const;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Navigation")
-	FName GameplayLevelName = TEXT("Main");
+	FName GameplayLevelName = TEXT("/Game/ReflectionLab/Maps/Main");
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> StatusText;
