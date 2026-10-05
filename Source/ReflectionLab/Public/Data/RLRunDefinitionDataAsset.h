@@ -41,6 +41,11 @@ class REFLECTIONLAB_API URLRunDefinitionDataAsset : public UDataAsset
 	GENERATED_BODY()
 
 public:
+	// Uses the displayed main-game round number after short-round preparation.
+	// Zero preserves normal entry; tutorial-only mode ignores this override.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Testing", meta = (ClampMin = "0", ToolTip = "0: normal start. Positive values: start at this main-game round (excluding tutorial). Skipped rewards are not granted. Ignored in tutorial-only mode."))
+	int32 StartingRoundNumber = 0;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Rewards")
 	TArray<TObjectPtr<URLRunRewardDataAsset>> RewardPool;
 

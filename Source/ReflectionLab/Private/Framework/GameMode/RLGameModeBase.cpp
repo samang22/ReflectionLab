@@ -160,6 +160,27 @@ bool FRLShortRoundsTest::RunTest(const FString& Parameters)
 	const int32 Count = Mode->RunDefinition->Rounds.Num();
 	Mode->PrepareShortRounds();
 	TestEqual(TEXT("Restart does not split again"), Mode->RunDefinition->Rounds.Num(), Count);
+	const bool bWasTutorialOnly = Mode->bTutorialOnlyMode;
+	Mode->bTutorialOnlyMode = false;
+	Mode->RunDefinition->StartingRoundNumber = 0;
+	const int32 NormalStart = Mode->ResolveStartingRoundIndex();
+	Mode->RunDefinition->StartingRoundNumber = 10;
+	const int32 TenthRoundIndex = Mode->ResolveStartingRoundIndex();
+	int32 MainRoundNumber = 0;
+	for (int32 Index = 0; Index <= TenthRoundIndex; ++Index)
+	{
+		MainRoundNumber += Mode->RunDefinition->Rounds[Index].bIsTutorial ? 0 : 1;
+	}
+	TestEqual(TEXT("Start override selects displayed round ten after splitting"), MainRoundNumber, 10);
+	Mode->bTutorialOnlyMode = true;
+	const int32 TutorialIndex = Mode->RunDefinition->Rounds.IndexOfByPredicate(
+		[](const FRLRoundDefinition& Round) { return Round.bIsTutorial; });
+	TestEqual(TEXT("Tutorial mode ignores the main-round override"), Mode->ResolveStartingRoundIndex(), TutorialIndex);
+	Mode->bTutorialOnlyMode = false;
+	Mode->RunDefinition->StartingRoundNumber = 999;
+	AddExpectedError(TEXT("Starting round 999 does not exist"), EAutomationExpectedErrorFlags::Contains, 1);
+	TestEqual(TEXT("Invalid start override falls back to normal entry"), Mode->ResolveStartingRoundIndex(), NormalStart);
+	Mode->bTutorialOnlyMode = bWasTutorialOnly;
 	Mode->RunDefinition = Original;
 	Mode->bShortRoundsPrepared = bWasPrepared;
 	return true;
@@ -1322,6 +1343,21 @@ int32 ARLGameModeBase::ResolveStartingRoundIndex() const
 	if (!RunDefinition)
 	{
 		return INDEX_NONE;
+	}
+
+	if (!bTutorialOnlyMode && RunDefinition->StartingRoundNumber > 0)
+	{
+		int32 MainRoundNumber = 0;
+		for (int32 RoundIndex = 0; RoundIndex < RunDefinition->Rounds.Num(); ++RoundIndex)
+		{
+			if (!RunDefinition->Rounds[RoundIndex].bIsTutorial &&
+				++MainRoundNumber == RunDefinition->StartingRoundNumber)
+			{
+				return RoundIndex;
+			}
+		}
+		UE_LOG(LogTemp, Warning, TEXT("Starting round %d does not exist; using normal entry."),
+			RunDefinition->StartingRoundNumber);
 	}
 
 	for (int32 RoundIndex = 0; RoundIndex < RunDefinition->Rounds.Num(); ++RoundIndex)
