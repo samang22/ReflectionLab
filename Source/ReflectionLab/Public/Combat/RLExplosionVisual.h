@@ -58,7 +58,7 @@ private:
 	float TrailSegmentDelay = 0.045f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Explosion Visual", meta = (ClampMin = "0.1"))
-	float ShardTravelRadiusMultiplier = 1.25f;
+	float ShardTravelRadiusMultiplier = 1.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Explosion Visual", meta = (ClampMin = "0.0"))
 	float ShardArcHeight = 65.0f;
@@ -70,7 +70,7 @@ private:
 	float DecalOpacity = 0.38f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Explosion Visual", meta = (ClampMin = "0.1"))
-	float DecalRadiusMultiplier = 3.0f;
+	float DecalRadiusMultiplier = 1.0f;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UStaticMeshComponent>> ShardMeshes;

@@ -102,7 +102,8 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Shield")
 	TObjectPtr<UStaticMeshComponent> ShieldVisual;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Shield", meta = (ClampMin = "1.0"))
+	// Retained for asset compatibility; personal shields do not protect nearby enemies.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Deprecated", meta = (DeprecatedProperty, DeprecationMessage = "Shields now protect only their owner; this radius is unused."))
 	float ShieldProtectionRadius = 500.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Shield", meta = (ClampMin = "1.0"))

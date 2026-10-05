@@ -219,6 +219,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive", meta = (ClampMin = "1.0"))
 	float ExplosionRadius = 180.0f;
 
+	float ReflectedExplosionRadius = 300.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Explosive", meta = (ClampMin = "0.0"))
 	float ExplosionDamage = 1.0f;
 

@@ -108,7 +108,8 @@ void ARLEnemyCharacter::ConfigureEnemyComponents()
 	if (!bIsPoolActive) { HealthComponent->ClearHealth(); }
 	AttackComponent->Configure(Config, ProjectileClass, MuzzlePoint, bAutoStartFiring);
 	EnemyMovementComponent->InitializeMovement();
-	ShieldComponent->Configure(ShieldVisual, ShieldProtectionRadius, ShieldVisualRadius, ShieldColor);
+	// Personal shields absorb one hit; their visual radius has no area-protection effect.
+	ShieldComponent->Configure(ShieldVisual, ShieldVisualRadius, ShieldColor);
 
 	FRLEnemyFeedbackSettings Feedback;
 	Feedback.HitSound = HitSound;
@@ -137,26 +138,39 @@ void ARLEnemyCharacter::HandleDeath()
 float ARLEnemyCharacter::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent,
 	AController* EventInstigator, AActor* DamageCauser)
 {
-	if (!bIsPoolActive || bTutorialInvulnerable || HealthComponent->IsDead() ||
-		!FMath::IsFinite(DamageAmount) || DamageAmount <= 0.0f)
+	const ARLProjectile* Projectile = Cast<ARLProjectile>(DamageCauser);
+	const bool bReflectedRally = Projectile && Projectile->IsReflected() && Projectile->IsRallyProjectile();
+	auto RejectDamage = [this, DamageAmount, DamageCauser, bReflectedRally](const TCHAR* Reason)
 	{
+		if (bReflectedRally)
+		{
+			UE_LOG(LogTemp, Display,
+				TEXT("[RallyDamage] rejected=%s enemy=%s projectile=%s requested=%.3f health=%.3f active=%d tutorialInvulnerable=%d"),
+				Reason, *GetName(), *GetNameSafe(DamageCauser), DamageAmount,
+				HealthComponent->GetCurrentHealth(), bIsPoolActive, bTutorialInvulnerable);
+		}
 		return 0.0f;
-	}
-	if (const ARLProjectile* Projectile = Cast<ARLProjectile>(DamageCauser))
-	{
-		if (Projectile->IsReflected() && TryAbsorbReflectedProjectile()) { return 0.0f; }
-	}
+	};
+	if (!bIsPoolActive) { return RejectDamage(TEXT("InactiveEnemy")); }
+	if (bTutorialInvulnerable) { return RejectDamage(TEXT("TutorialInvulnerability")); }
+	if (HealthComponent->IsDead()) { return RejectDamage(TEXT("DeadEnemy")); }
+	if (!FMath::IsFinite(DamageAmount) || DamageAmount <= 0.0f) { return RejectDamage(TEXT("InvalidDamage")); }
+	if (Projectile && Projectile->IsReflected() && TryAbsorbReflectedProjectile()) { return RejectDamage(TEXT("Shield")); }
 
 	const float AppliedDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 	// Super broadcasts damage events; a listener may have returned the enemy to the pool.
-	if (!bIsPoolActive || HealthComponent->IsDead() ||
-		!FMath::IsFinite(AppliedDamage) || AppliedDamage <= 0.0f)
-	{
-		return 0.0f;
-	}
+	if (!bIsPoolActive || HealthComponent->IsDead()) { return RejectDamage(TEXT("DamageEventChangedEnemy")); }
+	if (!FMath::IsFinite(AppliedDamage) || AppliedDamage <= 0.0f) { return RejectDamage(TEXT("NoAppliedDamage")); }
 
 	FeedbackComponent->PlayHitSound();
+	const float PreviousHealth = HealthComponent->GetCurrentHealth();
 	HealthComponent->ApplyDamage(AppliedDamage);
+	if (bReflectedRally)
+	{
+		UE_LOG(LogTemp, Display, TEXT("[RallyDamage] enemy=%s projectile=%s applied=%.3f health=%.3f->%.3f active=%d"),
+			*GetName(), *GetNameSafe(DamageCauser), AppliedDamage,
+			PreviousHealth, HealthComponent->GetCurrentHealth(), bIsPoolActive);
+	}
 	return AppliedDamage;
 }
 
@@ -256,19 +270,23 @@ void ARLEnemyCharacter::ActivateFromPool(const FTransform& SpawnTransform)
 	// Reset attack timers before making this instance active again.
 	AttackComponent->StopFiring();
 	FeedbackComponent->ResetCombatAnimation();
+	SetActorEnableCollision(false);
 	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
-	SetActorHiddenInGame(false);
-	SetActorEnableCollision(true);
-	SetActorTickEnabled(true);
-	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
-	{
-		Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	}
-
+	// Enabling collision can synchronously deliver a projectile overlap. Restore
+	// damage eligibility first, or that projectile is consumed against an inactive enemy.
 	bIsPoolActive = true;
 	bTutorialInvulnerable = false;
 	HealthComponent->InitializeHealth(HealthComponent->GetMaxHealth());
 	ShieldComponent->SetEmitter(false);
+	SetActorHiddenInGame(false);
+	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
+	{
+		Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	}
+	SetActorEnableCollision(true);
+	// An immediate overlap may have killed and returned this instance to the pool.
+	if (!bIsPoolActive) { return; }
+	SetActorTickEnabled(true);
 	EnemyMovementComponent->ActivateForPool();
 	AttackComponent->ActivateForPool();
 }

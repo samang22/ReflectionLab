@@ -1,6 +1,7 @@
 #include "Combat/RLProjectile.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
+#include "Components/CapsuleComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Data/RLProjectileDefinitionDataAsset.h"
@@ -58,6 +59,8 @@ bool FRLProjectileReflectionTest::RunTest(const FString& Parameters)
 		Definition->Behavior = ERLProjectileBehavior::Explosive;
 		Definition->ExplosiveFuseDuration = 1.0f;
 		Definition->ExplosionRadius = 1000.0f;
+		TestEqual(TEXT("Default reflected bomb radius is three meters"), Definition->ReflectedExplosionRadius, 300.0f);
+		Definition->ReflectedExplosionRadius = 1200.0f;
 		Definition->ExplosionDamage = 1.0f;
 		Definition->ExplosionSound = nullptr;
 		Definition->HostileMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
@@ -65,6 +68,7 @@ bool FRLProjectileReflectionTest::RunTest(const FString& Parameters)
 		const FTransform Origin(FRotator::ZeroRotator, FVector(0.0f, 0.0f, 100.0f));
 		Projectile->ActivateProjectile(Origin, NearEnemy, NearEnemy);
 		Projectile->InitializeFromDefinition(Definition, Player);
+		TestEqual(TEXT("Hostile bomb uses its own explosion radius"), Projectile->GetExplosionRadius(), 1000.0f);
 		UStaticMeshComponent* ProjectileVisual = Projectile->FindComponentByClass<UStaticMeshComponent>();
 		const FVector HostileBombScale = ProjectileVisual->GetRelativeScale3D();
 		TestTrue(TEXT("Translucent projectile visuals disallow Nanite"), ProjectileVisual->bDisallowNanite != 0);
@@ -77,6 +81,7 @@ bool FRLProjectileReflectionTest::RunTest(const FString& Parameters)
 		FRLProjectileReflectionParams Reflection;
 		TestTrue(TEXT("Explosive reflection succeeds"), Projectile->Reflect(Player, Player, FVector::ForwardVector, Reflection));
 		TestTrue(TEXT("Reflection preserves explosive behavior"), Projectile->IsExplosive());
+		TestEqual(TEXT("Parried bomb uses the data-driven reflected radius"), Projectile->GetExplosionRadius(), 1200.0f);
 		TestTrue(TEXT("Reflection preserves the large bomb silhouette"),
 			ProjectileVisual->GetRelativeScale3D().Equals(HostileBombScale));
 		TestEqual(TEXT("Parry restarts the full fuse"), Projectile->GetExplosiveFuseRemainingSeconds(), 1.0f);
@@ -117,6 +122,7 @@ bool FRLProjectileReflectionTest::RunTest(const FString& Parameters)
 		Projectile->ActivateProjectile(Origin, NearEnemy, NearEnemy);
 		Definition->Behavior = ERLProjectileBehavior::Rally;
 		Projectile->InitializeFromDefinition(Definition, Player);
+		TestEqual(TEXT("Pool reuse restores the hostile explosion radius"), Projectile->GetExplosionRadius(), 1000.0f);
 		TestFalse(TEXT("Reuse clears explosive behavior"), Projectile->IsExplosive());
 		TestTrue(TEXT("Reuse restores collision"), Collision->IsQueryCollisionEnabled());
 		TestTrue(TEXT("Reuse restores the movement target after a wall hit"), Movement->UpdatedComponent == Collision);
@@ -185,7 +191,81 @@ bool FRLProjectileReflectionTest::RunTest(const FString& Parameters)
 				ReusedEnemy->SetTutorialCombatControlled(true);
 				TestEqual(TEXT("Tutorial invulnerability does not survive enemy pool reuse"),
 					ReusedEnemy->TakeDamage(1.0f, FDamageEvent(), nullptr, nullptr), 1.0f);
+
+				// Exercise an actual swept collision, not a manually broadcast event or
+				// the rally arrival fallback. Both capsules must generate overlaps.
+				ReusedEnemy->GetCapsuleComponent()->SetGenerateOverlapEvents(true);
+				auto SweepReturnIntoEnemy = [&]()
+				{
+					Projectile->ActivateProjectile(Origin, Player, Player);
+					Projectile->InitializeFromDefinition(Definition, Player);
+					TestTrue(TEXT("Swept return reflects"), Projectile->Reflect(Player, Player, FVector::ForwardVector, Reflection));
+					FHitResult Contact;
+					Movement->MoveUpdatedComponent(FVector(700.0f, 0.0f, 0.0f), Projectile->GetActorQuat(), true, &Contact);
+				};
+				TestFalse(TEXT("Reused enemy starts without a shield"), ReusedEnemy->IsShieldEmitterActive());
+				const float UnshieldedHealth = HitHealth->GetCurrentHealth();
+				SweepReturnIntoEnemy();
+				TestEqual(TEXT("A real swept rally hit damages an unshielded reused enemy"), HitHealth->GetCurrentHealth(), UnshieldedHealth - 1.0f);
+				TestFalse(TEXT("Unshielded swept hit consumes a non-piercing rally"), Projectile->CanBeReflected());
+
+				ReusedEnemy->SetShieldEmitter(true);
+				UStaticMeshComponent* PersonalShieldVisual = ReusedEnemy->FindComponentByClass<UStaticMeshComponent>();
+				if (TestNotNull(TEXT("Personal shield visual"), PersonalShieldVisual))
+				{
+					TestTrue(TEXT("Shield keeps its original ninety-nine centimeter visual radius"),
+						PersonalShieldVisual->GetRelativeScale3D().Equals(FVector(99.0f / 50.0f)));
+				}
+				const float ShieldedHealth = HitHealth->GetCurrentHealth();
+				SweepReturnIntoEnemy();
+				TestFalse(TEXT("First rally breaks the enemy's own shield"), ReusedEnemy->IsShieldEmitterActive());
+				TestEqual(TEXT("Breaking a shield does not also damage health"), HitHealth->GetCurrentHealth(), ShieldedHealth);
+				TestFalse(TEXT("A shield absorbs the rally without piercing"), Projectile->CanBeReflected());
+				SweepReturnIntoEnemy();
+				TestEqual(TEXT("The next rally damages the enemy after its shield breaks"), HitHealth->GetCurrentHealth(), ShieldedHealth - 1.0f);
+
+				ARLEnemyCharacter* Protector = World->SpawnActor<ARLEnemyCharacter>(
+					ARLEnemyCharacter::StaticClass(), FVector(600.0f, 100.0f, 100.0f), FRotator::ZeroRotator, Spawn);
+				if (TestNotNull(TEXT("Nearby enemy with a personal shield"), Protector))
+				{
+					Protector->SetTutorialCombatControlled(true);
+					Protector->SetShieldEmitter(true);
+					const float ProtectedHealth = HitHealth->GetCurrentHealth();
+					SweepReturnIntoEnemy();
+					TestEqual(TEXT("A nearby shield does not protect an unshielded enemy"), HitHealth->GetCurrentHealth(), ProtectedHealth - 1.0f);
+					TestTrue(TEXT("Hitting a neighbor does not break another enemy's personal shield"), Protector->IsShieldEmitterActive());
+					Protector->SetShieldEmitter(false);
+					SweepReturnIntoEnemy();
+					TestEqual(TEXT("An unshielded enemy takes damage regardless of nearby shield state"), HitHealth->GetCurrentHealth(), ProtectedHealth - 2.0f);
+					Protector->ReturnToPool();
+				}
+
+				// A guard return retains its shield-only behavior after centralizing damage.
+				Definition->Behavior = ERLProjectileBehavior::Guard;
+				ReusedEnemy->SetShieldEmitter(true);
+				const float GuardHealth = HitHealth->GetCurrentHealth();
+				SweepReturnIntoEnemy();
+				TestFalse(TEXT("Guard return breaks a shield"), ReusedEnemy->IsShieldEmitterActive());
+				TestEqual(TEXT("Guard return does not deal health damage"), HitHealth->GetCurrentHealth(), GuardHealth);
+				Definition->Behavior = ERLProjectileBehavior::Rally;
+
+				// Collision enabling itself must not consume a rally before the reused
+				// enemy has become active and had its tutorial invulnerability cleared.
+				ReusedEnemy->SetTutorialInvulnerable(true);
 				ReusedEnemy->ReturnToPool();
+				const FTransform ReuseLocation(FRotator::ZeroRotator, FVector(600.0f, 0.0f, 100.0f));
+				Projectile->ActivateProjectile(ReuseLocation, Player, Player);
+				Projectile->InitializeFromDefinition(Definition, Player);
+				TestTrue(TEXT("Rally waiting at a spawn position reflects"), Projectile->Reflect(Player, Player, FVector::ForwardVector, Reflection));
+				ReusedEnemy = World->GetSubsystem<URLEnemyPoolSubsystem>()->AcquireEnemy(ARLEnemyCharacter::StaticClass(), ReuseLocation);
+				if (TestNotNull(TEXT("Enemy activated onto a reflected rally"), ReusedEnemy))
+				{
+					TestTrue(TEXT("Activation collision uses the same pooled enemy"), ReusedEnemy == HitEnemy);
+					ReusedEnemy->SetTutorialCombatControlled(true);
+					TestEqual(TEXT("Activation overlap damages restored health instead of silently consuming the rally"), HitHealth->GetCurrentHealth(), 9.0f);
+					TestFalse(TEXT("Activation impact consumes the rally"), Projectile->CanBeReflected());
+					ReusedEnemy->ReturnToPool();
+				}
 			}
 		}
 

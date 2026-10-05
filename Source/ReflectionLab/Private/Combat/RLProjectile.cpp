@@ -343,6 +343,7 @@ void ARLProjectile::ApplyDefinitionStats(
 			? *Definition.EnemyImpactExplosionDefinition
 			: Definition;
 	ExplosionRadius = FMath::Max(1.0f, ExplosionDefinition.ExplosionRadius);
+	ReflectedExplosionRadius = FMath::Max(1.0f, ExplosionDefinition.ReflectedExplosionRadius);
 	ExplosionDamage = FMath::Max(0.0f, ExplosionDefinition.ExplosionDamage);
 	ExplosionSound = ExplosionDefinition.ExplosionSound;
 	ExplosionSoundVolume = FMath::Clamp(
@@ -440,6 +441,10 @@ bool ARLProjectile::Reflect(
 	ProjectileMovement->Activate(true);
 	ProjectileMovement->UpdateComponentVelocity();
 	bIsReflected = true;
+	if (bIsExplosive)
+	{
+		ExplosionRadius = ReflectedExplosionRadius;
+	}
 	bRallyFinalShot = false;
 	RallyTarget.Reset();
 	RallyDamagedEnemies.Reset();
@@ -1643,14 +1648,11 @@ void ARLProjectile::ApplyDamageAndReturn(AActor* OtherActor)
 	ARLEnemyCharacter* HitEnemy = Cast<ARLEnemyCharacter>(OtherActor);
 	// Collision callbacks and the arrival fallback may resolve the same target.
 	if (bIsReflected && bIsRallyProjectile && HitEnemy && RallyDamagedEnemies.Contains(HitEnemy)) { return; }
-	if (bIsReflected && HitEnemy && HitEnemy->TryAbsorbReflectedProjectile())
-	{
-		ReturnToPool();
-		return;
-	}
-
 	if (bIsGuardProjectile && bIsReflected && HitEnemy)
 	{
+		// Guard rounds break shields without dealing health damage. All damaging
+		// rounds resolve protection once, inside the enemy's TakeDamage path.
+		HitEnemy->TryAbsorbReflectedProjectile();
 		ReturnToPool();
 		return;
 	}
@@ -1670,12 +1672,23 @@ void ARLProjectile::ApplyDamageAndReturn(AActor* OtherActor)
 float ARLProjectile::ApplyDamageToActor(AActor* TargetActor, float RequestedDamage)
 {
 	if (!IsValid(TargetActor)) { return 0.0f; }
-	return UGameplayStatics::ApplyDamage(
+	const float AppliedDamage = UGameplayStatics::ApplyDamage(
 		TargetActor,
 		FMath::Max(0.0f, RequestedDamage),
 		GetInstigatorController(),
 		this,
 		UDamageType::StaticClass());
+	if (bIsReflected && bIsRallyProjectile)
+	{
+		// Keep the actual contact actor: a wall/floor hit can look like an enemy
+		// hit on screen, but never enters the enemy damage handler.
+		UE_LOG(LogTemp, Display,
+			TEXT("[RallyImpact] projectile=%s contact=%s class=%s target=%s definition=%s requested=%.3f applied=%.3f position=%s contactPosition=%s"),
+			*GetName(), *GetNameSafe(TargetActor), *GetNameSafe(TargetActor->GetClass()),
+			*GetNameSafe(RallyTarget.Get()), *GetNameSafe(ActiveDefinition.Get()),
+			RequestedDamage, AppliedDamage, *GetActorLocation().ToString(), *TargetActor->GetActorLocation().ToString());
+	}
+	return AppliedDamage;
 }
 
 bool ARLProjectile::TryContinueAfterEnemyHit(ARLEnemyCharacter* HitEnemy, float AppliedDamage)
