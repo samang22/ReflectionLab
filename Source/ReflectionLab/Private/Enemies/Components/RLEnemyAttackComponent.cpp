@@ -138,7 +138,7 @@ void URLEnemyAttackComponent::StartFiring()
 	ARLEnemyCharacter* Enemy = Cast<ARLEnemyCharacter>(GetOwner());
 	if (!Enemy) { return; }
 
-	if (!GetWorld() || bFiring || !Enemy->IsPoolActive() || bTutorialCombatControlled)
+	if (!GetWorld() || bFiring || !Enemy->IsPoolActive() || Enemy->IsSpawning() || bTutorialCombatControlled)
 	{
 		return;
 	}
@@ -257,7 +257,7 @@ void URLEnemyAttackComponent::Fire()
 	ARLEnemyCharacter* Enemy = Cast<ARLEnemyCharacter>(GetOwner());
 	if (!Enemy) { return; }
 
-	if (!Enemy->IsPoolActive() || bTutorialCombatControlled || !GetWorld())
+	if (!Enemy->IsPoolActive() || Enemy->IsSpawning() || bTutorialCombatControlled || !GetWorld())
 	{
 		return;
 	}
@@ -461,7 +461,7 @@ bool URLEnemyAttackComponent::FireTutorialProjectile(
 	ARLEnemyCharacter* Enemy = Cast<ARLEnemyCharacter>(GetOwner());
 	if (!Enemy) { return false; }
 
-	return Enemy->IsPoolActive() && bTutorialCombatControlled &&
+	return Enemy->IsPoolActive() && !Enemy->IsSpawning() && bTutorialCombatControlled &&
 		SpawnProjectile(ProjectileDefinition);
 }
 
@@ -470,6 +470,6 @@ ARLExpandingRingAttack* URLEnemyAttackComponent::FireTutorialRingAttack()
 	ARLEnemyCharacter* Enemy = Cast<ARLEnemyCharacter>(GetOwner());
 	if (!Enemy) { return nullptr; }
 
-	return Enemy->IsPoolActive() && bTutorialCombatControlled ? SpawnRingAttack(false) : nullptr;
+	return Enemy->IsPoolActive() && !Enemy->IsSpawning() && bTutorialCombatControlled ? SpawnRingAttack(false) : nullptr;
 }
 

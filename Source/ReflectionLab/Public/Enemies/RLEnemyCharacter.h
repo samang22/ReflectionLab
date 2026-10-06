@@ -21,6 +21,7 @@ class URLEnemyAttackComponent;
 class URLEnemyMovementComponent;
 class URLEnemyShieldComponent;
 class URLEnemyFeedbackComponent;
+class URLEnemySpawnVisualComponent;
 
 UCLASS()
 class REFLECTIONLAB_API ARLEnemyCharacter : public ACharacter
@@ -38,6 +39,7 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Enemy|Pool")
 	bool IsPoolActive() const { return bIsPoolActive; }
+	bool IsSpawning() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy|Pool")
 	void ReturnToPool();
@@ -149,11 +151,15 @@ protected:
 	TObjectPtr<URLEnemyShieldComponent> ShieldComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Components")
 	TObjectPtr<URLEnemyFeedbackComponent> FeedbackComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Enemy|Components")
+	TObjectPtr<URLEnemySpawnVisualComponent> SpawnVisualComponent;
 
 private:
 	friend class URLEnemyPoolSubsystem;
 
 	void ConfigureEnemyComponents();
+	void BeginSpawnPresentation();
+	void HandleSpawnFinished();
 	void ActivateFromPool(const FTransform& SpawnTransform);
 	void DeactivateForPool();
 

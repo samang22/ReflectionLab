@@ -39,6 +39,8 @@ void URLEnemyMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTy
 	FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	const ARLEnemyCharacter* SpawningEnemy = Cast<ARLEnemyCharacter>(GetOwner());
+	if (SpawningEnemy && SpawningEnemy->IsSpawning()) { return; }
 	UpdateFacingPlayer();
 	if (!IsRepositioning()) { return; }
 	RepositionTimeRemaining -= DeltaTime;
@@ -84,7 +86,7 @@ void URLEnemyMovementComponent::SetTutorialMovementLocked(bool bLocked)
 	{
 		Movement->StopMovementImmediately();
 		if (bTutorialMovementLocked) { Movement->DisableMovement(); }
-		else { Movement->SetDefaultMovementMode(); }
+		else if (!Enemy->IsSpawning()) { Movement->SetDefaultMovementMode(); }
 	}
 }
 
@@ -93,6 +95,11 @@ void URLEnemyMovementComponent::ActivateForPool()
 	bTutorialMovementLocked = false;
 	InitializeMovement();
 	SetTutorialMovementLocked(false);
+}
+
+void URLEnemyMovementComponent::ResumeAfterSpawn()
+{
+	SetTutorialMovementLocked(bTutorialMovementLocked);
 }
 
 void URLEnemyMovementComponent::DeactivateForPool()

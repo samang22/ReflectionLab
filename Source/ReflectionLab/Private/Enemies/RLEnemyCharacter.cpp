@@ -11,6 +11,7 @@
 #include "Enemies/Components/RLEnemyFeedbackComponent.h"
 #include "Enemies/Components/RLEnemyMovementComponent.h"
 #include "Enemies/Components/RLEnemyShieldComponent.h"
+#include "Enemies/Components/RLEnemySpawnVisualComponent.h"
 #include "Enemies/RLEnemyPoolSubsystem.h"
 #include "Enemies/RLEnemyAIController.h"
 #include "Engine/StaticMesh.h"
@@ -55,6 +56,7 @@ ARLEnemyCharacter::ARLEnemyCharacter()
 	EnemyMovementComponent = CreateDefaultSubobject<URLEnemyMovementComponent>(TEXT("EnemyMovementComponent"));
 	ShieldComponent = CreateDefaultSubobject<URLEnemyShieldComponent>(TEXT("ShieldComponent"));
 	FeedbackComponent = CreateDefaultSubobject<URLEnemyFeedbackComponent>(TEXT("FeedbackComponent"));
+	SpawnVisualComponent = CreateDefaultSubobject<URLEnemySpawnVisualComponent>(TEXT("SpawnVisualComponent"));
 
 	// Scene components stay actor-owned to preserve blueprint transforms and
 	// avoid attachments to nested component templates.
@@ -86,9 +88,10 @@ void ARLEnemyCharacter::BeginPlay()
 	AttackComponent->OnFireShot.BindUObject(this, &ThisClass::Fire);
 	AttackComponent->OnShotSpawned.BindUObject(FeedbackComponent.Get(), &URLEnemyFeedbackComponent::PlayShootAnimation);
 	ConfigureEnemyComponents();
+	SpawnVisualComponent->OnSpawnFinished.AddUObject(this, &ThisClass::HandleSpawnFinished);
 	if (bIsPoolActive)
 	{
-		AttackComponent->ActivateForPool();
+		BeginSpawnPresentation();
 	}
 }
 
@@ -155,6 +158,7 @@ float ARLEnemyCharacter::TakeDamage(float DamageAmount, const FDamageEvent& Dama
 		return 0.0f;
 	};
 	if (!bIsPoolActive) { return RejectDamage(TEXT("InactiveEnemy")); }
+	if (IsSpawning()) { return RejectDamage(TEXT("SpawningEnemy")); }
 	if (bTutorialInvulnerable) { return RejectDamage(TEXT("TutorialInvulnerability")); }
 	if (HealthComponent->IsDead()) { return RejectDamage(TEXT("DeadEnemy")); }
 	if (!FMath::IsFinite(DamageAmount) || DamageAmount <= 0.0f) { return RejectDamage(TEXT("InvalidDamage")); }
@@ -230,6 +234,7 @@ ARLExpandingRingAttack* ARLEnemyCharacter::FireTutorialRingAttack()
 void ARLEnemyCharacter::SetShieldEmitter(bool bEnabled)
 {
 	ShieldComponent->SetEmitter(bEnabled);
+	if (IsSpawning()) { ShieldVisual->SetVisibility(false, true); }
 }
 
 bool ARLEnemyCharacter::IsShieldEmitterActive() const
@@ -239,6 +244,7 @@ bool ARLEnemyCharacter::IsShieldEmitterActive() const
 
 bool ARLEnemyCharacter::TryAbsorbReflectedProjectile()
 {
+	if (IsSpawning()) { return false; }
 	return ShieldComponent->TryAbsorbReflectedProjectile();
 }
 
@@ -272,11 +278,11 @@ void ARLEnemyCharacter::ActivateFromPool(const FTransform& SpawnTransform)
 {
 	// Reset attack timers before making this instance active again.
 	AttackComponent->StopFiring();
+	SpawnVisualComponent->CancelSpawn();
 	FeedbackComponent->ResetCombatAnimation();
 	SetActorEnableCollision(false);
 	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
-	// Enabling collision can synchronously deliver a projectile overlap. Restore
-	// damage eligibility first, or that projectile is consumed against an inactive enemy.
+	// Restore gameplay state before the spawn presentation eventually enables collision.
 	bIsPoolActive = true;
 	bTutorialInvulnerable = false;
 	HealthComponent->InitializeHealth(HealthComponent->GetMaxHealth());
@@ -286,16 +292,47 @@ void ARLEnemyCharacter::ActivateFromPool(const FTransform& SpawnTransform)
 	{
 		Capsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	}
-	SetActorEnableCollision(true);
+	BeginSpawnPresentation();
 	// An immediate overlap may have killed and returned this instance to the pool.
 	if (!bIsPoolActive) { return; }
 	SetActorTickEnabled(true);
+}
+
+bool ARLEnemyCharacter::IsSpawning() const
+{
+	return SpawnVisualComponent->IsSpawning();
+}
+
+void ARLEnemyCharacter::BeginSpawnPresentation()
+{
+	SetActorEnableCollision(false);
 	EnemyMovementComponent->ActivateForPool();
-	AttackComponent->ActivateForPool();
+	if (SpawnVisualComponent->StartSpawn(GetMesh()))
+	{
+		// Reset pool combat state now, before tutorial/wave setup can override it.
+		AttackComponent->ActivateForPool();
+		GetCharacterMovement()->StopMovementImmediately();
+		GetCharacterMovement()->DisableMovement();
+	}
+	else
+	{
+		HandleSpawnFinished();
+		if (bIsPoolActive) { AttackComponent->ActivateForPool(); }
+	}
+}
+
+void ARLEnemyCharacter::HandleSpawnFinished()
+{
+	if (!bIsPoolActive) { return; }
+	EnemyMovementComponent->ResumeAfterSpawn();
+	ShieldVisual->SetVisibility(ShieldComponent->IsEmitterActive(), true);
+	SetActorEnableCollision(true);
+	if (bIsPoolActive) { AttackComponent->StartFiring(); }
 }
 
 void ARLEnemyCharacter::DeactivateForPool()
 {
+	SpawnVisualComponent->CancelSpawn();
 	AttackComponent->DeactivateForPool();
 	FeedbackComponent->ResetCombatAnimation();
 	bIsPoolActive = false;

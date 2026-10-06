@@ -12,6 +12,7 @@ class REFLECTIONLAB_API URLEnemyMovementComponent : public UActorComponent
 	GENERATED_BODY()
 
 public:
+	void ResumeAfterSpawn();
 	URLEnemyMovementComponent();
 	void InitializeMovement();
 	void ActivateForPool();
