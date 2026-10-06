@@ -142,7 +142,7 @@ int32 URLOffscreenEnemyWidget::NativePaint(
 		};
 		FSlateDrawElement::MakeLines(OutDrawElements, BaseLayer + 1,
 			AllottedGeometry.ToPaintGeometry(), ArrowPoints,
-			ESlateDrawEffect::None, Color, true, 3.0f);
+			ESlateDrawEffect::None, Color, true, ArrowThickness);
 	}
 	return Indicators.IsEmpty() ? BaseLayer : BaseLayer + 1;
 }

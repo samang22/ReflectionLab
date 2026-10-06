@@ -33,6 +33,7 @@ ARLPlayerController::ARLPlayerController()
 {
 	bShowMouseCursor = true;
 	DefaultMouseCursor = EMouseCursor::Crosshairs;
+	OffscreenEnemyWidgetClass = URLOffscreenEnemyWidget::StaticClass();
 
 	static ConstructorHelpers::FObjectFinder<UInputMappingContext> MappingContextFinder(
 		TEXT("/Game/ReflectionLab/Input/IMC_Player.IMC_Player"));
@@ -109,7 +110,8 @@ void ARLPlayerController::CreateOffscreenEnemyWidget()
 	if (IsLocalController() && !OffscreenEnemyWidget)
 	{
 		OffscreenEnemyWidget = CreateWidget<URLOffscreenEnemyWidget>(
-			this, URLOffscreenEnemyWidget::StaticClass());
+			this, OffscreenEnemyWidgetClass
+				? OffscreenEnemyWidgetClass.Get() : URLOffscreenEnemyWidget::StaticClass());
 		if (OffscreenEnemyWidget)
 		{
 			OffscreenEnemyWidget->AddToViewport(5);

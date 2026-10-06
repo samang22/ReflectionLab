@@ -23,6 +23,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Enemy Indicators", meta = (ClampMin = "4.0"))
 	float ArrowSize = 12.0f;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Enemy Indicators", meta = (ClampMin = "0.1"))
+	float ArrowThickness = 3.0f;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Enemy Indicators")
 	FLinearColor IndicatorColor = FLinearColor(1.0f, 0.25f, 0.12f, 0.9f);
 

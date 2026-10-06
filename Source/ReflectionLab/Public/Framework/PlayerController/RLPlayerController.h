@@ -155,6 +155,9 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<URLOffscreenEnemyWidget> OffscreenEnemyWidget;
 
+	UPROPERTY(EditDefaultsOnly, Category = "UI|Enemy Indicators")
+	TSubclassOf<URLOffscreenEnemyWidget> OffscreenEnemyWidgetClass;
+
 	UPROPERTY(Transient)
 	TObjectPtr<class ARLPlayerCharacter> TutorialBoundPlayer;
 
