@@ -66,6 +66,14 @@ ARLExplosionVisual::ARLExplosionVisual()
 	}
 }
 
+void ARLExplosionVisual::ConfigureProjectileDissolve()
+{
+	EffectDuration = 0.3f;
+	ShardRayCount = 6;
+	TrailSegmentsPerRay = 1;
+	ShardArcHeight = 12.0f;
+}
+
 void ARLExplosionVisual::Initialize(
 	UStaticMesh* ShardMesh,
 	UMaterialInterface* ShardMaterial,
@@ -148,6 +156,8 @@ void ARLExplosionVisual::Initialize(
 				ShardComponent->SetCanEverAffectNavigation(false);
 				ShardComponent->SetCastShadow(false);
 				ShardComponent->SetReceivesDecals(false);
+				// Projectile/death materials are translucent; do not use Nanite rendering.
+				ShardComponent->bDisallowNanite = true;
 				ShardComponent->SetStaticMesh(ShardMesh);
 				ShardComponent->SetMaterial(0, ShardMaterial);
 				ShardComponent->SetVisibility(false, true);

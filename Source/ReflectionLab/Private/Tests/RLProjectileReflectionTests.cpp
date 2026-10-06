@@ -1,6 +1,13 @@
 #include "Combat/RLProjectile.h"
+#include "Combat/RLProjectilePoolSubsystem.h"
+#include "Combat/RLExplosionVisual.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
+#include "Combat/RLProjectileVisualComponent.h"
+#include "Combat/RLProjectileSpecialComponent.h"
+#include "Combat/RLProjectileRallyComponent.h"
+#include "Combat/RLProjectileContactComponent.h"
+#include "Combat/RLProjectileFeedbackComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -11,6 +18,7 @@
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Materials/Material.h"
@@ -49,6 +57,16 @@ bool FRLProjectileReflectionTest::RunTest(const FString& Parameters)
 		TestNotNull(TEXT("Far enemy"), FarEnemy) && TestNotNull(TEXT("Projectile"), Projectile) &&
 		TestNotNull(TEXT("Controller"), Controller))
 	{
+		TestNotNull(TEXT("Projectile owns its visual component"),
+			Projectile->FindComponentByClass<URLProjectileVisualComponent>());
+		TestNotNull(TEXT("Projectile owns its special behavior component"),
+			Projectile->FindComponentByClass<URLProjectileSpecialComponent>());
+		TestNotNull(TEXT("Projectile owns its rally component"),
+			Projectile->FindComponentByClass<URLProjectileRallyComponent>());
+		TestNotNull(TEXT("Projectile owns its contact component"),
+			Projectile->FindComponentByClass<URLProjectileContactComponent>());
+		TestNotNull(TEXT("Projectile owns its pool-return feedback component"),
+			Projectile->FindComponentByClass<URLProjectileFeedbackComponent>());
 		Controller->Possess(Player);
 		NearEnemy->SetTutorialCombatControlled(true);
 		FarEnemy->SetTutorialCombatControlled(true);
@@ -68,6 +86,9 @@ bool FRLProjectileReflectionTest::RunTest(const FString& Parameters)
 		const FTransform Origin(FRotator::ZeroRotator, FVector(0.0f, 0.0f, 100.0f));
 		Projectile->ActivateProjectile(Origin, NearEnemy, NearEnemy);
 		Projectile->InitializeFromDefinition(Definition, Player);
+		TestEqual(TEXT("Visual component receives the data-asset material"),
+			Projectile->FindComponentByClass<URLProjectileVisualComponent>()->GetReflectedMaterial(),
+			Definition->ReflectedMaterial.Get());
 		TestEqual(TEXT("Hostile bomb uses its own explosion radius"), Projectile->GetExplosionRadius(), 1000.0f);
 		UStaticMeshComponent* ProjectileVisual = Projectile->FindComponentByClass<UStaticMeshComponent>();
 		const FVector HostileBombScale = ProjectileVisual->GetRelativeScale3D();
@@ -129,6 +150,8 @@ bool FRLProjectileReflectionTest::RunTest(const FString& Parameters)
 		Reflection.PierceCount = 5;
 		TestTrue(TEXT("Rally reflection succeeds"), Projectile->Reflect(Player, Player, FVector::BackwardVector, Reflection));
 		TestEqual(TEXT("Rally reflection caps piercing upgrades at one"), Projectile->GetRemainingPierces(), 1);
+		TestFalse(TEXT("Zero damage cannot consume a pierce"), Projectile->TryConsumePierce(0.0f));
+		TestEqual(TEXT("Rejected pierce consumption preserves the count"), Projectile->GetRemainingPierces(), 1);
 		TestTrue(TEXT("Reflection preserves rally behavior"), Projectile->IsRallyProjectile());
 		TestTrue(TEXT("Closest target includes the original shooter"), Movement->Velocity.GetSafeNormal().Equals(FVector::ForwardVector));
 		// Test real arrival logic without manually supplying an overlap event.
@@ -144,6 +167,8 @@ bool FRLProjectileReflectionTest::RunTest(const FString& Parameters)
 			EnemyHealth->GetCurrentHealth(), HealthBeforeArrival - Definition->DamageAmount);
 		TestTrue(TEXT("Piercing rally survives its first hit"), Projectile->CanBeReflected());
 		TestEqual(TEXT("First rally hit consumes the single pierce"), Projectile->GetRemainingPierces(), 0);
+		TestTrue(TEXT("Rally component records the damaged enemy"),
+			Projectile->GetRallyComponent()->HasDamagedEnemy(NearEnemy));
 		const float FarHealthBeforeHit = FarEnemy->FindComponentByClass<URLHealthComponent>()->GetCurrentHealth();
 		Collision->OnComponentBeginOverlap.Broadcast(Collision, FarEnemy, nullptr, 0, false, FHitResult());
 		TestEqual(TEXT("Piercing rally damages its second enemy"),
@@ -242,9 +267,25 @@ bool FRLProjectileReflectionTest::RunTest(const FString& Parameters)
 
 				// A guard return retains its shield-only behavior after centralizing damage.
 				Definition->Behavior = ERLProjectileBehavior::Guard;
+				Definition->FadeOutDuration = 0.2f;
 				ReusedEnemy->SetShieldEmitter(true);
 				const float GuardHealth = HitHealth->GetCurrentHealth();
+				const auto CountImpactEffects = [World]()
+				{
+					int32 Count = 0;
+					for (TActorIterator<ARLExplosionVisual> It(World); It; ++It) { ++Count; }
+					return Count;
+				};
+				const int32 EffectsBeforeGuardHit = CountImpactEffects();
 				SweepReturnIntoEnemy();
+				TestEqual(TEXT("Guard hit waits for actual pool return before emitting an effect"),
+					CountImpactEffects(), EffectsBeforeGuardHit);
+				Projectile->Tick(1.0f);
+				TestEqual(TEXT("Guard pool return emits one effect even without health damage"),
+					CountImpactEffects(), EffectsBeforeGuardHit + 1);
+				World->GetSubsystem<URLProjectilePoolSubsystem>()->ReleaseProjectile(Projectile);
+				TestEqual(TEXT("Repeated inactive release does not emit another effect"),
+					CountImpactEffects(), EffectsBeforeGuardHit + 1);
 				TestFalse(TEXT("Guard return breaks a shield"), ReusedEnemy->IsShieldEmitterActive());
 				TestEqual(TEXT("Guard return does not deal health damage"), HitHealth->GetCurrentHealth(), GuardHealth);
 				Definition->Behavior = ERLProjectileBehavior::Rally;
@@ -280,6 +321,25 @@ bool FRLProjectileReflectionTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("Reflected delayed bomb no longer resumes toward player"), Movement->Velocity.X > 0.0f);
 		Projectile->ReturnToPool();
 		TestFalse(TEXT("Fading projectiles cannot be reflected"), Projectile->Reflect(Player, Player, FVector::ForwardVector, Reflection));
+
+		// The component-owned state must not leak across different pooled behaviors.
+		Projectile->ActivateProjectile(Origin, Player, Player);
+		Definition->Behavior = ERLProjectileBehavior::Fake;
+		Definition->FakeTriggerDistance = 1000.0f;
+		Projectile->InitializeFromDefinition(Definition, Player);
+		Projectile->Tick(0.01f);
+		TestFalse(TEXT("Dormant fake projectile hides its visual"), ProjectileVisual->IsVisible());
+		World->GetSubsystem<URLProjectilePoolSubsystem>()->ReleaseProjectile(Projectile);
+		TestFalse(TEXT("Pool release clears explosive state"), Projectile->IsExplosive());
+		TestFalse(TEXT("Pool release clears rally state"), Projectile->IsRallyProjectile());
+		TestFalse(TEXT("Pool release clears guard state"), Projectile->IsGuardProjectile());
+		Projectile->ActivateProjectile(Origin, Player, Player);
+		Definition->Behavior = ERLProjectileBehavior::Normal;
+		Projectile->InitializeFromDefinition(Definition, Player);
+		Projectile->Tick(0.01f);
+		TestTrue(TEXT("Reused normal projectile is visible after a dormant fake"), ProjectileVisual->IsVisible());
+		TestTrue(TEXT("Reused normal projectile can be reflected"), Projectile->CanBeReflected());
+		TestTrue(TEXT("Reused normal projectile moves after a dormant fake"), Movement->Velocity.Size() > 0.0);
 	}
 	World->DestroyWorld(false);
 	GEngine->DestroyWorldContext(World);

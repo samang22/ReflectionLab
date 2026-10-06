@@ -20,6 +20,7 @@ public:
 	ARLExplosionVisual();
 
 	virtual void Tick(float DeltaTime) override;
+	void ConfigureProjectileDissolve();
 
 	void Initialize(
 		UStaticMesh* ShardMesh,
