@@ -7,6 +7,7 @@
 #include "Components/SceneComponent.h"
 #include "Data/RLEnemyCombatRow.h"
 #include "Enemies/RLEnemyCharacter.h"
+#include "Enemies/Components/RLEnemyMovementComponent.h"
 #include "Engine/World.h"
 #include "Framework/GameMode/RLGameModeBase.h"
 #include "Kismet/GameplayStatics.h"
@@ -156,6 +157,10 @@ void URLEnemyAttackComponent::StartFiring()
 
 void URLEnemyAttackComponent::StopFiring()
 {
+	if (URLEnemyMovementComponent* Movement = GetOwner()->FindComponentByClass<URLEnemyMovementComponent>())
+	{
+		Movement->CancelReposition();
+	}
 	bFiring = false;
 	if (UWorld* World = GetWorld())
 	{
@@ -176,6 +181,14 @@ void URLEnemyAttackComponent::BeginBurst()
 	}
 
 	BurstStartTime = GetWorld()->GetTimeSeconds();
+	if (URLEnemyMovementComponent* Movement = Enemy->FindComponentByClass<URLEnemyMovementComponent>())
+	{
+		if (Movement->IsRepositioning())
+		{
+			GetWorld()->GetTimerManager().SetTimer(AttackTimerHandle, this, &ThisClass::BeginBurst, 0.1f, false);
+			return;
+		}
+	}
 	CurrentBurstInterval = FRLEnemyAttackVariation::SampleInterval(AttackInterval,
 		UsesAttackVariation() ? AttackVariation.AttackIntervalJitterRatio : 0.0f, 0.1f);
 	RemainingShotsInBurst = FMath::Max(1, ShotsPerBurst);
@@ -211,6 +224,10 @@ void URLEnemyAttackComponent::FireNextShot()
 		// start-to-start interval, not just the pause. Long bursts never overlap.
 		const float Elapsed = static_cast<float>(GetWorld()->GetTimeSeconds() - BurstStartTime);
 		const float Delay = FMath::Max(0.1f, CurrentBurstInterval - Elapsed);
+		if (URLEnemyMovementComponent* Movement = Enemy->FindComponentByClass<URLEnemyMovementComponent>())
+		{
+			Movement->BeginReposition();
+		}
 		GetWorld()->GetTimerManager().SetTimer(AttackTimerHandle, this, &ThisClass::BeginBurst, Delay, false);
 	}
 }

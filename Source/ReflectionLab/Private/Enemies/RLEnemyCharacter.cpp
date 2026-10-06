@@ -12,6 +12,7 @@
 #include "Enemies/Components/RLEnemyMovementComponent.h"
 #include "Enemies/Components/RLEnemyShieldComponent.h"
 #include "Enemies/RLEnemyPoolSubsystem.h"
+#include "Enemies/RLEnemyAIController.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -39,6 +40,8 @@ ARLEnemyCharacter::ARLEnemyCharacter()
 			 "MI_Projectile_Reflected.MI_Projectile_Reflected"));
 
 	PrimaryActorTick.bCanEverTick = true;
+	AIControllerClass = ARLEnemyAIController::StaticClass();
+	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;

@@ -3,13 +3,17 @@
 #include "Animation/AnimInstanceProxy.h"
 #include "Animation/AnimNode_SequencePlayer.h"
 #include "Animation/AnimSequence.h"
+#include "Animation/BlendSpace.h"
+#include "AnimNodes/AnimNode_BlendSpacePlayer.h"
 #include "AnimNodes/AnimNode_TwoWayBlend.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Enemies/RLEnemyCharacter.h"
 #include "Engine/SkeletalMesh.h"
+#include "KismetAnimationLibrary.h"
 #include "UObject/ConstructorHelpers.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Enemies/RLEnemyPoolSubsystem.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
@@ -36,7 +40,9 @@ struct FRLEnemyAnimInstanceProxy : FAnimInstanceProxy
 	explicit FRLEnemyAnimInstanceProxy(UAnimInstance* Instance)
 		: FAnimInstanceProxy(Instance)
 	{
-		Blend.A.SetLinkNode(&IdlePlayer);
+		LocomotionBlend.A.SetLinkNode(&IdlePlayer);
+		LocomotionBlend.B.SetLinkNode(&MovementPlayer);
+		Blend.A.SetLinkNode(&LocomotionBlend);
 		Blend.B.SetLinkNode(&ShootPlayer);
 	}
 
@@ -46,6 +52,10 @@ struct FRLEnemyAnimInstanceProxy : FAnimInstanceProxy
 		const URLEnemyAnimInstance* EnemyInstance = CastChecked<URLEnemyAnimInstance>(Instance);
 		IdlePlayer.SetSequence(EnemyInstance->IdleAnimation);
 		IdlePlayer.SetLoopAnimation(true);
+		MovementPlayer.SetBlendSpace(EnemyInstance->MovementBlendSpace);
+		MovementPlayer.SetLoop(true);
+		LocomotionBlend.AlphaBoolBlend.BlendInTime = EnemyInstance->BlendTime;
+		LocomotionBlend.AlphaBoolBlend.BlendOutTime = EnemyInstance->BlendTime;
 		ShootPlayer.SetSequence(EnemyInstance->ShootAnimation);
 		ShootPlayer.SetLoopAnimation(false);
 		ShootPlayer.SetPlayRate(EnemyInstance->ShootPlayRate);
@@ -58,6 +68,8 @@ struct FRLEnemyAnimInstanceProxy : FAnimInstanceProxy
 	virtual void GetCustomNodes(TArray<FAnimNode_Base*>& OutNodes) override
 	{
 		OutNodes.Add(&IdlePlayer);
+		OutNodes.Add(&MovementPlayer);
+		OutNodes.Add(&LocomotionBlend);
 		OutNodes.Add(&ShootPlayer);
 		OutNodes.Add(&Blend);
 	}
@@ -78,11 +90,15 @@ struct FRLEnemyAnimInstanceProxy : FAnimInstanceProxy
 			LastShotSerial = EnemyInstance->ShotSerial;
 		}
 		Blend.bAlphaBoolEnabled = EnemyInstance->bIsShooting;
+		LocomotionBlend.bAlphaBoolEnabled = EnemyInstance->MovementBlendSpace && EnemyInstance->IsMoving();
+		MovementPlayer.SetPosition(FVector(EnemyInstance->Direction, EnemyInstance->GroundSpeed, 0.0f));
 		ShootPlayer.SetPlayRate(EnemyInstance->ShootPlayRate);
 	}
 
 	FAnimNode_SequencePlayer_Standalone IdlePlayer;
 	FAnimNode_SequencePlayer_Standalone ShootPlayer;
+	FAnimNode_BlendSpacePlayer_Standalone MovementPlayer;
+	FRLEnemyBlendNode LocomotionBlend;
 	FRLEnemyBlendNode Blend;
 	uint32 LastShotSerial = 0;
 	uint32 LastResetSerial = 0;
@@ -96,6 +112,9 @@ URLEnemyAnimInstance::URLEnemyAnimInstance()
 		TEXT("/Game/ReflectionLab/Gameplay/Enemies/Animations/A_Enemy_Shoot.A_Enemy_Shoot"));
 	IdleAnimation = IdleFinder.Object;
 	ShootAnimation = ShootFinder.Object;
+	static ConstructorHelpers::FObjectFinder<UBlendSpace> MovementFinder(
+		TEXT("/Game/Characters/Mannequins/Anims/Unarmed/BS_Idle_Walk_Run.BS_Idle_Walk_Run"));
+	MovementBlendSpace = MovementFinder.Object;
 }
 
 void URLEnemyAnimInstance::NativeInitializeAnimation()
@@ -108,6 +127,9 @@ void URLEnemyAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
 	const ARLEnemyCharacter* Enemy = Cast<ARLEnemyCharacter>(TryGetPawnOwner());
+	const FVector Velocity = Enemy && Enemy->IsPoolActive() ? Enemy->GetVelocity() : FVector::ZeroVector;
+	GroundSpeed = Velocity.Size2D();
+	Direction = Enemy ? UKismetAnimationLibrary::CalculateDirection(Velocity, Enemy->GetActorRotation()) : 0.0f;
 	ShootTimeRemaining = Enemy && Enemy->IsPoolActive()
 		? FMath::Max(0.0f, ShootTimeRemaining - DeltaSeconds) : 0.0f;
 	bIsShooting = ShootTimeRemaining > 0.0f;
@@ -128,6 +150,8 @@ void URLEnemyAnimInstance::ResetCombatAnimation()
 {
 	ShootTimeRemaining = 0.0f;
 	bIsShooting = false;
+	GroundSpeed = 0.0f;
+	Direction = 0.0f;
 	++ResetSerial;
 }
 
@@ -199,10 +223,17 @@ bool FRLEnemyAnimationTest::RunTest(const FString& Parameters)
 			IdleHand.Equals(Mesh->GetBoneTransform(HandIndex), 0.001f));
 		Instance->NativeUpdateAnimation(120.0f);
 		TestFalse(TEXT("Completed shot returns to Idle"), Instance->IsShooting());
+		Enemy->GetCharacterMovement()->Velocity = FVector(180.0f, 0.0f, 0.0f);
+		Instance->NativeUpdateAnimation(0.1f);
+		TestTrue(TEXT("Movement velocity activates locomotion"), Instance->IsMoving());
+		Enemy->GetCharacterMovement()->Velocity = FVector::ZeroVector;
+		Instance->NativeUpdateAnimation(0.1f);
+		TestFalse(TEXT("Stopped enemy returns to Idle"), Instance->IsMoving());
 		Instance->PlayShootAnimation();
 		Enemy->ReturnToPool();
 		TestFalse(TEXT("Returned enemy is inactive"), Enemy->IsPoolActive());
 		TestFalse(TEXT("Pool return clears Shoot"), Instance->IsShooting());
+		TestFalse(TEXT("Pool return clears locomotion"), Instance->IsMoving());
 		ARLEnemyCharacter* ReusedEnemy = World->GetSubsystem<URLEnemyPoolSubsystem>()
 			->AcquireEnemy(EnemyClass, FTransform::Identity);
 		TestTrue(TEXT("Pool reuses the same enemy"), ReusedEnemy == Enemy);
