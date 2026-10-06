@@ -2,6 +2,9 @@
 
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "UObject/ConstructorHelpers.h"
 #include "Data/RLPlayerStatsDataAsset.h"
 #include "Engine/World.h"
 #include "Framework/GameMode/RLGameModeBase.h"
@@ -36,6 +39,20 @@ ARLPlayerCharacter::ARLPlayerCharacter()
 	GetCharacterMovement()->bUseControllerDesiredRotation = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
 	GetMesh()->SetReceivesDecals(false);
+
+	BatMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BatMesh"));
+	BatMesh->SetupAttachment(GetMesh(), TEXT("hand_r"));
+	BatMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BatMesh->SetGenerateOverlapEvents(false);
+	BatMesh->SetCanEverAffectNavigation(false);
+	BatMesh->SetReceivesDecals(false);
+	// The imported bat extends along +Z from its handle; fit it to the right-hand grip.
+	BatMesh->SetRelativeScale3D(FVector(0.045f));
+	BatMesh->SetRelativeRotation(FRotator(0.0f, 0.0f, -90.0f));
+	BatMesh->SetRelativeLocation(FVector(0.0f, -10.0f, 0.0f));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> BatMeshFinder(
+		TEXT("/Game/ReflectionLab/Art/Weapons/BaseballBat/baseball_bat/StaticMeshes/baseball_bat.baseball_bat"));
+	if (BatMeshFinder.Succeeded()) { BatMesh->SetStaticMesh(BatMeshFinder.Object); }
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);

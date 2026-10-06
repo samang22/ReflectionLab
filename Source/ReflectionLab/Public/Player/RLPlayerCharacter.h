@@ -6,6 +6,7 @@
 #include "RLPlayerCharacter.generated.h"
 
 class UCameraComponent;
+class UStaticMeshComponent;
 class USpringArmComponent;
 class URLPlayerStatsDataAsset;
 class URLHealthComponent;
@@ -121,6 +122,9 @@ public:
 	URLPlayerStatsDataAsset* GetPlayerStatsData() const { return PlayerStatsData; }
 
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Player|Weapon")
+	TObjectPtr<UStaticMeshComponent> BatMesh;
+
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void OnConstruction(const FTransform& Transform) override;
