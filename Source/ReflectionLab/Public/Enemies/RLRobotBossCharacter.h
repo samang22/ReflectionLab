@@ -10,6 +10,9 @@ class UDecalComponent;
 class URLBossLaserComponent;
 class UStaticMeshComponent;
 class URLBossAimComponent;
+class URLBossChargeComponent;
+class URLBossSummonComponent;
+class URLBossSummonVisualComponent;
 
 UCLASS()
 class REFLECTIONLAB_API ARLRobotBossCharacter : public ARLEnemyCharacter
@@ -33,4 +36,12 @@ protected:
 	TObjectPtr<UDecalComponent> LaserDecal;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss")
 	TObjectPtr<URLBossAimComponent> AimComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss")
+	TObjectPtr<URLBossChargeComponent> ChargeComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss")
+	TObjectPtr<UDecalComponent> ChargeDecal;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss")
+	TObjectPtr<URLBossSummonComponent> SummonComponent;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss")
+	TObjectPtr<URLBossSummonVisualComponent> SummonVisualComponent;
 };

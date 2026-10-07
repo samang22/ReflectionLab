@@ -7,11 +7,13 @@
 #include "Enemies/RLEnemyCharacter.h"
 #include "Enemies/Components/RLBossOverloadComponent.h"
 #include "Enemies/Components/RLBossAimComponent.h"
+#include "Enemies/Components/RLBossChargeComponent.h"
 #include "Enemies/Components/RLEnemyMovementComponent.h"
 #include "Enemies/Components/RLEnemyAttackComponent.h"
 #include "Player/RLPlayerCharacter.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "Materials/MaterialInstanceDynamic.h"
 
 URLBossLaserComponent::URLBossLaserComponent()
@@ -136,10 +138,12 @@ void URLBossLaserComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	if (!Enemy || !Enemy->IsPoolActive() || Enemy->IsSpawning()) { Cancel(); return; }
 	const auto* Overload = GetOwner()->FindComponentByClass<URLBossOverloadComponent>();
 	if (Overload && Overload->WantsOverload()) { return; }
+	const auto* Charge = GetOwner()->FindComponentByClass<URLBossChargeComponent>();
+	if (Charge && Charge->IsActive()) { return; }
 	Remaining -= FMath::Max(0.0f, DeltaTime);
 	if (Phase == EPhase::Waiting)
 	{
-		if (Remaining <= 0.0f) { BeginPreparation(); }
+		if (Remaining <= 0.0f && !HasActivePeerLaser()) { BeginPreparation(); }
 	}
 	else if (Phase == EPhase::Preparing)
 	{
@@ -151,6 +155,18 @@ void URLBossLaserComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	}
 	else if (Remaining <= 0.0f) { Cancel(true); }
 	else { UpdateBeam(DeltaTime, true); }
+}
+
+bool URLBossLaserComponent::HasActivePeerLaser() const
+{
+	if (!bSerializeWithPeers || !GetWorld()) { return false; }
+	for (TActorIterator<ARLEnemyCharacter> It(GetWorld()); It; ++It)
+	{
+		if (*It == GetOwner() || !It->IsPoolActive() || It->IsSpawning()) { continue; }
+		const auto* Peer = It->FindComponentByClass<URLBossLaserComponent>();
+		if (Peer && Peer->bSerializeWithPeers && (Peer->IsPreparing() || Peer->IsFiring())) { return true; }
+	}
+	return false;
 }
 
 void URLBossLaserComponent::Cancel(bool bResumeCombat)

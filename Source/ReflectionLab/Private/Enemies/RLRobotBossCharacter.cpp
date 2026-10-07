@@ -7,6 +7,9 @@
 #include "Enemies/Components/RLBossOverloadComponent.h"
 #include "Enemies/Components/RLBossLaserComponent.h"
 #include "Enemies/Components/RLBossAimComponent.h"
+#include "Enemies/Components/RLBossChargeComponent.h"
+#include "Enemies/Components/RLBossSummonComponent.h"
+#include "Enemies/Components/RLBossSummonVisualComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
@@ -41,6 +44,12 @@ ARLRobotBossCharacter::ARLRobotBossCharacter()
 	LaserDecal = CreateDefaultSubobject<UDecalComponent>(TEXT("LaserDecal"));
 	LaserDecal->SetupAttachment(GetRootComponent());
 	LaserDecal->SetVisibility(false);
+	ChargeComponent = CreateDefaultSubobject<URLBossChargeComponent>(TEXT("ChargeComponent"));
+	ChargeDecal = CreateDefaultSubobject<UDecalComponent>(TEXT("ChargeDecal"));
+	ChargeDecal->SetupAttachment(GetRootComponent());
+	ChargeDecal->SetVisibility(false);
+	SummonComponent = CreateDefaultSubobject<URLBossSummonComponent>(TEXT("SummonComponent"));
+	SummonVisualComponent = CreateDefaultSubobject<URLBossSummonVisualComponent>(TEXT("SummonVisualComponent"));
 }
 
 void ARLRobotBossCharacter::BeginPlay()
@@ -62,4 +71,6 @@ void ARLRobotBossCharacter::BeginPlay()
 	Super::BeginPlay();
 	OverloadComponent->Initialize(HealthComponent, GetMesh(), AbsorptionVolume, AbsorptionDecal, ProjectileClass);
 	LaserComponent->Initialize(GetMesh(), LaserBeam, LaserDecal);
+	ChargeComponent->Initialize(GetMesh(), ChargeDecal, ProjectileClass);
+	SummonComponent->Initialize(HealthComponent);
 }

@@ -19,6 +19,8 @@ public:
 	bool IsPreparing() const { return Phase == EPhase::Preparing; }
 	bool IsFiring() const { return Phase == EPhase::Firing; }
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Boss|Laser") TObjectPtr<URLBossLaserDataAsset> Settings;
+	// Opt-in minion group; the boss laser remains independent.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Boss|Laser") bool bSerializeWithPeers = false;
 protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -29,6 +31,7 @@ private:
 	void UpdateBeam(float DeltaTime, bool bApplyDamage);
 	void UpdatePreparationPreview();
 	void UpdateDecalProgress(float Progress);
+	bool HasActivePeerLaser() const;
 	UPROPERTY(Transient) TObjectPtr<USkeletalMeshComponent> Mesh;
 	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> Beam;
 	UPROPERTY(Transient) TObjectPtr<UDecalComponent> Decal;

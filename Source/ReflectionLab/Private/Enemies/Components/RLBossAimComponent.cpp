@@ -2,6 +2,7 @@
 
 #include "Enemies/Components/RLBossAimMath.h"
 #include "Enemies/Components/RLBossLaserComponent.h"
+#include "Enemies/Components/RLBossChargeComponent.h"
 #include "Enemies/Components/RLBossOverloadComponent.h"
 #include "Enemies/Components/RLEnemyMovementComponent.h"
 #include "Enemies/RLEnemyCharacter.h"
@@ -77,6 +78,13 @@ void URLBossAimComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	if ((Overload && Overload->WantsOverload()) || (Laser && Laser->IsFiring()))
 	{
 		CancelShot();
+		return;
+	}
+	const auto* Charge = GetOwner()->FindComponentByClass<URLBossChargeComponent>();
+	if (Charge && Charge->IsActive())
+	{
+		CancelShot();
+		// Charge preparation owns aim; the dash and counter-shot keep that rotation.
 		return;
 	}
 	if (Laser && Laser->IsPreparing())

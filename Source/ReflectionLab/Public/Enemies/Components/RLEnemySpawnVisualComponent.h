@@ -27,6 +27,12 @@ protected:
 	TObjectPtr<UMaterialInterface> SpawnMaterial;
 	UPROPERTY(EditDefaultsOnly, Category = "Spawn", meta = (ClampMin = "0.0"))
 	float SpawnDuration = 0.5f;
+	UPROPERTY(EditDefaultsOnly, Category = "Spawn")
+	bool bOverrideSpawnColor = false;
+	UPROPERTY(EditDefaultsOnly, Category = "Spawn")
+	FLinearColor SpawnColor = FLinearColor(1.0f, 0.04f, 0.015f);
+	UPROPERTY(EditDefaultsOnly, Category = "Spawn", meta = (ClampMin = "0.0"))
+	float CompletionFlashDuration = 0.0f;
 
 private:
 	UPROPERTY(Transient)

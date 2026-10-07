@@ -10,6 +10,7 @@
 #include "Enemies/RLEnemyCharacter.h"
 #include "Enemies/Components/RLEnemyAttackComponent.h"
 #include "Enemies/Components/RLBossLaserComponent.h"
+#include "Enemies/Components/RLBossChargeComponent.h"
 #include "Enemies/Components/RLEnemyMovementComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Player/Components/RLHealthComponent.h"
@@ -87,6 +88,7 @@ void URLBossOverloadComponent::HandleHealthChanged(float NewHealth, float NewMax
 void URLBossOverloadComponent::BeginOverload()
 {
 	if (auto* Laser = GetOwner()->FindComponentByClass<URLBossLaserComponent>()) { Laser->Cancel(); }
+	if (auto* Charge = GetOwner()->FindComponentByClass<URLBossChargeComponent>()) { Charge->Cancel(); }
 	bOverloading = true;
 	bAbsorbing = true;
 	AccumulatedDamage = 0.0f;
