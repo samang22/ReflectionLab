@@ -54,6 +54,11 @@ struct FRLEnemyAnimInstanceProxy : FAnimInstanceProxy
 		IdlePlayer.SetLoopAnimation(true);
 		MovementPlayer.SetBlendSpace(EnemyInstance->MovementBlendSpace);
 		MovementPlayer.SetLoop(true);
+		MovementSequencePlayer.SetSequence(EnemyInstance->MovementAnimation);
+		MovementSequencePlayer.SetLoopAnimation(true);
+		LocomotionBlend.B.SetLinkNode(EnemyInstance->MovementBlendSpace
+			? static_cast<FAnimNode_Base*>(&MovementPlayer)
+			: static_cast<FAnimNode_Base*>(&MovementSequencePlayer));
 		LocomotionBlend.AlphaBoolBlend.BlendInTime = EnemyInstance->BlendTime;
 		LocomotionBlend.AlphaBoolBlend.BlendOutTime = EnemyInstance->BlendTime;
 		ShootPlayer.SetSequence(EnemyInstance->ShootAnimation);
@@ -69,6 +74,7 @@ struct FRLEnemyAnimInstanceProxy : FAnimInstanceProxy
 	{
 		OutNodes.Add(&IdlePlayer);
 		OutNodes.Add(&MovementPlayer);
+		OutNodes.Add(&MovementSequencePlayer);
 		OutNodes.Add(&LocomotionBlend);
 		OutNodes.Add(&ShootPlayer);
 		OutNodes.Add(&Blend);
@@ -81,6 +87,7 @@ struct FRLEnemyAnimInstanceProxy : FAnimInstanceProxy
 		if (LastResetSerial != EnemyInstance->ResetSerial)
 		{
 			IdlePlayer.SetAccumulatedTime(0.0f);
+			MovementSequencePlayer.SetAccumulatedTime(0.0f);
 			ShootPlayer.SetAccumulatedTime(0.0f);
 			LastResetSerial = EnemyInstance->ResetSerial;
 		}
@@ -90,7 +97,8 @@ struct FRLEnemyAnimInstanceProxy : FAnimInstanceProxy
 			LastShotSerial = EnemyInstance->ShotSerial;
 		}
 		Blend.bAlphaBoolEnabled = EnemyInstance->bIsShooting;
-		LocomotionBlend.bAlphaBoolEnabled = EnemyInstance->MovementBlendSpace && EnemyInstance->IsMoving();
+		LocomotionBlend.bAlphaBoolEnabled = (EnemyInstance->MovementBlendSpace || EnemyInstance->MovementAnimation)
+			&& EnemyInstance->IsMoving();
 		MovementPlayer.SetPosition(FVector(EnemyInstance->Direction, EnemyInstance->GroundSpeed, 0.0f));
 		ShootPlayer.SetPlayRate(EnemyInstance->ShootPlayRate);
 	}
@@ -98,6 +106,7 @@ struct FRLEnemyAnimInstanceProxy : FAnimInstanceProxy
 	FAnimNode_SequencePlayer_Standalone IdlePlayer;
 	FAnimNode_SequencePlayer_Standalone ShootPlayer;
 	FAnimNode_BlendSpacePlayer_Standalone MovementPlayer;
+	FAnimNode_SequencePlayer_Standalone MovementSequencePlayer;
 	FRLEnemyBlendNode LocomotionBlend;
 	FRLEnemyBlendNode Blend;
 	uint32 LastShotSerial = 0;

@@ -6,6 +6,7 @@
 #include "Components/SphereComponent.h"
 #include "Data/RLProjectileDefinitionDataAsset.h"
 #include "Enemies/RLEnemyCharacter.h"
+#include "Enemies/Components/RLBossOverloadComponent.h"
 #include "GameFramework/DamageType.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -25,6 +26,10 @@ void URLProjectileContactComponent::ResolveProjectileContact(AActor* OtherActor)
 	if (TryDetonateOnPlayerContact(OtherActor))
 	{
 		return;
+	}
+	if (auto* Overload = OtherActor->FindComponentByClass<URLBossOverloadComponent>())
+	{
+		if (Overload->TryAbsorb(Projectile)) { return; }
 	}
 
 	if (Projectile->GetRallyComponent()->IsRallyProjectile() && !Projectile->IsReflected() &&

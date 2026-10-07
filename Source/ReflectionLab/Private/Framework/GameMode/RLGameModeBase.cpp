@@ -516,7 +516,7 @@ int32 ARLGameModeBase::GetCurrentPhaseCount() const
 
 int32 ARLGameModeBase::GetCurrentWaveCount() const
 {
-	if (IsCurrentRoundTutorial())
+	if (IsCurrentRoundTutorial() || (RunDefinition && RunDefinition->SingleWaveRounds.Contains(GetCurrentRoundNumber())))
 	{
 		return 1;
 	}
@@ -740,7 +740,8 @@ void ARLGameModeBase::UpdateRound()
 		return;
 	}
 
-	if (CurrentWaveIndex + 1 >= Schedule->Waves.Num())
+	if (RunDefinition->SingleWaveRounds.Contains(GetCurrentRoundNumber()) ||
+		CurrentWaveIndex + 1 >= Schedule->Waves.Num())
 	{
 		FinishRound();
 		return;
@@ -771,6 +772,10 @@ void ARLGameModeBase::BeginWave(int32 WaveIndex)
 	{
 		WaveDefinition.EnemyCount = static_cast<int32>(FMath::Clamp<int64>(
 			static_cast<int64>(WaveDefinition.EnemyCount) * 2, 1, MAX_int32));
+		if (const int32* CountOverride = RunDefinition->RoundEnemyCounts.Find(GetCurrentRoundNumber()))
+		{
+			WaveDefinition.EnemyCount = FMath::Max(1, *CountOverride);
+		}
 		// Round one retains the existing half-frequency baseline. Later rounds
 		// accelerate without mutating the schedule or compounding per wave.
 		const float AttackTimingScale = 2.0f / GetRoundAttackFrequencyMultiplier();
@@ -785,6 +790,9 @@ void ARLGameModeBase::BeginWave(int32 WaveIndex)
 		if (ARLEnemySpawner* Spawner = SpawnerPtr.Get())
 		{
 			Spawner->ConfigureWave(WaveDefinition);
+			const TSubclassOf<ARLEnemyCharacter>* RoundEnemyClass = !RoundDefinition->bIsTutorial
+				? RunDefinition->RoundEnemyClasses.Find(GetCurrentRoundNumber()) : nullptr;
+			Spawner->SetRoundEnemyClass(RoundEnemyClass ? *RoundEnemyClass : nullptr);
 			ValidSpawners.Add(Spawner);
 		}
 	}

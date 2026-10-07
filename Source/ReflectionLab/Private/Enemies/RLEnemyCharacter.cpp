@@ -8,6 +8,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "Data/RLEnemyCombatRow.h"
 #include "Enemies/Components/RLEnemyAttackComponent.h"
+#include "Enemies/Components/RLBossOverloadComponent.h"
+#include "Enemies/Components/RLBossLaserComponent.h"
 #include "Enemies/Components/RLEnemyFeedbackComponent.h"
 #include "Enemies/Components/RLEnemyMovementComponent.h"
 #include "Enemies/Components/RLEnemyShieldComponent.h"
@@ -276,6 +278,8 @@ void ARLEnemyCharacter::ReturnToPool()
 
 void ARLEnemyCharacter::ActivateFromPool(const FTransform& SpawnTransform)
 {
+	if (auto* Laser = FindComponentByClass<URLBossLaserComponent>()) { Laser->Cancel(); }
+	if (auto* Overload = FindComponentByClass<URLBossOverloadComponent>()) { Overload->Reset(); }
 	// Reset attack timers before making this instance active again.
 	AttackComponent->StopFiring();
 	SpawnVisualComponent->CancelSpawn();
@@ -332,6 +336,8 @@ void ARLEnemyCharacter::HandleSpawnFinished()
 
 void ARLEnemyCharacter::DeactivateForPool()
 {
+	if (auto* Laser = FindComponentByClass<URLBossLaserComponent>()) { Laser->Cancel(); }
+	if (auto* Overload = FindComponentByClass<URLBossOverloadComponent>()) { Overload->Reset(); }
 	SpawnVisualComponent->CancelSpawn();
 	AttackComponent->DeactivateForPool();
 	FeedbackComponent->ResetCombatAnimation();

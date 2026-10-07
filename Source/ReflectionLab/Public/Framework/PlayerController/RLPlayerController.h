@@ -11,6 +11,7 @@ class UInputMappingContext;
 class URLParryComboWidget;
 class URLPlayerHealthWidget;
 class URLRunStatusWidget;
+class URLBossHealthWidget;
 class URLTutorialPromptWidget;
 class URLPauseMenuWidget;
 class URLOffscreenEnemyWidget;
@@ -143,6 +144,8 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<URLRunStatusWidget> RunStatusWidget;
+	UPROPERTY(Transient)
+	TObjectPtr<URLBossHealthWidget> BossHealthWidget;
 
 	UPROPERTY(Transient)
 	TObjectPtr<URLTutorialPromptWidget> TutorialPromptWidget;

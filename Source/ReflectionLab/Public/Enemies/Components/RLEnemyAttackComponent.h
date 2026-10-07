@@ -81,6 +81,7 @@ private:
 	int32 ShotsFiredSinceActivation = 0;
 	int32 PatternShotOffset = 0;
 	bool bFiring = false;
+	bool bExecutingAlignedShot = false;
 	bool bAutoStartFiring = true;
 	bool bTutorialCombatControlled = false;
 };

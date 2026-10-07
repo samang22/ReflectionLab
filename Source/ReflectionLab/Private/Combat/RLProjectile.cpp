@@ -6,6 +6,7 @@
 #include "Combat/RLProjectileSpecialComponent.h"
 #include "Combat/RLProjectileRallyComponent.h"
 #include "Combat/RLProjectileContactComponent.h"
+#include "Enemies/Components/RLBossOverloadComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -357,7 +358,7 @@ bool ARLProjectile::Reflect(
 		DefaultProjectileMeshScale * ReflectedScale);
 	CollisionComponent->SetSphereRadius(
 		DefaultCollisionRadius * CollisionScale,
-		true);
+		false);
 	VisualComponent->UpdateProjectileMaterial();
 	SpecialComponent->RestartReflectedFuse();
 	RallyComponent->BeginReflectedReturn(ReflectedSpeed);
@@ -376,6 +377,17 @@ bool ARLProjectile::Reflect(
 	if (bShouldSpawnParryFragments)
 	{
 		SpecialComponent->SpawnParrySplitFragments(OriginalOwner, OriginalInstigator, NewOwner);
+	}
+	// Reflection inside an existing overlap does not emit another BeginOverlap.
+	CollisionComponent->UpdateOverlaps();
+	TArray<AActor*> OverlappingActors;
+	CollisionComponent->GetOverlappingActors(OverlappingActors);
+	for (AActor* Actor : OverlappingActors)
+	{
+		if (auto* Overload = Actor->FindComponentByClass<URLBossOverloadComponent>())
+		{
+			if (Overload->TryAbsorb(this)) { break; }
+		}
 	}
 
 	return true;
@@ -536,6 +548,18 @@ void ARLProjectile::HandleProjectileOverlap(
 	bool bFromSweep,
 	const FHitResult& SweepResult)
 {
+	if (IsValid(OtherActor))
+	{
+		if (auto* Overload = OtherActor->FindComponentByClass<URLBossOverloadComponent>())
+		{
+			// The aura is a sensor, never a normal enemy hit (including hostile bullets).
+			if (Overload->OwnsVolume(OtherComponent))
+			{
+				Overload->TryAbsorb(this);
+				return;
+			}
+		}
+	}
 	ContactComponent->ResolveProjectileContact(OtherActor);
 }
 

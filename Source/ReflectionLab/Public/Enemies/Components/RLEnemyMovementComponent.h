@@ -19,6 +19,7 @@ public:
 	void DeactivateForPool();
 	void SetTutorialMovementLocked(bool bLocked);
 	void UpdateFacingPlayer();
+	void SetFacingLocked(bool bLocked) { bFacingLocked = bLocked; }
 	void BeginReposition();
 	void CancelReposition();
 	bool IsRepositioning() const { return bWaitingToMove || bMoving; }
@@ -37,5 +38,6 @@ private:
 	bool bMoving = false;
 	float RepositionTimeRemaining = 0.0f;
 	bool bTutorialMovementLocked = false;
+	bool bFacingLocked = false;
 };
 

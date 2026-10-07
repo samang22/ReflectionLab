@@ -22,6 +22,7 @@
 #include "UI/RLParryComboWidget.h"
 #include "UI/RLPlayerHealthWidget.h"
 #include "UI/RLRunStatusWidget.h"
+#include "UI/RLBossHealthWidget.h"
 #include "UI/RLOffscreenEnemyWidget.h"
 #include "UI/RLTutorialPromptWidget.h"
 #include "UI/RLPauseMenuWidget.h"
@@ -264,6 +265,11 @@ void ARLPlayerController::CreateOrBindTutorialPromptWidget()
 
 void ARLPlayerController::CreateOrBindRunStatusWidget()
 {
+	if (!BossHealthWidget)
+	{
+		BossHealthWidget = CreateWidget<URLBossHealthWidget>(this, URLBossHealthWidget::StaticClass());
+		if (BossHealthWidget) { BossHealthWidget->AddToViewport(11); }
+	}
 	if (!IsLocalController())
 	{
 		return;

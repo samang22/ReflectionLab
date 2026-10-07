@@ -35,6 +35,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Animation")
 	TObjectPtr<UBlendSpace> MovementBlendSpace;
 
+	// Non-humanoid enemies can use their authored locomotion sequence instead.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy Animation")
+	TObjectPtr<UAnimSequence> MovementAnimation;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Enemy Animation")
 	float GroundSpeed = 0.0f;
 	UPROPERTY(BlueprintReadOnly, Category = "Enemy Animation")

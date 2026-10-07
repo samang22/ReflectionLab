@@ -6,6 +6,7 @@
 
 class URLDifficultyScheduleDataAsset;
 class URLRunRewardDataAsset;
+class ARLEnemyCharacter;
 
 USTRUCT(BlueprintType)
 struct REFLECTIONLAB_API FRLRoundDefinition
@@ -41,6 +42,14 @@ class REFLECTIONLAB_API URLRunDefinitionDataAsset : public UDataAsset
 	GENERATED_BODY()
 
 public:
+	// Uses displayed main-game round numbers, after wave splitting; tutorial is excluded.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Enemies")
+	TMap<int32, TSubclassOf<ARLEnemyCharacter>> RoundEnemyClasses;
+	// Explicit encounter sizes bypass the ordinary doubled-enemy balance rule.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Enemies", meta = (ClampMin = "1"))
+	TMap<int32, int32> RoundEnemyCounts;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Enemies")
+	TSet<int32> SingleWaveRounds;
 	// Uses the displayed main-game round number after short-round preparation.
 	// Zero preserves normal entry; tutorial-only mode ignores this override.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Testing", meta = (ClampMin = "0", ToolTip = "0: normal start. Positive values: start at this main-game round (excluding tutorial). Skipped rewards are not granted. Ignored in tutorial-only mode."))

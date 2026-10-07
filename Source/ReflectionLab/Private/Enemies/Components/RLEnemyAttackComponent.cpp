@@ -6,8 +6,10 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
 #include "Data/RLEnemyCombatRow.h"
+#include "Data/RLProjectileDefinitionDataAsset.h"
 #include "Enemies/RLEnemyCharacter.h"
 #include "Enemies/Components/RLEnemyMovementComponent.h"
+#include "Enemies/Components/RLBossAimComponent.h"
 #include "Engine/World.h"
 #include "Framework/GameMode/RLGameModeBase.h"
 #include "Kismet/GameplayStatics.h"
@@ -157,6 +159,7 @@ void URLEnemyAttackComponent::StartFiring()
 
 void URLEnemyAttackComponent::StopFiring()
 {
+	if (auto* Aim = GetOwner()->FindComponentByClass<URLBossAimComponent>()) { Aim->CancelShot(); }
 	if (URLEnemyMovementComponent* Movement = GetOwner()->FindComponentByClass<URLEnemyMovementComponent>())
 	{
 		Movement->CancelReposition();
@@ -393,9 +396,31 @@ bool URLEnemyAttackComponent::SpawnProjectile(
 		return false;
 	}
 
+	if (!bExecutingAlignedShot)
+	{
+		if (auto* Aim = Enemy->FindComponentByClass<URLBossAimComponent>())
+		{
+			const TWeakObjectPtr<URLProjectileDefinitionDataAsset> Definition = ProjectileDefinition;
+			FSimpleDelegate Shot;
+			Shot.BindWeakLambda(this, [this, Definition, ShotPattern, CrossLateralOffset, CrossTargetOffset]()
+			{
+				const auto* OwnerEnemy = Cast<ARLEnemyCharacter>(GetOwner());
+				if (!Definition.IsValid() || !OwnerEnemy || !OwnerEnemy->IsPoolActive() || OwnerEnemy->IsSpawning()) { return; }
+				TGuardValue<bool> AlignedGuard(bExecutingAlignedShot, true);
+				SpawnProjectile(Definition.Get(), ShotPattern, CrossLateralOffset, CrossTargetOffset);
+			});
+			return Aim->RequestShot(MoveTemp(Shot));
+		}
+	}
 	const FVector SpawnLocation = MuzzlePoint->GetComponentLocation();
-	const FRotator SpawnRotation =
-		(TargetPawn->GetActorLocation() - SpawnLocation).Rotation();
+	const bool bSocketMuzzle = MuzzlePoint->GetAttachSocketName() == FName(TEXT("muzzle"));
+	FVector ShotDirection = bSocketMuzzle
+		? MuzzlePoint->GetForwardVector().GetSafeNormal2D()
+		: (TargetPawn->GetActorLocation() - SpawnLocation).GetSafeNormal();
+	if (ShotDirection.IsNearlyZero()) { ShotDirection = Enemy->GetActorForwardVector().GetSafeNormal2D(); }
+	const FRotator SpawnRotation = ShotDirection.Rotation();
+	// Socket-mounted guns fire from the barrel, not synthetic cross offsets.
+	if (bSocketMuzzle) { ShotPattern = ERLShotPattern::Single; }
 	auto SpawnConfiguredProjectile = [
 		this,
 		Enemy,

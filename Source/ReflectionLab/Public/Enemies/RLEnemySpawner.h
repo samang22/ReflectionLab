@@ -14,6 +14,7 @@ class REFLECTIONLAB_API ARLEnemySpawner : public AActor
 	GENERATED_BODY()
 
 public:
+	void SetRoundEnemyClass(TSubclassOf<ARLEnemyCharacter> OverrideClass);
 	ARLEnemySpawner();
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy Spawner")
@@ -84,6 +85,8 @@ protected:
 	int32 SpawnLocationAttempts = 12;
 
 private:
+	UPROPERTY(Transient)
+	TSubclassOf<ARLEnemyCharacter> RoundEnemyClass;
 	void HandleSpawnTimer();
 	void CleanupInactiveEnemies();
 	bool FindSpawnTransform(FTransform& OutSpawnTransform) const;

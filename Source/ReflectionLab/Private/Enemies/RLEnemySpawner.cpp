@@ -82,7 +82,8 @@ void ARLEnemySpawner::StopSpawning()
 ARLEnemyCharacter* ARLEnemySpawner::SpawnEnemy()
 {
 	CleanupInactiveEnemies();
-	if (!EnemyClass || !GetWorld() || ActiveEnemies.Num() >= MaxAliveEnemies)
+	const TSubclassOf<ARLEnemyCharacter> SpawnClass = RoundEnemyClass ? RoundEnemyClass : EnemyClass;
+	if (!SpawnClass || !GetWorld() || ActiveEnemies.Num() >= MaxAliveEnemies)
 	{
 		return nullptr;
 	}
@@ -97,7 +98,7 @@ ARLEnemyCharacter* ARLEnemySpawner::SpawnEnemy()
 		GetWorld()->GetSubsystem<URLEnemyPoolSubsystem>())
 	{
 		if (ARLEnemyCharacter* Enemy =
-			PoolSubsystem->AcquireEnemy(EnemyClass, SpawnTransform))
+			PoolSubsystem->AcquireEnemy(SpawnClass, SpawnTransform))
 		{
 			++SpawnSequenceCount;
 			if (bHasActiveWaveDefinition)
@@ -128,6 +129,11 @@ ARLEnemyCharacter* ARLEnemySpawner::SpawnEnemy()
 	}
 
 	return nullptr;
+}
+
+void ARLEnemySpawner::SetRoundEnemyClass(TSubclassOf<ARLEnemyCharacter> OverrideClass)
+{
+	RoundEnemyClass = OverrideClass;
 }
 
 int32 ARLEnemySpawner::SpawnBatch(int32 RequestedCount)

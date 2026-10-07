@@ -62,6 +62,7 @@ void URLEnemyMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTy
 
 void URLEnemyMovementComponent::UpdateFacingPlayer()
 {
+	if (bFacingLocked) { return; }
 	const ARLEnemyCharacter* Enemy = Cast<ARLEnemyCharacter>(GetOwner());
 	if (!Enemy || !Enemy->IsPoolActive()) { return; }
 	const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
@@ -92,6 +93,7 @@ void URLEnemyMovementComponent::SetTutorialMovementLocked(bool bLocked)
 
 void URLEnemyMovementComponent::ActivateForPool()
 {
+	bFacingLocked = false;
 	bTutorialMovementLocked = false;
 	InitializeMovement();
 	SetTutorialMovementLocked(false);
@@ -104,6 +106,7 @@ void URLEnemyMovementComponent::ResumeAfterSpawn()
 
 void URLEnemyMovementComponent::DeactivateForPool()
 {
+	bFacingLocked = false;
 	CancelReposition();
 	bTutorialMovementLocked = false;
 	SetComponentTickEnabled(false);
