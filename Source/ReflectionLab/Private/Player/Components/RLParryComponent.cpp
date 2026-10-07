@@ -4,7 +4,7 @@
 #include "Combat/RLProjectile.h"
 #include "Combat/RLProjectilePoolSubsystem.h"
 #include "Data/RLPlayerStatsDataAsset.h"
-#include "Engine/OverlapResult.h"
+#include "EngineUtils.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "Player/Components/RLParryFeedbackComponent.h"
@@ -210,29 +210,19 @@ void URLParryComponent::UpdateParry()
 		return;
 	}
 
-	FCollisionObjectQueryParams ObjectQueryParams;
-	ObjectQueryParams.AddObjectTypesToQuery(ECC_WorldDynamic);
-
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PlayerParry), false, GetOwner());
-	TArray<FOverlapResult> Overlaps;
-	World->OverlapMultiByObjectType(
-		Overlaps,
-		GetOwner()->GetActorLocation(),
-		FQuat::Identity,
-		ObjectQueryParams,
-		FCollisionShape::MakeSphere(Stats.ReflectionRange),
-		QueryParams);
-
 	int32 ParriedProjectileCount = 0;
 	bool bPerfectParry = false;
 	bool bCloseRangeParry = false;
 	FVector ParrySoundLocation = GetOwner()->GetActorLocation();
 	const int32 ResultingCombo = ProgressionComponent->GetChainCount() + 1;
 	const bool bOverdrive = ProgressionComponent->GetEnhancementLevel() >= 4;
-	for (const FOverlapResult& Overlap : Overlaps)
+	// Collision overlap queries have a Z extent. Enumerate projectiles instead
+	// and let IsProjectileWithinParryArc perform the exact XY-only filtering.
+	for (TActorIterator<ARLProjectile> Iterator(World); Iterator; ++Iterator)
 	{
 		if (!CanParry() || !bParryActive) { return; }
-		if (ARLProjectile* Projectile = Cast<ARLProjectile>(Overlap.GetActor()))
+		ARLProjectile* Projectile = *Iterator;
+		if (Projectile->IsPoolActive() && !Projectile->IsFadingOut())
 		{
 			bool bProjectilePerfectParry = false;
 			bool bProjectileCloseRangeParry = false;
