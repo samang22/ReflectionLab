@@ -56,4 +56,4 @@ if defaults.get_component_by_class(unreal.RLBossLaserComponent).get_editor_prope
 mesh = defaults.get_component_by_class(unreal.SkeletalMeshComponent)
 if not mesh.does_socket_exist('laser'):
     raise RuntimeError("Boss mesh has no saved 'laser' socket; save it before testing")
-unreal.log('[BossLaser] SUCCESS: 2s aiming, 3s fixed laser, 10s cooldown')
+unreal.log('[BossLaser] SUCCESS: laser assets/settings configured; timings use the data asset')
