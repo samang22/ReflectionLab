@@ -12,6 +12,7 @@
 #include "Enemies/Components/RLBossLaserComponent.h"
 #include "Enemies/Components/RLBossChargeComponent.h"
 #include "Enemies/Components/RLBossSummonComponent.h"
+#include "Enemies/Components/RLPaperBurnComponent.h"
 #include "Enemies/Components/RLEnemyFeedbackComponent.h"
 #include "Enemies/Components/RLEnemyMovementComponent.h"
 #include "Enemies/Components/RLEnemyShieldComponent.h"
@@ -280,6 +281,7 @@ void ARLEnemyCharacter::ReturnToPool()
 
 void ARLEnemyCharacter::ActivateFromPool(const FTransform& SpawnTransform)
 {
+	if (auto* Burn = FindComponentByClass<URLPaperBurnComponent>()) { Burn->Cancel(); }
 	if (auto* Summon = FindComponentByClass<URLBossSummonComponent>()) { Summon->Reset(); }
 	if (auto* Charge = FindComponentByClass<URLBossChargeComponent>()) { Charge->Cancel(); }
 	if (auto* Laser = FindComponentByClass<URLBossLaserComponent>()) { Laser->Cancel(); }
@@ -340,6 +342,7 @@ void ARLEnemyCharacter::HandleSpawnFinished()
 
 void ARLEnemyCharacter::DeactivateForPool()
 {
+	if (auto* Burn = FindComponentByClass<URLPaperBurnComponent>()) { Burn->Cancel(); }
 	if (auto* Summon = FindComponentByClass<URLBossSummonComponent>()) { Summon->Reset(); }
 	if (auto* Charge = FindComponentByClass<URLBossChargeComponent>()) { Charge->Cancel(); }
 	if (auto* Laser = FindComponentByClass<URLBossLaserComponent>()) { Laser->Cancel(); }

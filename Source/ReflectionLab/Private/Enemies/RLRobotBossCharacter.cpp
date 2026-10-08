@@ -10,6 +10,10 @@
 #include "Enemies/Components/RLBossChargeComponent.h"
 #include "Enemies/Components/RLBossSummonComponent.h"
 #include "Enemies/Components/RLBossSummonVisualComponent.h"
+#include "Enemies/Components/RLPaperBurnComponent.h"
+#include "Enemies/Components/RLEnemyAttackComponent.h"
+#include "Enemies/Components/RLEnemyMovementComponent.h"
+#include "Enemies/Components/RLEnemySpawnVisualComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
@@ -50,6 +54,7 @@ ARLRobotBossCharacter::ARLRobotBossCharacter()
 	ChargeDecal->SetVisibility(false);
 	SummonComponent = CreateDefaultSubobject<URLBossSummonComponent>(TEXT("SummonComponent"));
 	SummonVisualComponent = CreateDefaultSubobject<URLBossSummonVisualComponent>(TEXT("SummonVisualComponent"));
+	PaperBurnComponent = CreateDefaultSubobject<URLPaperBurnComponent>(TEXT("PaperBurnComponent"));
 }
 
 void ARLRobotBossCharacter::BeginPlay()
@@ -73,4 +78,25 @@ void ARLRobotBossCharacter::BeginPlay()
 	LaserComponent->Initialize(GetMesh(), LaserBeam, LaserDecal);
 	ChargeComponent->Initialize(GetMesh(), ChargeDecal, ProjectileClass);
 	SummonComponent->Initialize(HealthComponent);
+	PaperBurnComponent->OnFinished.BindUObject(this, &ARLEnemyCharacter::ReturnToPool);
+}
+
+void ARLRobotBossCharacter::Die()
+{
+	if (PaperBurnComponent->IsPlaying()) { return; }
+	// Stop gameplay first; the still-active corpse holds round completion until the burn ends.
+	AttackComponent->StopFiring();
+	LaserComponent->Cancel();
+	ChargeComponent->Cancel();
+	OverloadComponent->Reset();
+	SummonComponent->Reset();
+	SpawnVisualComponent->CancelSpawn();
+	EnemyMovementComponent->SetTutorialMovementLocked(true);
+	EnemyMovementComponent->SetFacingLocked(true);
+	SetActorEnableCollision(false);
+	if (!PaperBurnComponent->Start(GetMesh(), {AimComponent.Get(), LaserComponent.Get(), ChargeComponent.Get(),
+		OverloadComponent.Get(), SummonComponent.Get(), EnemyMovementComponent.Get()}))
+	{
+		ReturnToPool();
+	}
 }
