@@ -146,6 +146,21 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Feedback", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float ImpactSoundVolume = 0.65f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Feedback|Perfect")
+	TObjectPtr<USoundBase> PerfectParrySound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Feedback|Perfect", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float PerfectParrySoundVolume = 0.8f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Feedback|Perfect", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float PerfectImpactVolumeMultiplier = 0.4f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Feedback|PowerLevel")
+	TObjectPtr<USoundBase> PowerLevelUpSound;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Feedback|PowerLevel", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float PowerLevelUpSoundVolume = 0.65f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Feedback")
 	TObjectPtr<USoundBase> SwingSound;
 

@@ -11,6 +11,7 @@ class UNiagaraComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class USoundBase;
+class UAudioComponent;
 class URLPlayerStatsDataAsset;
 
 UCLASS(ClassGroup = (ReflectionLab), meta = (BlueprintSpawnableComponent))
@@ -25,7 +26,7 @@ public:
 	void ShowParrySuccessIndicator();
 	void ClearParrySuccessIndicator();
 	void PlayParrySwingSound() const;
-	void PlayParryImpactSound(const FVector& SoundLocation, int32 EnhancementLevel) const;
+	void PlayParryImpactSound(const FVector& SoundLocation, int32 EnhancementLevel, bool bPerfectParry);
 	void TriggerParryHitStop(bool bPerfectParry, bool bOverdrive);
 	void RestoreTimeDilation();
 
@@ -70,6 +71,18 @@ private:
 	float ParryIndicatorSuccessOpacity = 0.55f;
 	float ParryIndicatorUnavailableOpacity = 0.22f;
 	float ParryImpactSoundVolume = 0.65f;
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> PerfectParrySound;
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> PerfectParryAudioComponent;
+	float PerfectParrySoundVolume = 0.8f;
+	float PerfectImpactVolumeMultiplier = 0.4f;
+	UPROPERTY(Transient)
+	TObjectPtr<USoundBase> PowerLevelUpSound;
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> PowerLevelUpAudioComponent;
+	float PowerLevelUpSoundVolume = 0.65f;
+	bool bHasViewState = false;
 	UPROPERTY(Transient)
 	TObjectPtr<USoundBase> ParrySwingSound;
 	float ParrySwingSoundVolume = 0.45f;

@@ -248,7 +248,7 @@ void URLParryComponent::UpdateParry()
 		const FRLParryResult Result{ParriedProjectileCount, bPerfectParry, bCloseRangeParry, bOverdrive};
 		RewardComponent->ApplyPerfectRecovery(Result);
 		ProgressionComponent->RegisterSuccess(Result);
-		FeedbackComponent->PlayParryImpactSound(ParrySoundLocation, ProgressionComponent->GetEnhancementLevel());
+		FeedbackComponent->PlayParryImpactSound(ParrySoundLocation, ProgressionComponent->GetEnhancementLevel(), bPerfectParry);
 		FeedbackComponent->TriggerParryHitStop(bPerfectParry, bOverdrive);
 		EndParry(true);
 		if (bOverdrive)

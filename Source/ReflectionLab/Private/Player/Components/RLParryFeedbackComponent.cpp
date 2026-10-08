@@ -1,6 +1,7 @@
 #include "Player/Components/RLParryFeedbackComponent.h"
 
 #include "Components/CapsuleComponent.h"
+#include "Components/AudioComponent.h"
 #include "Components/DecalComponent.h"
 #include "Data/RLPlayerStatsDataAsset.h"
 #include "Engine/World.h"
@@ -77,6 +78,10 @@ void URLParryFeedbackComponent::BeginPlay()
 void URLParryFeedbackComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ClearParrySuccessIndicator();
+	if (IsValid(PerfectParryAudioComponent)) { PerfectParryAudioComponent->Stop(); }
+	PerfectParryAudioComponent = nullptr;
+	if (IsValid(PowerLevelUpAudioComponent)) { PowerLevelUpAudioComponent->Stop(); }
+	PowerLevelUpAudioComponent = nullptr;
 	RestoreTimeDilation();
 	OverdriveAuraComponent->Deactivate();
 	Super::EndPlay(EndPlayReason);
@@ -99,6 +104,11 @@ void URLParryFeedbackComponent::Configure(const URLPlayerStatsDataAsset* PlayerS
 		0.0f,
 		1.0f);
 	ParryImpactSoundVolume = FMath::Clamp(PlayerStatsData->ImpactSoundVolume, 0.0f, 1.0f);
+	PerfectParrySound = PlayerStatsData->PerfectParrySound;
+	PerfectParrySoundVolume = FMath::Clamp(PlayerStatsData->PerfectParrySoundVolume, 0.0f, 2.0f);
+	PerfectImpactVolumeMultiplier = FMath::Clamp(PlayerStatsData->PerfectImpactVolumeMultiplier, 0.0f, 1.0f);
+	PowerLevelUpSound = PlayerStatsData->PowerLevelUpSound;
+	PowerLevelUpSoundVolume = FMath::Clamp(PlayerStatsData->PowerLevelUpSoundVolume, 0.0f, 2.0f);
 	ParrySwingSound = PlayerStatsData->SwingSound;
 	ParrySwingSoundVolume = FMath::Clamp(PlayerStatsData->SwingSoundVolume, 0.0f, 1.0f);
 	ParryComboImpactSounds = PlayerStatsData->ComboImpactSounds;
@@ -128,7 +138,16 @@ void URLParryFeedbackComponent::Configure(const URLPlayerStatsDataAsset* PlayerS
 
 void URLParryFeedbackComponent::UpdateView(const FRLParryViewState& State)
 {
+	// The progression broadcasts twice on a level-up; only the actual rising
+	// edge should sound. Initial synchronization and downgrades remain silent.
+	const bool bLevelIncreased = bHasViewState && State.EnhancementLevel > View.EnhancementLevel;
 	View = State;
+	bHasViewState = true;
+	if (bLevelIncreased && PowerLevelUpSound && PowerLevelUpSoundVolume > 0.0f && GetWorld())
+	{
+		if (IsValid(PowerLevelUpAudioComponent)) { PowerLevelUpAudioComponent->Stop(); }
+		PowerLevelUpAudioComponent = UGameplayStatics::SpawnSound2D(this, PowerLevelUpSound, PowerLevelUpSoundVolume);
+	}
 	UpdateParryRangeIndicator();
 	UpdateOverdriveAura();
 }
@@ -356,11 +375,20 @@ void URLParryFeedbackComponent::PlayParrySwingSound() const
 
 void URLParryFeedbackComponent::PlayParryImpactSound(
 	const FVector& SoundLocation,
-	int32 EnhancementLevel) const
+	int32 EnhancementLevel,
+	bool bPerfectParry)
 {
+	bool bPerfectSoundPlaying = false;
+	if (bPerfectParry && PerfectParrySound && PerfectParrySoundVolume > 0.0f && GetWorld())
+	{
+		// Restart the result sound instead of stacking long power-up tails.
+		if (IsValid(PerfectParryAudioComponent)) { PerfectParryAudioComponent->Stop(); }
+		PerfectParryAudioComponent = UGameplayStatics::SpawnSound2D(this, PerfectParrySound, PerfectParrySoundVolume);
+		bPerfectSoundPlaying = IsValid(PerfectParryAudioComponent);
+	}
 	USoundBase* SoundToPlay = ParryImpactSound;
 	float VolumeMultiplier = ParryImpactSoundVolume;
-	// Preserve the authored milestone sounds: old combo 3/5/8 become enhancement stages 2/3/4.
+	// Retain the legacy array slots: combo 3/5/8 map to enhancement stages 2/3/4.
 	static constexpr int32 StageSoundIndices[] = {0, 2, 4, 7};
 	const int32 StageIndex = FMath::Clamp(EnhancementLevel, 1, 4) - 1;
 	const int32 ComboSoundIndex = StageSoundIndices[StageIndex];
@@ -374,7 +402,8 @@ void URLParryFeedbackComponent::PlayParryImpactSound(
 		}
 	}
 
-	if (!SoundToPlay)
+	if (bPerfectSoundPlaying) { VolumeMultiplier *= PerfectImpactVolumeMultiplier; }
+	if (!SoundToPlay || VolumeMultiplier <= 0.0f)
 	{
 		return;
 	}
