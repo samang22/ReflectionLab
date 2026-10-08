@@ -27,7 +27,7 @@ void URLBossLaserComponent::Initialize(USkeletalMeshComponent* InMesh, UStaticMe
 	if (!Settings || !Mesh || !Beam || !Decal || !Mesh->DoesSocketExist(TEXT("laser")) ||
 		!Settings->BeamMaterial || !Settings->DecalMaterial ||
 		!FMath::IsFinite(Settings->PreparationDuration) || !FMath::IsFinite(Settings->FiringDuration) ||
-		!FMath::IsFinite(Settings->Cooldown) || !FMath::IsFinite(Settings->Length) ||
+		!FMath::IsFinite(Settings->FadeOutDuration) || !FMath::IsFinite(Settings->Cooldown) || !FMath::IsFinite(Settings->Length) ||
 		!FMath::IsFinite(Settings->Width) || !FMath::IsFinite(Settings->Damage) || !FMath::IsFinite(Settings->DamageInterval))
 	{
 		UE_LOG(LogTemp, Error, TEXT("Boss %s laser settings/socket invalid; laser disabled."), *GetNameSafe(GetOwner()));
@@ -35,6 +35,7 @@ void URLBossLaserComponent::Initialize(USkeletalMeshComponent* InMesh, UStaticMe
 		return;
 	}
 	Beam->SetMaterial(0, Settings->BeamMaterial);
+	BeamMaterialInstance = Beam->CreateDynamicMaterialInstance(0);
 	Decal->SetDecalMaterial(Settings->DecalMaterial);
 	DecalMaterialInstance = Decal->CreateDynamicMaterialInstance();
 	Decal->FadeScreenSize = 0.0f;
@@ -45,6 +46,7 @@ void URLBossLaserComponent::Initialize(USkeletalMeshComponent* InMesh, UStaticMe
 void URLBossLaserComponent::BeginPreparation()
 {
 	Phase = EPhase::Preparing;
+	UpdateVisualOpacity(1.0f);
 	Remaining = FMath::Max(0.1f, Settings->PreparationDuration);
 	if (auto* Attack = GetOwner()->FindComponentByClass<URLEnemyAttackComponent>()) { Attack->StopFiring(); }
 	if (auto* Movement = GetOwner()->FindComponentByClass<URLEnemyMovementComponent>())
@@ -131,6 +133,20 @@ void URLBossLaserComponent::UpdateBeam(float DeltaTime, bool bApplyDamage)
 	}
 }
 
+void URLBossLaserComponent::UpdateVisualOpacity(float Opacity)
+{
+	if (BeamMaterialInstance) { BeamMaterialInstance->SetScalarParameterValue(TEXT("LaserOpacity"), Opacity); }
+	if (DecalMaterialInstance) { DecalMaterialInstance->SetScalarParameterValue(TEXT("LaserOpacity"), Opacity); }
+}
+
+void URLBossLaserComponent::BeginFadeOut()
+{
+	if (Settings->FadeOutDuration <= 0.0f) { Cancel(true); return; }
+	Phase = EPhase::Fading;
+	Remaining = Settings->FadeOutDuration;
+	// Keep the final geometry frozen; fading is visual-only and never applies damage.
+}
+
 void URLBossLaserComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -153,8 +169,16 @@ void URLBossLaserComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 		if (Phase == EPhase::Preparing && Remaining <= 0.0f) { BeginFiring(); }
 		if (Phase == EPhase::Firing) { UpdateBeam(0.0f, true); }
 	}
-	else if (Remaining <= 0.0f) { Cancel(true); }
-	else { UpdateBeam(DeltaTime, true); }
+	else if (Phase == EPhase::Firing)
+	{
+		if (Remaining <= 0.0f) { BeginFadeOut(); }
+		else { UpdateBeam(DeltaTime, true); }
+	}
+	else if (Phase == EPhase::Fading)
+	{
+		if (Remaining <= 0.0f) { Cancel(true); }
+		else { UpdateVisualOpacity(FMath::Clamp(Remaining / Settings->FadeOutDuration, 0.0f, 1.0f)); }
+	}
 }
 
 bool URLBossLaserComponent::HasActivePeerLaser() const
@@ -164,7 +188,7 @@ bool URLBossLaserComponent::HasActivePeerLaser() const
 	{
 		if (*It == GetOwner() || !It->IsPoolActive() || It->IsSpawning()) { continue; }
 		const auto* Peer = It->FindComponentByClass<URLBossLaserComponent>();
-		if (Peer && Peer->bSerializeWithPeers && (Peer->IsPreparing() || Peer->IsFiring())) { return true; }
+		if (Peer && Peer->bSerializeWithPeers && (Peer->IsPreparing() || Peer->IsFiring() || Peer->IsFading())) { return true; }
 	}
 	return false;
 }
@@ -175,6 +199,7 @@ void URLBossLaserComponent::Cancel(bool bResumeCombat)
 	Phase = EPhase::Waiting;
 	Remaining = Settings ? FMath::Max(0.1f, Settings->Cooldown) : 10.0f;
 	DamageDelay = 0.0f;
+	UpdateVisualOpacity(1.0f);
 	UpdateDecalProgress(0.0f);
 	if (Beam) { Beam->SetVisibility(false); }
 	if (Decal) { Decal->SetVisibility(false); }

@@ -24,7 +24,7 @@ void URLBossAimComponent::AimAtPlayer(FName SocketName)
 	if (!Enemy || !Enemy->IsPoolActive() || Enemy->IsSpawning() || !PlayerPawn) { return; }
 	const auto* Overload = Enemy->FindComponentByClass<URLBossOverloadComponent>();
 	const auto* Laser = Enemy->FindComponentByClass<URLBossLaserComponent>();
-	if ((Overload && Overload->WantsOverload()) || (Laser && Laser->IsFiring())) { return; }
+	if ((Overload && Overload->WantsOverload()) || (Laser && (Laser->IsFiring() || Laser->IsFading()))) { return; }
 	USkeletalMeshComponent* Mesh = Enemy->GetMesh();
 	if (!Mesh || !Mesh->DoesSocketExist(SocketName)) { return; }
 	if (auto* Movement = Enemy->FindComponentByClass<URLEnemyMovementComponent>()) { Movement->SetFacingLocked(true); }
@@ -75,7 +75,7 @@ void URLBossAimComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	if (!Enemy || !Enemy->IsPoolActive() || Enemy->IsSpawning()) { CancelShot(); return; }
 	const auto* Overload = GetOwner()->FindComponentByClass<URLBossOverloadComponent>();
 	const auto* Laser = GetOwner()->FindComponentByClass<URLBossLaserComponent>();
-	if ((Overload && Overload->WantsOverload()) || (Laser && Laser->IsFiring()))
+	if ((Overload && Overload->WantsOverload()) || (Laser && (Laser->IsFiring() || Laser->IsFading())))
 	{
 		CancelShot();
 		return;

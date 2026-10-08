@@ -173,7 +173,7 @@ void URLBossChargeComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	const auto* Overload = GetOwner()->FindComponentByClass<URLBossOverloadComponent>();
 	if (Overload && Overload->WantsOverload()) { if (IsActive()) { Cancel(); } return; }
 	const auto* Laser = GetOwner()->FindComponentByClass<URLBossLaserComponent>();
-	if (Laser && (Laser->IsPreparing() || Laser->IsFiring())) { return; }
+	if (Laser && (Laser->IsPreparing() || Laser->IsFiring() || Laser->IsFading())) { return; }
 	const float StepTime = FMath::Max(0.0f, DeltaTime);
 	Remaining -= StepTime;
 	if (Phase == EPhase::Waiting)
