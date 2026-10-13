@@ -1,4 +1,5 @@
 #include "Enemies/RLRobotBossCharacter.h"
+#include "Data/RLRobotBossDataAsset.h"
 
 #include "Components/DecalComponent.h"
 #include "Components/SphereComponent.h"
@@ -59,6 +60,14 @@ ARLRobotBossCharacter::ARLRobotBossCharacter()
 
 void ARLRobotBossCharacter::BeginPlay()
 {
+	if (BossSettings)
+	{
+		OverloadComponent->Settings = BossSettings->Overload;
+		ChargeComponent->Settings = BossSettings->Charge;
+		LaserComponent->Settings = BossSettings->Laser;
+		SummonComponent->Settings = BossSettings->Summon;
+		PaperBurnComponent->Settings = BossSettings->PaperBurn;
+	}
 	// Attach at runtime so existing boss Blueprint component defaults also
 	// follow the animated socket without an asset migration.
 	const FName MuzzleSocket(TEXT("muzzle"));

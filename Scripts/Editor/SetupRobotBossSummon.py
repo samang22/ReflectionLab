@@ -1,5 +1,9 @@
 """Run after native rebuild/restart. Create minion assets and link the boss summon component."""
 import unreal
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from RobotBossSettings import load_asset as load_boss_asset, save_loaded_asset as save_boss_asset
 
 for name in ('RLRobotMinionCharacter', 'RLRobotMinionDataAsset', 'RLBossSummonComponent',
              'RLBossSummonDataAsset', 'RLBossLaserDataAsset'):
@@ -8,17 +12,17 @@ for name in ('RLRobotMinionCharacter', 'RLRobotMinionDataAsset', 'RLBossSummonCo
 root = '/Game/ReflectionLab'
 tools = unreal.AssetToolsHelpers.get_asset_tools()
 lib = unreal.EditorAssetLibrary
-boss = unreal.load_asset(root + '/Gameplay/Enemies/BP_RLRobotBoss')
+boss = load_boss_asset(root + '/Gameplay/Enemies/BP_RLRobotBoss')
 projectile_class = lib.load_blueprint_class(root + '/Gameplay/Projectiles/BP_RLProjectile')
-projectile = unreal.load_asset(root + '/Data/Projectiles/DA_Projectile_Normal')
-laser_material = unreal.load_asset(root + '/Art/Materials/Enemies/M_BossLaserDecal')
-beam_material = unreal.load_asset(root + '/Art/Materials/Projectiles/MI_Projectile_Hostile')
+projectile = load_boss_asset(root + '/Data/Projectiles/DA_Projectile_Normal')
+laser_material = load_boss_asset(root + '/Art/Materials/Enemies/M_BossLaserDecal')
+beam_material = load_boss_asset(root + '/Art/Materials/Projectiles/MI_Projectile_Hostile')
 if not all((boss, projectile_class, projectile, laser_material, beam_material)):
     raise RuntimeError('Existing boss, normal projectile and laser materials are required')
 
 
 def data_asset(name, cls):
-    asset = unreal.load_asset(root + '/Data/Enemies/' + name)
+    asset = load_boss_asset(root + '/Data/Enemies/' + name)
     if asset is None:
         factory = unreal.DataAssetFactory()
         factory.set_editor_property('data_asset_class', cls.static_class())
@@ -29,12 +33,12 @@ def data_asset(name, cls):
 
 
 def save(asset):
-    if not lib.save_loaded_asset(asset):
+    if not save_boss_asset(asset):
         raise RuntimeError('Could not save: ' + asset.get_path_name())
 
 
 laser_path = root + '/Data/Enemies/DA_RobotMinionLaser'
-new_laser = unreal.load_asset(laser_path) is None
+new_laser = load_boss_asset(laser_path) is None
 laser = data_asset('DA_RobotMinionLaser', unreal.RLBossLaserDataAsset)
 if new_laser:
     for name, value in (('preparation_duration', 1.5), ('firing_duration', 0.2),
@@ -51,7 +55,7 @@ movement = data_asset('DA_RobotMinionMovement', unreal.RLEnemyMovementDataAsset)
 movement.set_editor_property('moving_enemy_ratio', 0.0)
 save(movement)
 path = root + '/Gameplay/Enemies/BP_RLRobotMinion'
-minion = unreal.load_asset(path)
+minion = load_boss_asset(path)
 if minion is None:
     factory = unreal.BlueprintFactory()
     factory.set_editor_property('parent_class', unreal.RLRobotMinionCharacter.static_class())
@@ -88,7 +92,7 @@ for component in components(minion):
         component.set_editor_property('movement_settings', movement)
     elif isinstance(component, unreal.RLEnemySpawnVisualComponent):
         # Preserve the optional summon presentation on subsequent setup runs.
-        presentation_material = unreal.load_asset(root + '/Art/Materials/Characters/M_RobotMinionSpawn')
+        presentation_material = load_boss_asset(root + '/Art/Materials/Characters/M_RobotMinionSpawn')
         if presentation_material:
             component.set_editor_property('spawn_material', presentation_material)
         else:

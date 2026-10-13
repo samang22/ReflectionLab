@@ -14,6 +14,7 @@ class URLBossChargeComponent;
 class URLBossSummonComponent;
 class URLBossSummonVisualComponent;
 class URLPaperBurnComponent;
+class URLRobotBossDataAsset;
 
 UCLASS()
 class REFLECTIONLAB_API ARLRobotBossCharacter : public ARLEnemyCharacter
@@ -22,6 +23,8 @@ class REFLECTIONLAB_API ARLRobotBossCharacter : public ARLEnemyCharacter
 public:
 	ARLRobotBossCharacter();
 protected:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Boss")
+	TObjectPtr<URLRobotBossDataAsset> BossSettings;
 	virtual void BeginPlay() override;
 	virtual void Die() override;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Boss")

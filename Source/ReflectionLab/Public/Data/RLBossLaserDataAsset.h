@@ -4,7 +4,7 @@
 #include "RLBossLaserDataAsset.generated.h"
 class UMaterialInterface;
 
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, EditInlineNew)
 class REFLECTIONLAB_API URLBossLaserDataAsset : public UDataAsset
 {
 	GENERATED_BODY()

@@ -1,10 +1,14 @@
 """After rebuild/restart, configure dedicated fade materials for boss/minion lasers."""
 import unreal
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from RobotBossSettings import load_asset as load_boss_asset, save_loaded_asset as save_boss_asset
 
 root = '/Game/ReflectionLab'
 lib = unreal.EditorAssetLibrary
 editing = unreal.MaterialEditingLibrary
-settings_list = [unreal.load_asset(root + '/Data/Enemies/' + name)
+settings_list = [load_boss_asset(root + '/Data/Enemies/' + name)
                  for name in ('DA_RobotBossLaser', 'DA_RobotMinionLaser')]
 settings_list = [settings for settings in settings_list if settings]
 if not settings_list:
@@ -14,7 +18,7 @@ for settings in settings_list:
 
 
 def save(asset):
-    if not lib.save_loaded_asset(asset):
+    if not save_boss_asset(asset):
         raise RuntimeError('Could not save: ' + asset.get_path_name())
 
 
@@ -22,7 +26,7 @@ def fade_material(source, name, decal):
     if not source:
         raise RuntimeError('Laser material missing')
     path = root + '/Art/Materials/Enemies/' + name
-    result = unreal.load_asset(path)
+    result = load_boss_asset(path) if lib.does_asset_exist(path) else None
     if result:
         return result
     base = source
@@ -71,6 +75,11 @@ for index, settings in enumerate(settings_list):
     for prop, suffix, decal in (('beam_material', 'Beam', False), ('decal_material', 'Decal', True)):
         source = settings.get_editor_property(prop)
         material = fade_material(source, 'M_LaserFade_' + suffix + '_' + str(index), decal)
+        base = material
+        while isinstance(base, unreal.MaterialInstanceConstant):
+            base = base.get_editor_property('parent')
+        if 'LaserOpacity' not in [str(name) for name in editing.get_scalar_parameter_names(base)]:
+            raise RuntimeError('Laser fade opacity parameter missing: ' + material.get_path_name())
         settings.set_editor_property(prop, material)
     save(settings)
 unreal.log('[LaserFade] SUCCESS: dedicated boss/minion laser fade materials configured')

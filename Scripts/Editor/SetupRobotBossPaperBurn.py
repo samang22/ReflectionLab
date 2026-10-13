@@ -1,5 +1,9 @@
 """Run after native rebuild/restart: configure boss-only paper-burn death."""
 import unreal
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from RobotBossSettings import load_asset as load_boss_asset, save_loaded_asset as save_boss_asset
 
 root = '/Game/ReflectionLab'
 lib = unreal.EditorAssetLibrary
@@ -7,7 +11,7 @@ editing = unreal.MaterialEditingLibrary
 tools = unreal.AssetToolsHelpers.get_asset_tools()
 component_class = getattr(unreal, 'RLPaperBurnComponent', None)
 settings_class = getattr(unreal, 'RLPaperBurnDataAsset', None)
-boss = unreal.load_asset(root + '/Gameplay/Enemies/BP_RLRobotBoss')
+boss = load_boss_asset(root + '/Gameplay/Enemies/BP_RLRobotBoss')
 if not component_class or not settings_class or not boss:
     raise RuntimeError('Rebuild native code and restart the editor first')
 subsystem = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
@@ -22,7 +26,7 @@ if not components:
 
 
 def save(asset):
-    if not lib.save_loaded_asset(asset):
+    if not save_boss_asset(asset):
         raise RuntimeError('Could not save: ' + asset.get_path_name())
 
 
@@ -64,7 +68,7 @@ def unary(material, cls, source):
 
 
 path = root + '/Art/Materials/Enemies/M_RobotBossPaperBurn'
-material = unreal.load_asset(path)
+material = load_boss_asset(path)
 if material is None:
     material = lib.duplicate_asset(
         root + '/Art/Characters/Robot/robot/Materials/Material', path)
@@ -128,7 +132,7 @@ if 'BurnProgress' not in [str(name) for name in editing.get_scalar_parameter_nam
     editing.recompile_material(material)
     save(material)
 
-settings = unreal.load_asset(root + '/Data/Enemies/DA_RobotBossPaperBurn')
+settings = load_boss_asset(root + '/Data/Enemies/DA_RobotBossPaperBurn')
 if settings is None:
     factory = unreal.DataAssetFactory()
     factory.set_editor_property('data_asset_class', settings_class)

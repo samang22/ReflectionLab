@@ -8,7 +8,7 @@ class ARLRobotMinionCharacter;
 class UMaterialInterface;
 class USoundBase;
 
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, EditInlineNew)
 class REFLECTIONLAB_API URLBossSummonDataAsset : public UDataAsset
 {
 	GENERATED_BODY()

@@ -1,5 +1,9 @@
 """Run after rebuilding/restarting Unreal; configure only the boss charge pattern."""
 import unreal
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from RobotBossSettings import load_asset as load_boss_asset, save_loaded_asset as save_boss_asset
 
 if not hasattr(unreal, 'RLBossChargeComponent') or not hasattr(unreal, 'RLBossChargeDataAsset'):
     raise RuntimeError('Rebuild and restart Unreal before running this script')
@@ -7,15 +11,15 @@ root = '/Game/ReflectionLab'
 tools = unreal.AssetToolsHelpers.get_asset_tools()
 lib = unreal.EditorAssetLibrary
 editing = unreal.MaterialEditingLibrary
-boss = unreal.load_asset(root + '/Gameplay/Enemies/BP_RLRobotBoss')
-overload = unreal.load_asset(root + '/Data/Enemies/DA_RobotBossOverload')
+boss = load_boss_asset(root + '/Gameplay/Enemies/BP_RLRobotBoss')
+overload = load_boss_asset(root + '/Data/Enemies/DA_RobotBossOverload')
 if not boss or not overload:
     raise RuntimeError('Existing boss BP and overload settings are required')
 projectile = overload.get_editor_property('projectile_definition')
 if not projectile:
     raise RuntimeError('Boss normal projectile definition is missing')
 path = root + '/Art/Materials/Enemies/M_BossChargeDecal'
-material = unreal.load_asset(path)
+material = load_boss_asset(path)
 if material is None:
     material = tools.create_asset('M_BossChargeDecal', root + '/Art/Materials/Enemies',
                                   unreal.Material, unreal.MaterialFactoryNew())
@@ -33,9 +37,9 @@ if material is None:
         if not editing.connect_material_property(expression, '', prop):
             raise RuntimeError('Could not connect charge decal output')
     editing.recompile_material(material)
-    if not lib.save_loaded_asset(material):
+    if not save_boss_asset(material):
         raise RuntimeError('Could not save charge decal')
-settings = unreal.load_asset(root + '/Data/Enemies/DA_RobotBossCharge')
+settings = load_boss_asset(root + '/Data/Enemies/DA_RobotBossCharge')
 if settings is None:
     factory = unreal.DataAssetFactory()
     factory.set_editor_property('data_asset_class', unreal.RLBossChargeDataAsset.static_class())
@@ -45,7 +49,7 @@ if not settings:
     raise RuntimeError('Could not create charge settings')
 settings.set_editor_property('projectile_definition', projectile)
 settings.set_editor_property('decal_material', material)
-if not lib.save_loaded_asset(settings):
+if not save_boss_asset(settings):
     raise RuntimeError('Could not save charge settings')
 subsystem = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
 found = False
@@ -58,7 +62,7 @@ for handle in subsystem.k2_gather_subobject_data_for_blueprint(boss):
 if not found:
     raise RuntimeError('Boss charge component missing; rebuild and restart required')
 unreal.BlueprintEditorLibrary.compile_blueprint(boss)
-if not lib.save_loaded_asset(boss):
+if not save_boss_asset(boss):
     raise RuntimeError('Could not save boss charge settings')
 defaults = unreal.get_default_object(boss.generated_class())
 component = defaults.get_component_by_class(unreal.RLBossChargeComponent)

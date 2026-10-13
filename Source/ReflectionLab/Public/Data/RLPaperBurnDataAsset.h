@@ -6,7 +6,7 @@
 
 class UMaterialInterface;
 
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, EditInlineNew)
 class REFLECTIONLAB_API URLPaperBurnDataAsset : public UDataAsset
 {
 	GENERATED_BODY()

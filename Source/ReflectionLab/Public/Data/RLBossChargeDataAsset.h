@@ -7,7 +7,7 @@
 class UMaterialInterface;
 class URLProjectileDefinitionDataAsset;
 
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, EditInlineNew)
 class REFLECTIONLAB_API URLBossChargeDataAsset : public UDataAsset
 {
 	GENERATED_BODY()

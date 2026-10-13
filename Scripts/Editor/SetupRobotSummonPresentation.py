@@ -1,13 +1,17 @@
 """After rebuild/restart, add cyan summon markers and minion assembly flash only."""
 import unreal
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from RobotBossSettings import load_asset as load_boss_asset, save_loaded_asset as save_boss_asset
 
 root = '/Game/ReflectionLab'
 lib = unreal.EditorAssetLibrary
 editing = unreal.MaterialEditingLibrary
 tools = unreal.AssetToolsHelpers.get_asset_tools()
-settings = unreal.load_asset(root + '/Data/Enemies/DA_RobotBossSummon')
-minion = unreal.load_asset(root + '/Gameplay/Enemies/BP_RLRobotMinion')
-base_spawn = unreal.load_asset(root + '/Art/Materials/Characters/M_EnemySpawn')
+settings = load_boss_asset(root + '/Data/Enemies/DA_RobotBossSummon')
+minion = load_boss_asset(root + '/Gameplay/Enemies/BP_RLRobotMinion')
+base_spawn = load_boss_asset(root + '/Art/Materials/Characters/M_EnemySpawn')
 if not settings or not minion or not base_spawn:
     raise RuntimeError('Run SetupRobotBossSummon.py and configure the existing enemy spawn material first')
 # Fail before editing any asset when the new native fields are unavailable.
@@ -15,7 +19,7 @@ settings.get_editor_property('telegraph_duration')
 
 
 def save(asset):
-    if not lib.save_loaded_asset(asset):
+    if not save_boss_asset(asset):
         raise RuntimeError('Could not save: ' + asset.get_path_name())
 
 
@@ -57,7 +61,7 @@ def unary(material, cls, source):
 
 
 marker_path = root + '/Art/Materials/Enemies/M_RobotSummonMarker'
-marker = unreal.load_asset(marker_path)
+marker = load_boss_asset(marker_path)
 if marker is None:
     marker = tools.create_asset('M_RobotSummonMarker', root + '/Art/Materials/Enemies',
                                 unreal.Material, unreal.MaterialFactoryNew())
@@ -110,7 +114,7 @@ if marker is None:
     save(marker)
 
 spawn_path = root + '/Art/Materials/Characters/M_RobotMinionSpawn'
-spawn = unreal.load_asset(spawn_path)
+spawn = load_boss_asset(spawn_path)
 if spawn is None:
     spawn = lib.duplicate_asset(base_spawn.get_path_name().split('.')[0], spawn_path)
     if not isinstance(spawn, unreal.Material):
@@ -131,7 +135,7 @@ if spawn is None:
 
 settings.set_editor_property('marker_material', marker)
 settings.set_editor_property('pulse_material', spawn)
-sound = unreal.load_asset(root + '/Audio/SFX/Combat/Parry/Combo/SFX_ParryCombo_01')
+sound = load_boss_asset(root + '/Audio/SFX/Combat/Parry/Combo/SFX_ParryCombo_01')
 settings.set_editor_property('summon_sound', sound)
 save(settings)
 subsystem = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
