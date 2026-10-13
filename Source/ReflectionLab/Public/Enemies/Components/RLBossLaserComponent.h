@@ -42,6 +42,8 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> BeamMaterialInstance;
 	EPhase Phase = EPhase::Waiting;
 	FVector LockedDirection = FVector::ForwardVector;
+	FVector LockedOrigin = FVector::ZeroVector;
+	bool bAimLocked = false;
 	float Remaining = 0.0f;
 	float DamageDelay = 0.0f;
 };

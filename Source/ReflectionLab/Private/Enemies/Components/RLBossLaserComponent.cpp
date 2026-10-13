@@ -46,8 +46,10 @@ void URLBossLaserComponent::Initialize(USkeletalMeshComponent* InMesh, UStaticMe
 void URLBossLaserComponent::BeginPreparation()
 {
 	Phase = EPhase::Preparing;
+	bAimLocked = false;
 	UpdateVisualOpacity(1.0f);
 	Remaining = FMath::Max(0.1f, Settings->PreparationDuration);
+	UE_LOG(LogTemp, Verbose, TEXT("Laser %s preparing for %.2fs."), *GetNameSafe(GetOwner()), Remaining);
 	if (auto* Attack = GetOwner()->FindComponentByClass<URLEnemyAttackComponent>()) { Attack->StopFiring(); }
 	if (auto* Movement = GetOwner()->FindComponentByClass<URLEnemyMovementComponent>())
 	{
@@ -65,9 +67,17 @@ void URLBossLaserComponent::UpdatePreparationPreview()
 	UpdateDecalProgress(FMath::Clamp(1.0f - Remaining / FMath::Max(0.1f, Settings->PreparationDuration), 0.0f, 0.99f));
 	const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
 	if (!PlayerPawn) { Cancel(true); return; }
-	if (auto* Aim = GetOwner()->FindComponentByClass<URLBossAimComponent>()) { Aim->AimAtPlayer(TEXT("laser")); }
-	LockedDirection = Mesh->GetSocketTransform(TEXT("laser"), RTS_World).GetUnitAxis(EAxis::X).GetSafeNormal2D();
-	if (LockedDirection.IsNearlyZero()) { LockedDirection = GetOwner()->GetActorForwardVector().GetSafeNormal2D(); }
+	if (!bAimLocked)
+	{
+		if (Remaining > 0.1f)
+		{
+			if (auto* Aim = GetOwner()->FindComponentByClass<URLBossAimComponent>()) { Aim->AimAtPlayer(TEXT("laser")); }
+		}
+		LockedDirection = Mesh->GetSocketTransform(TEXT("laser"), RTS_World).GetUnitAxis(EAxis::X).GetSafeNormal2D();
+		if (LockedDirection.IsNearlyZero()) { LockedDirection = GetOwner()->GetActorForwardVector().GetSafeNormal2D(); }
+		LockedOrigin = Mesh->GetSocketLocation(TEXT("laser"));
+		bAimLocked = Remaining <= 0.1f;
+	}
 	UpdateBeam(0.0f, false);
 }
 
@@ -83,11 +93,10 @@ void URLBossLaserComponent::BeginFiring()
 {
 	const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
 	if (!PlayerPawn) { Cancel(true); return; }
-	LockedDirection = Mesh->GetSocketTransform(TEXT("laser"), RTS_World).GetUnitAxis(EAxis::X).GetSafeNormal2D();
-	if (LockedDirection.IsNearlyZero()) { LockedDirection = GetOwner()->GetActorForwardVector().GetSafeNormal2D(); }
 	if (auto* Movement = GetOwner()->FindComponentByClass<URLEnemyMovementComponent>()) { Movement->SetFacingLocked(true); }
 	Phase = EPhase::Firing;
 	Remaining = FMath::Max(0.1f, Settings->FiringDuration);
+	UE_LOG(LogTemp, Verbose, TEXT("Laser %s firing after preparation."), *GetNameSafe(GetOwner()));
 	DamageDelay = 0.0f;
 	UpdateDecalProgress(1.0f);
 	Beam->SetVisibility(true);
@@ -96,11 +105,11 @@ void URLBossLaserComponent::BeginFiring()
 
 void URLBossLaserComponent::UpdateBeam(float DeltaTime, bool bApplyDamage)
 {
-	const FVector Origin = Mesh->GetSocketLocation(TEXT("laser"));
-	FVector End = Origin + LockedDirection * FMath::Max(1.0f, Settings->Length);
+	const FVector Origin = bAimLocked ? LockedOrigin : Mesh->GetSocketLocation(TEXT("laser"));
+	// This is a piercing area attack, not a projectile stopped by collision.
+	// Share the full segment between the beam, warning decal and damage test.
+	const FVector End = Origin + LockedDirection * FMath::Max(1.0f, Settings->Length);
 	FCollisionQueryParams Query(SCENE_QUERY_STAT(BossLaser), false, GetOwner());
-	FHitResult WallHit;
-	if (GetWorld()->LineTraceSingleByChannel(WallHit, Origin, End, ECC_WorldStatic, Query)) { End = WallHit.ImpactPoint; }
 	const float Length = FVector::Dist(Origin, End);
 	const float Width = FMath::Max(1.0f, Settings->Width);
 	Beam->SetWorldLocation((Origin + End) * 0.5f);
@@ -108,7 +117,12 @@ void URLBossLaserComponent::UpdateBeam(float DeltaTime, bool bApplyDamage)
 	Beam->SetWorldScale3D(FVector(FMath::Max(1.0f, Length) / 100.0f, Width / 100.0f, 0.12f));
 	FHitResult FloorHit;
 	FVector FloorCenter = (Origin + End) * 0.5f;
-	if (GetWorld()->LineTraceSingleByChannel(FloorHit, FloorCenter + FVector(0,0,100), FloorCenter - FVector(0,0,2000), ECC_WorldStatic, Query))
+	// A piercing beam's midpoint can lie beyond the arena floor. Probe beneath
+	// the caster instead, so the warning is still projected during preparation.
+	const FVector FloorProbe = GetOwner()->GetActorLocation();
+	const auto* Enemy = Cast<ARLEnemyCharacter>(GetOwner());
+	FloorCenter.Z = FloorProbe.Z - (Enemy ? Enemy->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 0.0f) + 30.0f;
+	if (GetWorld()->LineTraceSingleByChannel(FloorHit, FloorProbe + FVector(0,0,100), FloorProbe - FVector(0,0,2000), ECC_WorldStatic, Query))
 	{
 		FloorCenter.Z = FloorHit.ImpactPoint.Z + 30.0f;
 	}
@@ -163,8 +177,7 @@ void URLBossLaserComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	}
 	else if (Phase == EPhase::Preparing)
 	{
-		// Track through the final preparation frame, then fire on the advertised deadline.
-		// Waiting for alignment here would leave a visually full warning before firing.
+		// Stop tracking in the final 0.1s; retain the original damage deadline.
 		UpdatePreparationPreview();
 		if (Phase == EPhase::Preparing && Remaining <= 0.0f) { BeginFiring(); }
 		if (Phase == EPhase::Firing) { UpdateBeam(0.0f, true); }
@@ -197,6 +210,7 @@ void URLBossLaserComponent::Cancel(bool bResumeCombat)
 {
 	const bool bWasActive = Phase != EPhase::Waiting;
 	Phase = EPhase::Waiting;
+	bAimLocked = false;
 	Remaining = Settings ? FMath::Max(0.1f, Settings->Cooldown) : 10.0f;
 	DamageDelay = 0.0f;
 	UpdateVisualOpacity(1.0f);
