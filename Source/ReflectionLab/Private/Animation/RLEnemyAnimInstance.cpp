@@ -193,8 +193,7 @@ bool FRLEnemyAnimationTest::RunTest(const FString& Parameters)
 	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
 
 	for (const TCHAR* Path : {
-		TEXT("/Game/ReflectionLab/Gameplay/Enemies/BP_RLEnemyCharacter.BP_RLEnemyCharacter_C"),
-		TEXT("/Game/ReflectionLab/Gameplay/Enemies/BP_RLEnemyBurstShooter.BP_RLEnemyBurstShooter_C") })
+		TEXT("/Game/ReflectionLab/Gameplay/Enemies/BP_RLEnemyCharacter.BP_RLEnemyCharacter_C") })
 	{
 		UClass* EnemyClass = LoadClass<ARLEnemyCharacter>(nullptr, Path);
 		if (!TestNotNull(TEXT("Enemy blueprint class"), EnemyClass))

@@ -4,7 +4,6 @@ import unreal
 PATH = "/Game/ReflectionLab/Art/Materials/Characters/M_EnemySpawn"
 ENEMIES = [
     "/Game/ReflectionLab/Gameplay/Enemies/BP_RLEnemyCharacter",
-    "/Game/ReflectionLab/Gameplay/Enemies/BP_RLEnemyBurstShooter",
 ]
 lib = unreal.MaterialEditingLibrary
 

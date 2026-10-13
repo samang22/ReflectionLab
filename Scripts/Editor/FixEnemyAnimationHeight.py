@@ -14,7 +14,7 @@ for name in ("A_Enemy_Idle", "A_Enemy_Shoot"):
         path, clip.get_editor_property("root_motion_root_lock")))
 
 subsystem = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)
-for name in ("BP_RLEnemyCharacter", "BP_RLEnemyBurstShooter"):
+for name in ("BP_RLEnemyCharacter",):
     path = "/Game/ReflectionLab/Gameplay/Enemies/" + name
     bp = unreal.load_asset(path)
     if not isinstance(bp, unreal.Blueprint):
