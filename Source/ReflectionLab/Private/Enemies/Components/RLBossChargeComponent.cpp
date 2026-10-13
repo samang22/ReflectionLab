@@ -120,7 +120,10 @@ void URLBossChargeComponent::UpdateCharge(float DeltaTime)
 		{
 			const float Radius = Enemy->GetCapsuleComponent()->GetScaledCapsuleRadius() +
 				PlayerCharacter->GetCapsuleComponent()->GetScaledCapsuleRadius();
-			if (RLBossCharge::IsWithinSweptContact(Start, End, PlayerCharacter->GetActorLocation(), Radius + 1.0f))
+			// A blocking sweep can stop just short of geometric overlap due to
+			// collision pullback. Its actual hit actor is authoritative for contact.
+			if (Hit.GetActor() == PlayerCharacter ||
+				RLBossCharge::IsWithinSweptContact(Start, End, PlayerCharacter->GetActorLocation(), Radius + 1.0f))
 			{
 				bContactAttempted = true;
 				UGameplayStatics::ApplyDamage(PlayerCharacter, FMath::Max(0.0f, Settings->ContactDamage),
