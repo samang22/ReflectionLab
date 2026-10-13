@@ -49,6 +49,8 @@ protected:
 	TObjectPtr<UAnimMontage> MirroredParryMontage;
 
 private:
+	FGuid ParryAttemptId;
+	float ParryAnimationStartTime = 0.08f;
 	bool CanParry() const;
 	void UpdateParry();
 	bool IsProjectileWithinParryArc(const ARLProjectile* Projectile) const;

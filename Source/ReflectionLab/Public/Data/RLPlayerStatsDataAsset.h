@@ -146,6 +146,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Feedback", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float ImpactSoundVolume = 0.65f;
 
+	// Skip only the anticipation, preserving the montage notify window and playback speed.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Animation", meta = (ClampMin = "0.0", ClampMax = "0.15", Units = "s"))
+	float ParryAnimationStartTime = 0.08f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Parry|Feedback|Perfect")
 	TObjectPtr<USoundBase> PerfectParrySound;
 

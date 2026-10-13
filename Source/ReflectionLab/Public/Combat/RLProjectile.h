@@ -130,6 +130,11 @@ public:
 	URLProjectileRallyComponent* GetRallyComponent() const { return RallyComponent; }
 	URLProjectileContactComponent* GetContactComponent() const { return ContactComponent; }
 	void SetParryEnabled(bool bEnabled) { bCanBeReflected = bEnabled; }
+	void ExcludeParryAttempt(const FGuid& AttemptId) { ReflectionState.BlockedParryAttemptId = AttemptId; }
+	bool IsExcludedFromParryAttempt(const FGuid& AttemptId) const
+	{
+		return AttemptId.IsValid() && ReflectionState.BlockedParryAttemptId == AttemptId;
+	}
 	void SetProjectileOwnerAndIgnore(AActor* NewOwner);
 	void SetProjectileSpeed(float NewSpeed, const FVector& Direction);
 	void PauseMotion();

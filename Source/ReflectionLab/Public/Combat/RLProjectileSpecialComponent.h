@@ -48,7 +48,7 @@ public:
 	void SpawnParrySplitFragments(
 		AActor* OriginalOwner,
 		APawn* OriginalInstigator,
-		AActor* PlayerActor);
+		AActor* PlayerActor, const FGuid& ParryAttemptId);
 	void Explode();
 	void TriggerExplosion(bool bDamagePlayer, bool bDamageEnemies);
 

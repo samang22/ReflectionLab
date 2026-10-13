@@ -8,6 +8,9 @@ struct FRLProjectileReflectionParams
 {
 	GENERATED_BODY()
 
+	// Runtime identity of the swing that produced this reflection.
+	FGuid ParryAttemptId;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile|Reflection")
 	float SpeedMultiplier = 0.0f;
 
@@ -33,6 +36,7 @@ struct FRLProjectileReflectionParams
 // Per-activation reflection state; not asset configuration.
 struct FRLProjectileReflectionState
 {
+	FGuid BlockedParryAttemptId;
 	int32 RemainingPierces = 0;
 	int32 ReflectionChain = 0;
 	bool bWasPerfectParried = false;

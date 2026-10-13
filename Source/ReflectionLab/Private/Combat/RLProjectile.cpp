@@ -170,6 +170,7 @@ void ARLProjectile::ActivateProjectile(
 	RallyComponent->ResetRuntimeState(ProjectileSpeed);
 	VisualComponent->ResetRuntimeState();
 	ReflectionState.RemainingPierces = 0;
+	ReflectionState.BlockedParryAttemptId.Invalidate();
 	ReflectionState.ReflectionChain = 0;
 	ReflectionState.bWasPerfectParried = false;
 	ReflectionState.bWasCloseRangeParried = false;
@@ -376,7 +377,7 @@ bool ARLProjectile::Reflect(
 		false);
 	if (bShouldSpawnParryFragments)
 	{
-		SpecialComponent->SpawnParrySplitFragments(OriginalOwner, OriginalInstigator, NewOwner);
+		SpecialComponent->SpawnParrySplitFragments(OriginalOwner, OriginalInstigator, NewOwner, ReflectionParams.ParryAttemptId);
 	}
 	// Reflection inside an existing overlap does not emit another BeginOverlap.
 	CollisionComponent->UpdateOverlaps();

@@ -401,7 +401,7 @@ void URLProjectileSpecialComponent::RevealFakeProjectile()
 void URLProjectileSpecialComponent::SpawnParrySplitFragments(
 	AActor* OriginalOwner,
 	APawn* OriginalInstigator,
-	AActor* PlayerActor)
+	AActor* PlayerActor, const FGuid& ParryAttemptId)
 {
 	ARLProjectile* Projectile = CastChecked<ARLProjectile>(GetOwner());
 	UWorld* World = Projectile->GetWorld();
@@ -447,6 +447,7 @@ void URLProjectileSpecialComponent::SpawnParrySplitFragments(
 			OriginalInstigator))
 		{
 			Fragment->InitializeFromDefinition(Projectile->GetProjectileDefinition(), nullptr, false);
+			Fragment->ExcludeParryAttempt(ParryAttemptId);
 			Fragment->GetSpecialComponent()->ConfigureAsSplitFragment(
 				Settings.ParrySplitFragmentSpeedMultiplier,
 				Settings.ParrySplitFragmentScale);

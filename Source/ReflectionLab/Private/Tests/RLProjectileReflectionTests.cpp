@@ -84,7 +84,13 @@ bool FRLProjectileReflectionTest::RunTest(const FString& Parameters)
 		Definition->HostileMaterial = UMaterial::GetDefaultMaterial(MD_Surface);
 		Definition->ReflectedMaterial = Definition->HostileMaterial;
 		const FTransform Origin(FRotator::ZeroRotator, FVector(0.0f, 0.0f, 100.0f));
+		const FGuid CreatingSwing = FGuid::NewGuid();
+		Projectile->ExcludeParryAttempt(CreatingSwing);
+		TestTrue(TEXT("Split fragment excludes its creating swing"), Projectile->IsExcludedFromParryAttempt(CreatingSwing));
+		TestFalse(TEXT("Split fragment allows the next swing"), Projectile->IsExcludedFromParryAttempt(FGuid::NewGuid()));
+		TestFalse(TEXT("Unset swing identity is not excluded"), Projectile->IsExcludedFromParryAttempt(FGuid()));
 		Projectile->ActivateProjectile(Origin, NearEnemy, NearEnemy);
+		TestFalse(TEXT("Pool activation clears the previous swing exclusion"), Projectile->IsExcludedFromParryAttempt(CreatingSwing));
 		Projectile->InitializeFromDefinition(Definition, Player);
 		TestEqual(TEXT("Visual component receives the data-asset material"),
 			Projectile->FindComponentByClass<URLProjectileVisualComponent>()->GetReflectedMaterial(),
@@ -343,6 +349,27 @@ bool FRLProjectileReflectionTest::RunTest(const FString& Parameters)
 	}
 	World->DestroyWorld(false);
 	GEngine->DestroyWorldContext(World);
+	return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRLParrySplitAttemptTest, "ReflectionLab.Combat.ParrySplitAttempt",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRLParrySplitAttemptTest::RunTest(const FString& Parameters)
+{
+	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+	if (!TestNotNull(TEXT("Test world"), World)) { return false; }
+	ARLProjectile* Projectile = World->SpawnActor<ARLProjectile>();
+	if (TestNotNull(TEXT("Projectile"), Projectile))
+	{
+		const FGuid CreatingSwing = FGuid::NewGuid();
+		Projectile->ExcludeParryAttempt(CreatingSwing);
+		TestTrue(TEXT("Creating swing is excluded"), Projectile->IsExcludedFromParryAttempt(CreatingSwing));
+		TestFalse(TEXT("Next swing is allowed"), Projectile->IsExcludedFromParryAttempt(FGuid::NewGuid()));
+		TestFalse(TEXT("Invalid identity is allowed"), Projectile->IsExcludedFromParryAttempt(FGuid()));
+		Projectile->ActivateProjectile(FTransform::Identity, nullptr, nullptr);
+		TestFalse(TEXT("Pool activation clears exclusion"), Projectile->IsExcludedFromParryAttempt(CreatingSwing));
+	}
+	World->DestroyWorld(false);
 	return true;
 }
 #endif

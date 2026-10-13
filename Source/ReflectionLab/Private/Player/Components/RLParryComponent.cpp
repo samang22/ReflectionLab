@@ -1,6 +1,8 @@
 #include "Player/Components/RLParryComponent.h"
 
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimInstance.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Combat/RLProjectile.h"
 #include "Combat/RLProjectilePoolSubsystem.h"
 #include "Data/RLPlayerStatsDataAsset.h"
@@ -33,6 +35,8 @@ void URLParryComponent::Configure(const URLPlayerStatsDataAsset* PlayerStatsData
 	FRLParryStats NewStats;
 	if (PlayerStatsData)
 	{
+		ParryAnimationStartTime = FMath::IsFinite(PlayerStatsData->ParryAnimationStartTime)
+			? FMath::Clamp(PlayerStatsData->ParryAnimationStartTime, 0.0f, 0.15f) : 0.08f;
 		NewStats.ReflectionCooldown = FMath::Max(0.0f, PlayerStatsData->FailedParryCooldown);
 		NewStats.SuccessfulParryCooldown = FMath::Max(0.0f, PlayerStatsData->SuccessfulParryCooldown);
 		NewStats.ReflectionRange = FMath::Max(1.0f, PlayerStatsData->ParryRange);
@@ -158,7 +162,12 @@ bool URLParryComponent::TryStartParry()
 		MontageToPlay = MirroredParryMontage;
 	}
 
-	const float MontageDuration = CastChecked<ACharacter>(GetOwner())->PlayAnimMontage(MontageToPlay);
+	UAnimInstance* AnimInstance = CastChecked<ACharacter>(GetOwner())->GetMesh()->GetAnimInstance();
+	if (!AnimInstance) { return false; }
+	const float StartTime = FMath::Clamp(ParryAnimationStartTime, 0.0f,
+		FMath::Max(0.0f, MontageToPlay->GetPlayLength() - KINDA_SMALL_NUMBER));
+	const float MontageDuration = AnimInstance->Montage_Play(MontageToPlay, 1.0f,
+		EMontagePlayReturnType::Duration, StartTime);
 	if (MontageDuration <= 0.0f)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Failed to play the parry montage."));
@@ -166,6 +175,7 @@ bool URLParryComponent::TryStartParry()
 	}
 
 	bParryAttemptInProgress = true;
+	ParryAttemptId = FGuid::NewGuid();
 	FeedbackComponent->PlayParrySwingSound();
 	OnStateChanged.Broadcast();
 
@@ -175,7 +185,8 @@ bool URLParryComponent::TryStartParry()
 		ParryAttemptTimerHandle,
 		this,
 		&ThisClass::EndParryWindow,
-		MontageDuration + 0.1f,
+		FMath::Max(KINDA_SMALL_NUMBER, MontageDuration *
+			(1.0f - StartTime / MontageToPlay->GetPlayLength())) + 0.1f,
 		false);
 	return true;
 }
@@ -286,7 +297,8 @@ bool URLParryComponent::TryParryProjectile(
 {
 	bOutPerfectParry = false;
 	bOutCloseRangeParry = false;
-	if (!IsValid(Projectile) || Projectile->IsReflected() || !IsProjectileWithinParryArc(Projectile))
+	if (!IsValid(Projectile) || Projectile->IsReflected() ||
+		Projectile->IsExcludedFromParryAttempt(ParryAttemptId) || !IsProjectileWithinParryArc(Projectile))
 	{
 		return false;
 	}
@@ -319,6 +331,7 @@ bool URLParryComponent::TryParryProjectile(
 		: (bMaximumSpeed ? Stats.MaxReflectedSpeedMultiplier : Projectile->GetBaseReflectedSpeedMultiplier());
 
 	FRLProjectileReflectionParams ReflectionParams;
+	ReflectionParams.ParryAttemptId = ParryAttemptId;
 	ReflectionParams.SpeedMultiplier = SpeedMultiplier;
 	ReflectionParams.VisualScaleMultiplier = bOverdrive
 		? Stats.OverdriveProjectileScale
