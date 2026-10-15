@@ -1,6 +1,7 @@
 #include "Enemies/Components/RLEnemyAttackComponent.h"
 
 #include "Combat/RLExpandingRingAttack.h"
+#include "Combat/RLRingAttackPoolSubsystem.h"
 #include "Combat/RLProjectile.h"
 #include "Combat/RLProjectilePoolSubsystem.h"
 #include "Components/CapsuleComponent.h"
@@ -362,13 +363,9 @@ ARLExpandingRingAttack* URLEnemyAttackComponent::SpawnRingAttack(bool bAutoStart
 		GroundLocation = GroundHit.ImpactPoint;
 	}
 	const FTransform SpawnTransform(FRotator::ZeroRotator, GroundLocation);
-	ARLExpandingRingAttack* Ring = World->SpawnActorDeferred<ARLExpandingRingAttack>(
-		ARLExpandingRingAttack::StaticClass(), SpawnTransform, Enemy, Enemy,
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	ARLExpandingRingAttack* Ring = World->GetSubsystem<URLRingAttackPoolSubsystem>()->AcquireRing(
+		SpawnTransform, Enemy, Enemy, RingAttackRule.AttackData, bAutoStart);
 	if (!Ring) { return nullptr; }
-	Ring->AttackData = RingAttackRule.AttackData;
-	Ring->bAutoStart = bAutoStart;
-	UGameplayStatics::FinishSpawningActor(Ring, SpawnTransform);
 	if (!IsValid(Ring) || Ring->IsActorBeingDestroyed()) { return nullptr; }
 	OnShotSpawned.ExecuteIfBound();
 	return Ring;

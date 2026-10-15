@@ -1,4 +1,6 @@
 #include "Combat/RLExpandingRingAttack.h"
+#include "Combat/RLRingAttackPoolSubsystem.h"
+#include "Engine/World.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -57,7 +59,7 @@ bool ARLExpandingRingAttack::IsCombatActive() const
 
 bool ARLExpandingRingAttack::StartAttack()
 {
-	if (bActive || bFadingOut || !HasActorBegunPlay() || !IsCombatActive()) { return false; }
+	if ((bPoolManaged && !bPoolActive) || bActive || bFadingOut || !HasActorBegunPlay() || !IsCombatActive()) { return false; }
 	ActiveSettings = AttackData ? AttackData->Settings : FRLRingAttackSettings();
 	if (!FMath::IsFinite(ActiveSettings.StartRadius) ||
 		!FMath::IsFinite(ActiveSettings.ExpansionSpeed) || !FMath::IsFinite(ActiveSettings.RingThickness) ||
@@ -65,7 +67,7 @@ bool ARLExpandingRingAttack::StartAttack()
 		!FMath::IsFinite(ActiveSettings.ActiveDuration) || !FMath::IsFinite(ActiveSettings.FadeOutDuration))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Invalid ring attack settings on %s."), *GetName());
-		Destroy();
+		ReturnToPool();
 		return false;
 	}
 	ActiveSettings.StartRadius = FMath::Max(0.0f, ActiveSettings.StartRadius);
@@ -81,6 +83,14 @@ bool ARLExpandingRingAttack::StartAttack()
 	// indefinitely if actor ticking is disabled by an external gameplay system.
 	SetLifeSpan(ActiveSettings.ActiveDuration + ActiveSettings.FadeOutDuration);
 	CurrentRadius = ActiveSettings.StartRadius;
+	WallStopRadius = FindWallStopRadius();
+	if (CurrentRadius >= WallStopRadius) { ReturnToPool(); return false; }
+	SetActorTickEnabled(true);
+	if (RingMaterial)
+	{
+		RingMaterial->SetScalarParameterValue(TEXT("FadeOpacity"), 1.0f);
+		RingMaterial->SetScalarParameterValue(TEXT("EmissiveIntensity"), 20.0f);
+	}
 	bActive = true;
 	bPlayerHit = false;
 	bPlayerDodged = false;
@@ -110,7 +120,7 @@ void ARLExpandingRingAttack::Tick(float DeltaSeconds)
 			RingMaterial->SetScalarParameterValue(TEXT("FadeOpacity"), 1.0f - Alpha);
 			RingMaterial->SetScalarParameterValue(TEXT("EmissiveIntensity"), 20.0f * (1.0f - Alpha));
 		}
-		if (Alpha >= 1.0f) { Destroy(); }
+		if (Alpha >= 1.0f) { ReturnToPool(); }
 		return;
 	}
 	if (!bActive)
@@ -131,17 +141,94 @@ void ARLExpandingRingAttack::Tick(float DeltaSeconds)
 	}
 	const float PreviousRadius = CurrentRadius;
 	CurrentRadius += ActiveSettings.ExpansionSpeed * DeltaTime;
+	if (CurrentRadius >= WallStopRadius) { ReturnToPool(); return; }
 	UpdateVisual();
 	CheckPlayerHit(PreviousRadius);
 }
 
 void ARLExpandingRingAttack::BeginFadeOut()
 {
-	if (bFadingOut || IsActorBeingDestroyed()) { return; }
+	if ((bPoolManaged && !bPoolActive) || bFadingOut || IsActorBeingDestroyed()) { return; }
 	bFadingOut = true;
 	bActive = false;
 	FadeOutElapsedTime = 0.0f;
 	SetLifeSpan(FMath::Max(0.01f, ActiveSettings.FadeOutDuration));
+}
+
+void ARLExpandingRingAttack::ActivateFromPool(const FTransform& Transform, AActor* NewOwner,
+	APawn* NewInstigator, URLRingAttackDataAsset* Data, bool bStartAutomatically)
+{
+	bPoolManaged = true;
+	bPoolActive = true;
+	bActive = false;
+	bFadingOut = false;
+	bPlayerHit = false;
+	bPlayerDodged = false;
+	TrackedPlayer.Reset();
+	OnPlayerDodged.Clear();
+	SetLifeSpan(0.0f);
+	SetOwner(NewOwner);
+	SetInstigator(NewInstigator);
+	AttackData = Data;
+	bAutoStart = bStartAutomatically;
+	SetActorTransform(FTransform(FRotator::ZeroRotator, Transform.GetLocation()));
+	SetActorHiddenInGame(false);
+	SetActorTickEnabled(bAutoStart);
+	if (bAutoStart) { StartAttack(); }
+}
+
+void ARLExpandingRingAttack::DeactivateForPool()
+{
+	bPoolActive = false;
+	bActive = false;
+	bFadingOut = false;
+	bAutoStart = false;
+	SetLifeSpan(0.0f);
+	SetActorTickEnabled(false);
+	SetActorHiddenInGame(true);
+	RingVisual->SetVisibility(false);
+	RingVisual->ClearInstances();
+	TrackedPlayer.Reset();
+	OnPlayerDodged.Clear();
+	SetOwner(nullptr);
+	SetInstigator(nullptr);
+}
+
+void ARLExpandingRingAttack::ReturnToPool()
+{
+	if (!bPoolManaged) { Destroy(); return; }
+	if (!bPoolActive) { return; }
+	if (auto* Pool = GetWorld()->GetSubsystem<URLRingAttackPoolSubsystem>()) { Pool->ReleaseRing(this); }
+	else { Destroy(); }
+}
+
+void ARLExpandingRingAttack::LifeSpanExpired()
+{
+	ReturnToPool();
+}
+
+float ARLExpandingRingAttack::FindWallStopRadius() const
+{
+	// The source is stationary. Cache static boundary contacts once per attack.
+	// Sweep above the floor and select only WorldStatic, excluding pawns/hazards.
+	const float HalfWidth = ActiveSettings.RingThickness * 0.5f;
+	const float MaxRadius = ActiveSettings.StartRadius + ActiveSettings.ExpansionSpeed * ActiveSettings.ActiveDuration;
+	const FVector Origin = GetActorLocation() + FVector(0, 0, FMath::Max(ActiveSettings.AttackHeight * 0.5f, HalfWidth + 2.0f));
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(RingWallBoundary), false, this);
+	Params.AddIgnoredActor(GetOwner());
+	float StopRadius = TNumericLimits<float>::Max();
+	for (int32 Index = 0; Index < SegmentCount; ++Index)
+	{
+		const float Angle = 2.0f * PI * Index / SegmentCount;
+		const FVector End = Origin + FVector(FMath::Cos(Angle), FMath::Sin(Angle), 0) * MaxRadius;
+		FHitResult Hit;
+		if (GetWorld()->SweepSingleByObjectType(Hit, Origin, End, FQuat::Identity,
+			FCollisionObjectQueryParams(ECC_WorldStatic), FCollisionShape::MakeSphere(HalfWidth), Params))
+		{
+			StopRadius = FMath::Min(StopRadius, Hit.Distance);
+		}
+	}
+	return StopRadius;
 }
 
 void ARLExpandingRingAttack::UpdateVisual()

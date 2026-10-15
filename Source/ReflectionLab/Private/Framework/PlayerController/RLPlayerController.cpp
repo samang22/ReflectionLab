@@ -841,7 +841,7 @@ void ARLPlayerController::UpdateTutorial()
 
 void ARLPlayerController::UpdateTutorialRingRequest(ARLGameModeBase& GameMode)
 {
-	if (TutorialRing.IsValid() && !TutorialRing->IsActorBeingDestroyed()) { return; }
+	if (TutorialRing.IsValid() && TutorialRing->IsPoolActive() && !TutorialRing->IsActorBeingDestroyed()) { return; }
 	const float Now = GetWorld()->GetTimeSeconds();
 	if (Now < NextTutorialProjectileRequestTimeSeconds) { return; }
 	ARLExpandingRingAttack* Ring = GameMode.RequestTutorialRingAttack();
@@ -855,7 +855,7 @@ void ARLPlayerController::UpdateTutorialRingRequest(ARLGameModeBase& GameMode)
 	// Bind before activation so an immediate contact cannot lose the success event.
 	if (!Ring->StartAttack())
 	{
-		Ring->Destroy();
+		Ring->ReturnToPool();
 		TutorialRing.Reset();
 	}
 	NextTutorialProjectileRequestTimeSeconds = Now + 0.75f;

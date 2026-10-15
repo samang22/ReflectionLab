@@ -3,6 +3,7 @@
 #include "Combat/RLProjectile.h"
 #include "Data/RLDifficultyScheduleDataAsset.h"
 #include "Data/RLRunDefinitionDataAsset.h"
+#include "Combat/RLExpandingRingAttack.h"
 #include "Data/RLRunRewardDataAsset.h"
 #include "Enemies/RLEnemyCharacter.h"
 #include "Enemies/RLEnemySpawner.h"
@@ -1328,6 +1329,10 @@ void ARLGameModeBase::SetRunState(ERLRunState NewState)
 	{
 		return;
 	}
+		for (TActorIterator<ARLExpandingRingAttack> Iterator(GetWorld()); Iterator; ++Iterator)
+		{
+			if (Iterator->IsPoolActive()) { Iterator->ReturnToPool(); }
+		}
 
 	RunState = NewState;
 	if ((RunState == ERLRunState::TutorialCompleted ||

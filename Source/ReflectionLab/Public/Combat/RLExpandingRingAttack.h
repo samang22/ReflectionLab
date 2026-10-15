@@ -23,6 +23,11 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Ring Attack")
 	bool StartAttack();
+	void ActivateFromPool(const FTransform& Transform, AActor* NewOwner, APawn* NewInstigator,
+		URLRingAttackDataAsset* Data, bool bStartAutomatically);
+	void DeactivateForPool();
+	void ReturnToPool();
+	bool IsPoolActive() const { return bPoolActive; }
 	UFUNCTION(BlueprintCallable, Category = "Ring Attack")
 	void BeginFadeOut();
 
@@ -37,6 +42,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void LifeSpanExpired() override;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ring Attack")
 	TObjectPtr<UInstancedStaticMeshComponent> RingVisual;
 
@@ -46,6 +52,10 @@ private:
 	bool IsCombatActive() const;
 	void UpdateVisual();
 	void CheckPlayerHit(float PreviousRadius);
+	float FindWallStopRadius() const;
+	float WallStopRadius = TNumericLimits<float>::Max();
+	bool bPoolManaged = false;
+	bool bPoolActive = false;
 	FRLRingAttackSettings ActiveSettings;
 	float CurrentRadius = 0.0f;
 	float ActiveElapsedTime = 0.0f;
