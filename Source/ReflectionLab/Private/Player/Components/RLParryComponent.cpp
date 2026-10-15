@@ -53,6 +53,14 @@ void URLParryComponent::Configure(const URLPlayerStatsDataAsset* PlayerStatsData
 			0.0f,
 			90.0f);
 		NewStats.BasePierceCount = FMath::Max(0, PlayerStatsData->BasePierceCount);
+		for (int32 Index = 0; Index < 4; ++Index)
+		{
+			if (PlayerStatsData->EnhancementDamageMultipliers.IsValidIndex(Index))
+			{
+				const float Value = PlayerStatsData->EnhancementDamageMultipliers[Index];
+				NewStats.EnhancementDamageMultipliers[Index] = FMath::IsFinite(Value) ? FMath::Max(1.0f, Value) : 1.0f;
+			}
+		}
 		NewStats.MaxReflectedSpeedMultiplier = FMath::Max(
 			1.0f,
 			PlayerStatsData->MaxReflectedSpeedMultiplier);
@@ -324,15 +332,17 @@ bool URLParryComponent::TryParryProjectile(
 	const bool bOverdrive = ProgressionComponent->GetEnhancementLevel() >= 4;
 	const bool bMaximumSpeed = bCloseRangeParry || RewardLevel >= 2;
 
-	// Bombs retain their hostile travel speed; only purchased run rewards
-	// accelerate them, not normal reflection or close/combo speed upgrades.
+	// Bombs return 50% faster than their hostile travel speed. Purchased speed
+	// rewards scale this return; close/combo speed upgrades remain excluded.
 	const float SpeedMultiplier = Projectile->IsExplosive()
-		? 1.0f + (RewardComponent ? FMath::Max(0.0f, RewardComponent->GetReflectedSpeedBonus()) : 0.0f)
+		? 1.5f * (1.0f + (RewardComponent ? FMath::Max(0.0f, RewardComponent->GetReflectedSpeedBonus()) : 0.0f))
 		: (bMaximumSpeed ? Stats.MaxReflectedSpeedMultiplier : Projectile->GetBaseReflectedSpeedMultiplier());
 
 	FRLProjectileReflectionParams ReflectionParams;
 	ReflectionParams.ParryAttemptId = ParryAttemptId;
 	ReflectionParams.SpeedMultiplier = SpeedMultiplier;
+	// Use the same previewed level as the existing speed/extra-projectile rewards.
+	ReflectionParams.DamageMultiplier = Stats.EnhancementDamageMultipliers[FMath::Clamp(RewardLevel, 1, 4) - 1];
 	ReflectionParams.VisualScaleMultiplier = bOverdrive
 		? Stats.OverdriveProjectileScale
 		: (bCloseRangeParry ? Stats.CloseRangeProjectileScale : Stats.BaseReflectedProjectileScale);
@@ -344,32 +354,26 @@ bool URLParryComponent::TryParryProjectile(
 	ReflectionParams.bCloseRangeParry = bCloseRangeParry;
 	ReflectionParams.bOverdrive = bOverdrive;
 
-	int32 SplitCount = bPerfectParry ? Stats.PerfectSplitProjectileCount : 1;
+	const int32 SplitCount = Stats.GetReflectedProjectileCount(bPerfectParry, RewardLevel, bOverdrive);
 	float SplitSpreadAngle = bPerfectParry ? Stats.PerfectSplitAngleDegrees : 0.0f;
 	const bool bGuardProjectile = Projectile->IsGuardProjectile();
-	if (!bGuardProjectile && RewardLevel >= 3)
+	if (RewardLevel >= 3)
 	{
-		++SplitCount;
 		if (SplitSpreadAngle <= 0.0f)
 		{
 			SplitSpreadAngle = Stats.ComboExtraProjectileSpreadAngle;
 		}
 	}
-	if (!bGuardProjectile && bOverdrive)
+	if (bOverdrive)
 	{
-		SplitCount = Stats.OverdriveProjectileCount;
 		SplitSpreadAngle = Stats.OverdriveSpreadAngleDegrees;
 	}
 	if (bGuardProjectile)
 	{
-		SplitCount = 1;
-		SplitSpreadAngle = 0.0f;
 		ReflectionParams.PierceCount = 0;
 	}
 	if (Projectile->IsRallyProjectile())
 	{
-		SplitCount = 1;
-		SplitSpreadAngle = 0.0f;
 		ReflectionParams.PierceCount = FMath::Clamp(ReflectionParams.PierceCount, 0, 1);
 	}
 	TArray<FVector> SplitDirections;
@@ -432,7 +436,7 @@ void URLParryComponent::SpawnAdditionalReflectedProjectiles(
 			SplitProjectile->InitializeFromDefinition(
 				SourceProjectile->GetProjectileDefinition(),
 				GetOwner(),
-				SourceProjectile->IsExplosive() || SourceProjectile->IsRallyProjectile());
+				SourceProjectile->IsExplosive() || SourceProjectile->IsRallyProjectile() || SourceProjectile->IsGuardProjectile());
 		}
 		if (!SplitProjectile ||
 			!SplitProjectile->Reflect(GetOwner(), CastChecked<ACharacter>(GetOwner()), SplitDirection, ReflectionParams))

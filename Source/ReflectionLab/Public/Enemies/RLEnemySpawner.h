@@ -15,6 +15,7 @@ class REFLECTIONLAB_API ARLEnemySpawner : public AActor
 
 public:
 	void SetRoundEnemyClass(TSubclassOf<ARLEnemyCharacter> OverrideClass);
+	void SetNextSpawnTransform(const FTransform& Transform) { NextSpawnTransform = Transform; bOverrideNextSpawn = true; }
 	ARLEnemySpawner();
 
 	UFUNCTION(BlueprintCallable, Category = "Enemy Spawner")
@@ -85,6 +86,8 @@ protected:
 	int32 SpawnLocationAttempts = 12;
 
 private:
+	FTransform NextSpawnTransform;
+	bool bOverrideNextSpawn = false;
 	UPROPERTY(Transient)
 	TSubclassOf<ARLEnemyCharacter> RoundEnemyClass;
 	void HandleSpawnTimer();

@@ -920,6 +920,13 @@ void URLRunStatusWidget::UpdateWaveText()
 	const int32 WaveIndex = BoundGameMode->GetCurrentWaveIndex();
 	const int32 WaveCount = BoundGameMode->GetCurrentWaveCount();
 	const FName WaveName = BoundGameMode->GetCurrentWaveName();
+	const FText ExperimentStatus = BoundGameMode->GetArenaExperimentStatus();
+	if (!ExperimentStatus.IsEmpty())
+	{
+		PhaseText->SetText(ExperimentStatus);
+		NextPhaseText->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
 	if (WaveIndex == INDEX_NONE || WaveCount <= 0)
 	{
 		PhaseText->SetText(FText::GetEmpty());

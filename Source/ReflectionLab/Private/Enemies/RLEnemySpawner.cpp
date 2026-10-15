@@ -81,6 +81,8 @@ void ARLEnemySpawner::StopSpawning()
 
 ARLEnemyCharacter* ARLEnemySpawner::SpawnEnemy()
 {
+	const bool bUseOverride = bOverrideNextSpawn;
+	bOverrideNextSpawn = false;
 	CleanupInactiveEnemies();
 	const TSubclassOf<ARLEnemyCharacter> SpawnClass = RoundEnemyClass ? RoundEnemyClass : EnemyClass;
 	if (!SpawnClass || !GetWorld() || ActiveEnemies.Num() >= MaxAliveEnemies)
@@ -89,7 +91,8 @@ ARLEnemyCharacter* ARLEnemySpawner::SpawnEnemy()
 	}
 
 	FTransform SpawnTransform;
-	if (!FindSpawnTransform(SpawnTransform))
+	if (bUseOverride) { SpawnTransform = NextSpawnTransform; }
+	else if (!FindSpawnTransform(SpawnTransform))
 	{
 		return nullptr;
 	}

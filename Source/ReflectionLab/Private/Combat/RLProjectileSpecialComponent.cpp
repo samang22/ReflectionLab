@@ -553,7 +553,8 @@ void URLProjectileSpecialComponent::ApplyExplosionDamage(
 				continue;
 			}
 
-			Projectile->GetContactComponent()->ApplyDamageToActor(Enemy, Settings.ExplosionDamage);
+			Projectile->GetContactComponent()->ApplyDamageToActor(
+				Enemy, Settings.ExplosionDamage * Projectile->GetReflectionDamageMultiplier());
 		}
 	}
 }

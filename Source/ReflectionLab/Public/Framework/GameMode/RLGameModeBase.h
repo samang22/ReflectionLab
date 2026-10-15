@@ -11,6 +11,8 @@ class ARLEnemyCharacter;
 class ARLExpandingRingAttack;
 class URLRunDefinitionDataAsset;
 class URLRunRewardDataAsset;
+class URLArenaExperimentDataAsset;
+class URLArenaExperimentComponent;
 struct FRLDifficultyPhase;
 struct FRLWaveDefinition;
 struct FRLRoundDefinition;
@@ -61,6 +63,8 @@ class REFLECTIONLAB_API ARLGameModeBase : public AGameModeBase
 
 public:
 	ARLGameModeBase();
+	URLArenaExperimentDataAsset* GetCurrentArenaExperiment() const;
+	FText GetArenaExperimentStatus() const;
 	virtual void InitGame(
 		const FString& MapName,
 		const FString& Options,
@@ -198,6 +202,8 @@ public:
 	FRLWaveChangedSignature OnWaveChanged;
 
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Run|Experiments")
+	TObjectPtr<URLArenaExperimentComponent> ArenaExperiment;
 	virtual void BeginPlay() override;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run")

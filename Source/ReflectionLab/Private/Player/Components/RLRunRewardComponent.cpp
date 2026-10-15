@@ -120,6 +120,7 @@ void URLRunRewardComponent::ApplyModifiers(FRLParryStats& Stats) const
 		Stats.PerfectSplitProjectileCount + RunRewardPerfectSplitBonus,
 		1,
 		8);
+	Stats.PerfectSplitRewardBonus = RunRewardPerfectSplitBonus;
 	Stats.MaxReflectedSpeedMultiplier = FMath::Max(
 		1.0f,
 		Stats.MaxReflectedSpeedMultiplier + RunRewardReflectedSpeedBonus);

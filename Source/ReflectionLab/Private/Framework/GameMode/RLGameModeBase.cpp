@@ -1,9 +1,11 @@
 #include "Framework/GameMode/RLGameModeBase.h"
+#include "Framework/RLArenaExperimentComponent.h"
+#include "Data/RLArenaExperimentDataAsset.h"
 
 #include "Combat/RLProjectile.h"
+#include "Combat/RLExpandingRingAttack.h"
 #include "Data/RLDifficultyScheduleDataAsset.h"
 #include "Data/RLRunDefinitionDataAsset.h"
-#include "Combat/RLExpandingRingAttack.h"
 #include "Data/RLRunRewardDataAsset.h"
 #include "Enemies/RLEnemyCharacter.h"
 #include "Enemies/RLEnemySpawner.h"
@@ -190,12 +192,25 @@ bool FRLShortRoundsTest::RunTest(const FString& Parameters)
 
 ARLGameModeBase::ARLGameModeBase()
 {
+	ArenaExperiment = CreateDefaultSubobject<URLArenaExperimentComponent>(TEXT("ArenaExperiment"));
 	static ConstructorHelpers::FObjectFinder<URLRunDefinitionDataAsset> RunDefinitionFinder(
 		TEXT("/Game/ReflectionLab/Data/Difficulty/DA_DefaultRun.DA_DefaultRun"));
 	if (RunDefinitionFinder.Succeeded())
 	{
 		RunDefinition = RunDefinitionFinder.Object;
 	}
+}
+
+URLArenaExperimentDataAsset* ARLGameModeBase::GetCurrentArenaExperiment() const
+{
+	if (!RunDefinition || IsCurrentRoundTutorial() || RunDefinition->RoundEnemyClasses.Contains(GetCurrentRoundNumber())) { return nullptr; }
+	const auto* Data = RunDefinition->RoundExperiments.Find(GetCurrentRoundNumber());
+	return Data ? Data->Get() : nullptr;
+}
+
+FText ARLGameModeBase::GetArenaExperimentStatus() const
+{
+	return ArenaExperiment ? ArenaExperiment->GetStatusText() : FText::GetEmpty();
 }
 
 void ARLGameModeBase::InitGame(
@@ -783,6 +798,25 @@ void ARLGameModeBase::BeginWave(int32 WaveIndex)
 		WaveDefinition.AttackIntervalMultiplier *= AttackTimingScale;
 		WaveDefinition.TimeBetweenShotsMultiplier *= AttackTimingScale;
 	}
+	URLArenaExperimentDataAsset* Experiment = GetCurrentArenaExperiment();
+	ArenaExperiment->Configure(Experiment);
+	if (!ArenaExperiment->HasActiveExperiment()) { Experiment = nullptr; }
+	if (Experiment)
+	{
+		const float Frequency = FMath::IsFinite(Experiment->AttackFrequencyMultiplier)
+			? FMath::Clamp(Experiment->AttackFrequencyMultiplier, 0.1f, 3.0f) : 1.0f;
+		WaveDefinition.AttackIntervalMultiplier /= Frequency;
+		WaveDefinition.TimeBetweenShotsMultiplier /= Frequency;
+	}
+	if (Experiment && Experiment->ProjectileDefinition)
+	{
+		WaveDefinition.DefaultProjectileDefinition = Experiment->ProjectileDefinition;
+		WaveDefinition.ProjectileRules.Empty();
+		WaveDefinition.RingAttack.Weight = 0;
+		WaveDefinition.RingAttack.ShotInterval = 0;
+		WaveDefinition.bUseWeightedPatterns = true;
+		WaveDefinition.DefaultProjectileWeight = 1;
+	}
 	ApplyWaveDefinition(WaveDefinition, WaveIndex);
 
 	TArray<ARLEnemySpawner*> ValidSpawners;
@@ -815,9 +849,28 @@ void ARLGameModeBase::BeginWave(int32 WaveIndex)
 		for (int32 Attempt = 0; Attempt < ValidSpawners.Num(); ++Attempt)
 		{
 			const int32 SpawnerIndex = (EnemyIndex + Attempt) % ValidSpawners.Num();
-			if (ARLEnemyCharacter* SpawnedEnemy = ValidSpawners[SpawnerIndex]->SpawnEnemy())
+			if (Experiment && Experiment->Type == ERLArenaExperimentType::Crossfire)
 			{
+				FTransform ExperimentSpawn;
+				if (!ArenaExperiment->FindTeamSpawn(EnemyIndex, RequestedEnemyCount, ExperimentSpawn)) { continue; }
+				ValidSpawners[SpawnerIndex]->SetNextSpawnTransform(ExperimentSpawn);
+			}
+			const bool bSupportSpawn = Experiment && Experiment->Type == ERLArenaExperimentType::SupportNetwork && EnemyIndex == 0;
+			if (bSupportSpawn) { ValidSpawners[SpawnerIndex]->SetRoundEnemyClass(Experiment->SupportEnemyClass); }
+			ARLEnemyCharacter* SpawnedEnemy = ValidSpawners[SpawnerIndex]->SpawnEnemy();
+			if (bSupportSpawn) { ValidSpawners[SpawnerIndex]->SetRoundEnemyClass(nullptr); }
+			if (SpawnedEnemy)
+			{
+				if (Experiment) { ArenaExperiment->RegisterEnemy(SpawnedEnemy, EnemyIndex); }
 				++SpawnedEnemyCount;
+				if (!bTutorialRound && !RunDefinition->RoundEnemyClasses.Contains(GetCurrentRoundNumber()))
+				{
+					if (const FRLEnemyHealthMix* Mix = RunDefinition->GetEnemyHealthMix(GetCurrentRoundNumber()))
+					{
+						SpawnedEnemy->FindComponentByClass<URLHealthComponent>()->InitializeHealth(
+							Mix->GetHealthForSpawn(EnemyIndex, RequestedEnemyCount));
+					}
+				}
 				if (bTutorialRound)
 				{
 					TutorialEnemy = SpawnedEnemy;
@@ -1273,8 +1326,13 @@ void ARLGameModeBase::StopEnemySpawners()
 
 void ARLGameModeBase::CleanupRoundActors(const FRLRoundDefinition& RoundDefinition)
 {
+	ArenaExperiment->ResetExperiment();
 	if (RoundDefinition.bClearProjectilesOnComplete)
 	{
+		for (TActorIterator<ARLExpandingRingAttack> Iterator(GetWorld()); Iterator; ++Iterator)
+		{
+			if (Iterator->IsPoolActive()) { Iterator->ReturnToPool(); }
+		}
 		for (TActorIterator<ARLProjectile> Iterator(GetWorld()); Iterator; ++Iterator)
 		{
 			Iterator->ReturnToPool();
@@ -1329,10 +1387,6 @@ void ARLGameModeBase::SetRunState(ERLRunState NewState)
 	{
 		return;
 	}
-		for (TActorIterator<ARLExpandingRingAttack> Iterator(GetWorld()); Iterator; ++Iterator)
-		{
-			if (Iterator->IsPoolActive()) { Iterator->ReturnToPool(); }
-		}
 
 	RunState = NewState;
 	if ((RunState == ERLRunState::TutorialCompleted ||

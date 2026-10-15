@@ -9,9 +9,11 @@ struct REFLECTIONLAB_API FRLParryStats
 	float SuccessfulParryCooldown = 0.03f;
 	float PerfectParryOuterBandWidth = 30.0f;
 	int32 PerfectSplitProjectileCount = 3;
+	int32 PerfectSplitRewardBonus = 0;
 	float PerfectSplitAngleDegrees = 40.0f;
 	int32 BasePierceCount = 0;
 	float MaxReflectedSpeedMultiplier = 2.0f;
+	TArray<float> EnhancementDamageMultipliers = {1.0f, 2.0f, 3.0f, 5.0f};
 	float BaseReflectedProjectileScale = 1.35f;
 	float CloseRangeThreshold = 55.0f;
 	int32 CloseRangePierceCount = 3;
@@ -23,6 +25,15 @@ struct REFLECTIONLAB_API FRLParryStats
 	int32 OverdrivePierceCount = 3;
 	float ReflectionRange = 140.0f;
 	float ReflectionHalfAngleDegrees = 50.0f;
+
+	int32 GetReflectedProjectileCount(bool bPerfect, int32 RewardLevel, bool bOverdrive) const
+	{
+		if (bOverdrive)
+		{
+			return OverdriveProjectileCount + (bPerfect ? PerfectSplitRewardBonus : 0);
+		}
+		return (bPerfect ? PerfectSplitProjectileCount : 1) + (RewardLevel >= 3 ? 1 : 0);
+	}
 };
 
 // One successful swing, not one projectile. Multi-reflections still advance/heal once.

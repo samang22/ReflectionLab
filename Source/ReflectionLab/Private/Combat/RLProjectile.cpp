@@ -170,6 +170,7 @@ void ARLProjectile::ActivateProjectile(
 	RallyComponent->ResetRuntimeState(ProjectileSpeed);
 	VisualComponent->ResetRuntimeState();
 	ReflectionState.RemainingPierces = 0;
+	ReflectionState.DamageMultiplier = 1.0f;
 	ReflectionState.BlockedParryAttemptId.Invalidate();
 	ReflectionState.ReflectionChain = 0;
 	ReflectionState.bWasPerfectParried = false;
@@ -278,8 +279,8 @@ void ARLProjectile::ApplyDefinitionStats(
 	// are recycled by the play-area bounds check instead of short per-type timers.
 	LifeSeconds = GlobalProjectileLifeSeconds;
 	VisualComponent->ApplyDefinitionSettings(Definition);
-	SpecialComponent->ApplyDefinitionSettings(Definition);
 	FeedbackComponent->ApplyDefinitionSettings(Definition);
+	SpecialComponent->ApplyDefinitionSettings(Definition);
 	RallyComponent->ApplyDefinitionSettings(Definition);
 
 	const float VisualScale = FMath::Max(0.1f, Definition.VisualScale);
@@ -347,6 +348,8 @@ bool ARLProjectile::Reflect(
 		? FMath::Clamp(ReflectionParams.PierceCount, 0, 1)
 		: FMath::Max(0, ReflectionParams.PierceCount);
 	ReflectionState.ReflectionChain = FMath::Max(0, ReflectionParams.ReflectionChain);
+	ReflectionState.DamageMultiplier = FMath::IsFinite(ReflectionParams.DamageMultiplier)
+		? FMath::Max(1.0f, ReflectionParams.DamageMultiplier) : 1.0f;
 	ReflectionState.bWasPerfectParried = ReflectionParams.bPerfectParry;
 	ReflectionState.bWasCloseRangeParried = ReflectionParams.bCloseRangeParry;
 	ReflectionState.bWasOverdriveReflected = ReflectionParams.bOverdrive;

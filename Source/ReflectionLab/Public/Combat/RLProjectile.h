@@ -119,7 +119,8 @@ public:
 	bool IsFadingOut() const { return bIsFadingOut; }
 	float GetBaseSpeed() const { return ProjectileSpeed; }
 	float GetLifetimeSeconds() const { return LifeSeconds; }
-	float GetDamageAmount() const { return DamageAmount; }
+	float GetDamageAmount() const { return DamageAmount * GetReflectionDamageMultiplier(); }
+	float GetReflectionDamageMultiplier() const { return bIsReflected ? ReflectionState.DamageMultiplier : 1.0f; }
 	const FVector& GetDefaultVisualScale() const { return DefaultProjectileMeshScale; }
 	float GetDefaultCollisionRadius() const { return DefaultCollisionRadius; }
 	USphereComponent* GetCollisionSphere() const { return CollisionComponent; }

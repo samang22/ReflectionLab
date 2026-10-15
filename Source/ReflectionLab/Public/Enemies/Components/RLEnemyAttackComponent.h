@@ -27,7 +27,11 @@ public:
 	void ApplyDifficultyPhase(const FRLDifficultyPhase& DifficultyPhase);
 	void ApplyWaveDefinition(const FRLWaveDefinition& WaveDefinition);
 	void StartFiring();
+	void SetSupportAttackRate(float Rate) { SupportAttackRate = FMath::IsFinite(Rate) ? FMath::Clamp(Rate, 1.0f, 3.0f) : 1.0f; }
+	float GetSupportAttackRate() const { return SupportAttackRate; }
 	void StopFiring();
+	void SetExperimentAttackAllowed(bool bAllowed, bool bResume = true);
+	bool IsExperimentAttackAllowed() const { return bExperimentAttackAllowed; }
 	void Fire();
 	void SetTutorialCombatControlled(bool bControlled);
 	bool FireTutorialProjectile(URLProjectileDefinitionDataAsset* ProjectileDefinition);
@@ -66,6 +70,7 @@ private:
 	FTimerHandle BurstTimerHandle;
 	FRLEnemyAttackVariation AttackVariation;
 	float AttackInterval = 3.0f;
+	float SupportAttackRate = 1.0f;
 	int32 ShotsPerBurst = 1;
 	float TimeBetweenShots = 0.5f;
 	float InitialFireDelay = 1.0f;
@@ -81,6 +86,7 @@ private:
 	int32 ShotsFiredSinceActivation = 0;
 	int32 PatternShotOffset = 0;
 	bool bFiring = false;
+	bool bExperimentAttackAllowed = true;
 	bool bExecutingAlignedShot = false;
 	bool bAutoStartFiring = true;
 	bool bTutorialCombatControlled = false;

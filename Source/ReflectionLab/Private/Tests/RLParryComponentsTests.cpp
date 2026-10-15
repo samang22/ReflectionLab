@@ -8,6 +8,31 @@
 #if WITH_DEV_AUTOMATION_TESTS
 #include "Misc/AutomationTest.h"
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRLPerfectRewardCountTest, "ReflectionLab.Player.PerfectRewardProjectileCount",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FRLPerfectRewardCountTest::RunTest(const FString& Parameters)
+{
+	URLHealthComponent* Health = NewObject<URLHealthComponent>();
+	Health->InitializeHealth(10.0f);
+	URLRunRewardComponent* Rewards = NewObject<URLRunRewardComponent>();
+	Rewards->Initialize(Health);
+	FRLParryStats Stats;
+	TestEqual(TEXT("Base perfect"), Stats.GetReflectedProjectileCount(true, 1, false), 3);
+	TestEqual(TEXT("Base overdrive"), Stats.GetReflectedProjectileCount(true, 4, true), 5);
+	Rewards->ApplyRunReward(ERLRunRewardType::PerfectFocus);
+	Rewards->ApplyModifiers(Stats);
+	TestEqual(TEXT("Reward perfect"), Stats.GetReflectedProjectileCount(true, 1, false), 4);
+	TestEqual(TEXT("Reward level three"), Stats.GetReflectedProjectileCount(true, 3, false), 5);
+	TestEqual(TEXT("Reward survives overdrive"), Stats.GetReflectedProjectileCount(true, 4, true), 6);
+	TestEqual(TEXT("Normal overdrive does not receive perfect reward"), Stats.GetReflectedProjectileCount(false, 4, true), 5);
+	Rewards->ApplyRunReward(ERLRunRewardType::PerfectFocus);
+	Stats = FRLParryStats();
+	Rewards->ApplyModifiers(Stats);
+	TestEqual(TEXT("Stacked overdrive reward"), Stats.GetReflectedProjectileCount(true, 4, true), 7);
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRLParryProgressionTest, "ReflectionLab.Player.ParryProgression",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 

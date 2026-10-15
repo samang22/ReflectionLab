@@ -44,7 +44,9 @@ void URLEnemyAttackComponent::Configure(const FRLEnemyCombatRow& Config,
 
 void URLEnemyAttackComponent::ActivateForPool()
 {
+	SupportAttackRate = 1.0f;
 	StopFiring();
+	bExperimentAttackAllowed = true;
 	bTutorialCombatControlled = false;
 	ShotsFiredSinceActivation = 0;
 	RandomizePatternStart();
@@ -54,7 +56,9 @@ void URLEnemyAttackComponent::ActivateForPool()
 
 void URLEnemyAttackComponent::DeactivateForPool()
 {
+	SupportAttackRate = 1.0f;
 	StopFiring();
+	bExperimentAttackAllowed = true;
 	bTutorialCombatControlled = false;
 	ShotsFiredSinceActivation = 0;
 	PatternShotOffset = 0;
@@ -141,7 +145,7 @@ void URLEnemyAttackComponent::StartFiring()
 	ARLEnemyCharacter* Enemy = Cast<ARLEnemyCharacter>(GetOwner());
 	if (!Enemy) { return; }
 
-	if (!GetWorld() || bFiring || !Enemy->IsPoolActive() || Enemy->IsSpawning() || bTutorialCombatControlled)
+	if (!GetWorld() || !bExperimentAttackAllowed || bFiring || !Enemy->IsPoolActive() || Enemy->IsSpawning() || bTutorialCombatControlled)
 	{
 		return;
 	}
@@ -174,6 +178,14 @@ void URLEnemyAttackComponent::StopFiring()
 	RemainingShotsInBurst = 0;
 }
 
+void URLEnemyAttackComponent::SetExperimentAttackAllowed(bool bAllowed, bool bResume)
+{
+	if (bExperimentAttackAllowed == bAllowed) { return; }
+	bExperimentAttackAllowed = bAllowed;
+	if (!bAllowed) { StopFiring(); }
+	else if (bResume && bAutoStartFiring) { StartFiring(); }
+}
+
 void URLEnemyAttackComponent::BeginBurst()
 {
 	ARLEnemyCharacter* Enemy = Cast<ARLEnemyCharacter>(GetOwner());
@@ -193,7 +205,7 @@ void URLEnemyAttackComponent::BeginBurst()
 			return;
 		}
 	}
-	CurrentBurstInterval = FRLEnemyAttackVariation::SampleInterval(AttackInterval,
+	CurrentBurstInterval = FRLEnemyAttackVariation::SampleInterval(AttackInterval / SupportAttackRate,
 		UsesAttackVariation() ? AttackVariation.AttackIntervalJitterRatio : 0.0f, 0.1f);
 	RemainingShotsInBurst = FMath::Max(1, ShotsPerBurst);
 	FireNextShot();

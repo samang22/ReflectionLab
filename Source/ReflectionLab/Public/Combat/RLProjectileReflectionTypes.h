@@ -14,6 +14,9 @@ struct FRLProjectileReflectionParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile|Reflection")
 	float SpeedMultiplier = 0.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile|Reflection", meta = (ClampMin = "1.0"))
+	float DamageMultiplier = 1.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile|Reflection", meta = (ClampMin = "0.1"))
 	float VisualScaleMultiplier = 1.0f;
 
@@ -38,6 +41,7 @@ struct FRLProjectileReflectionState
 {
 	FGuid BlockedParryAttemptId;
 	int32 RemainingPierces = 0;
+	float DamageMultiplier = 1.0f;
 	int32 ReflectionChain = 0;
 	bool bWasPerfectParried = false;
 	bool bWasCloseRangeParried = false;
