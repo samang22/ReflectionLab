@@ -200,7 +200,14 @@ void URLParryFeedbackComponent::UpdateParryRangeIndicator()
 	}
 
 	ParryRangeIndicator->SetVisibility(bShowParryRangeIndicator, true);
-	ParryRangeIndicator->DecalSize = FVector(64.0f, View.Stats.ReflectionRange, View.Stats.ReflectionRange);
+	const FVector DesiredDecalSize(64.0f, View.Stats.ReflectionRange, View.Stats.ReflectionRange);
+	if (!ParryRangeIndicator->DecalSize.Equals(DesiredDecalSize))
+	{
+		ParryRangeIndicator->DecalSize = DesiredDecalSize;
+		// DecalSize is copied into the render proxy; direct assignment alone
+		// leaves its projection unchanged while material radius ratios update.
+		ParryRangeIndicator->MarkRenderStateDirty();
+	}
 	ParryRangeIndicator->SetRelativeLocation(FVector(
 		0.0f,
 		0.0f,
