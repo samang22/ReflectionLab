@@ -1,0 +1,15 @@
+<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">
+  <voice name="en-US-AriaNeural">
+    <prosody rate="-10%" pitch="-8%">
+      Calibration complete. <break time="350ms"/> Begin.
+      <break time="1000ms"/>
+      Select a correction module.
+      <break time="1000ms"/>
+      High-load validation initiated.
+      <break time="1000ms"/>
+      Subject lost. <break time="400ms"/> Equipment remains operational.
+      <break time="1000ms"/>
+      Validation complete. <break time="400ms"/> Further testing is recommended.
+    </prosody>
+  </voice>
+</speak>
