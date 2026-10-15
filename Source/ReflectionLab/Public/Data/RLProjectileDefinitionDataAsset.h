@@ -35,6 +35,11 @@ class REFLECTIONLAB_API URLProjectileDefinitionDataAsset : public UDataAsset
 public:
 	URLProjectileDefinitionDataAsset();
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Pool Return|Audio")
+	TObjectPtr<USoundBase> PoolReturnSound;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Pool Return|Audio", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float PoolReturnSoundVolume = 0.3f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile")
 	ERLProjectileBehavior Behavior = ERLProjectileBehavior::Normal;
 

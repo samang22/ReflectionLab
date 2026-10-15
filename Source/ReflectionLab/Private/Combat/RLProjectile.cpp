@@ -279,6 +279,7 @@ void ARLProjectile::ApplyDefinitionStats(
 	LifeSeconds = GlobalProjectileLifeSeconds;
 	VisualComponent->ApplyDefinitionSettings(Definition);
 	SpecialComponent->ApplyDefinitionSettings(Definition);
+	FeedbackComponent->ApplyDefinitionSettings(Definition);
 	RallyComponent->ApplyDefinitionSettings(Definition);
 
 	const float VisualScale = FMath::Max(0.1f, Definition.VisualScale);

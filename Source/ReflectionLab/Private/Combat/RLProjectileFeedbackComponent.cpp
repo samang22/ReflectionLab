@@ -1,6 +1,9 @@
 #include "Combat/RLProjectileFeedbackComponent.h"
 
 #include "Combat/RLExplosionVisual.h"
+#include "Data/RLProjectileDefinitionDataAsset.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -15,12 +18,25 @@ URLProjectileFeedbackComponent::URLProjectileFeedbackComponent()
 	ShardMesh = MeshFinder.Object;
 }
 
+void URLProjectileFeedbackComponent::ApplyDefinitionSettings(const URLProjectileDefinitionDataAsset& Definition)
+{
+	PoolReturnSound = Definition.PoolReturnSound;
+	PoolReturnSoundVolume = FMath::IsFinite(Definition.PoolReturnSoundVolume)
+		? FMath::Clamp(Definition.PoolReturnSoundVolume, 0.0f, 1.0f) : 0.0f;
+}
+
 void URLProjectileFeedbackComponent::PlayPoolReturnEffect(UStaticMeshComponent* Visual)
 {
 	if (bReturnFeedbackHandled) { return; }
 	bReturnFeedbackHandled = true;
 	UWorld* World = GetWorld();
-	if (!World || World->bIsTearingDown || !Visual || !Visual->GetStaticMesh() || !ShardMesh) { return; }
+	if (!World || World->bIsTearingDown) { return; }
+	if (PoolReturnSound && PoolReturnSoundVolume > 0.0f)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, PoolReturnSound, GetOwner()->GetActorLocation(),
+			PoolReturnSoundVolume, FMath::FRandRange(0.95f, 1.05f));
+	}
+	if (!Visual || !Visual->GetStaticMesh() || !ShardMesh) { return; }
 	UMaterialInterface* SourceMaterial = Visual->GetMaterial(0);
 	if (!SourceMaterial) { return; }
 	const FVector Center = Visual->GetComponentTransform().TransformPosition(Visual->GetStaticMesh()->GetBounds().Origin);
