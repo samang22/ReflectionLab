@@ -320,7 +320,7 @@ void URLRunStatusWidget::BuildWidgetTree()
 	RewardPromptText = WidgetTree->ConstructWidget<UTextBlock>(
 		UTextBlock::StaticClass(),
 		TEXT("RewardPromptText"));
-	RewardPromptText->SetText(FText::FromString(TEXT("CHOOSE ONE\nREFLECTION PROTOCOL")));
+	RewardPromptText->SetText(NSLOCTEXT("ReflectionLab", "CalibrationReward", "CALIBRATION COMPLETE\nSELECT ONE CORRECTION MODULE"));
 	RewardPromptText->SetJustification(ETextJustify::Center);
 	RewardPromptText->SetColorAndOpacity(FLinearColor(0.45f, 0.9f, 1.0f));
 	RewardPromptText->SetShadowOffset(FVector2D(3.0f, 3.0f));
@@ -506,10 +506,10 @@ void URLRunStatusWidget::RefreshDisplay()
 		RoundText->SetText(BoundGameMode->IsCurrentRoundTutorial()
 			? FText::FromString(TEXT("TUTORIAL"))
 			: BoundGameMode->IsEndlessRun()
-			? FText::FromString(FString::Printf(TEXT("ROUND %d"),
+			? FText::FromString(FString::Printf(TEXT("TEST %02d"),
 				FMath::Max(1, BoundGameMode->GetCurrentRoundNumber())))
 			: FText::FromString(FString::Printf(
-				TEXT("ROUND %d / %d"),
+				TEXT("TEST %02d / %02d"),
 				FMath::Max(1, BoundGameMode->GetCurrentRoundNumber()),
 				FMath::Max(1, RoundCount))));
 	}
@@ -707,7 +707,7 @@ void URLRunStatusWidget::UpdateResultsPanel()
 	{
 		ResultsText->SetText(FText::FromString(bConfirmingClearExit
 			? TEXT("EXIT GAME?\nYour current run will end.")
-			: TEXT("ALL 10 ROUNDS CLEARED!\nContinue with your upgrades in Endless Mode?")));
+			: TEXT("VALIDATION COMPLETE\nRepeatability requires further testing.\nContinue with your modules in Endless Mode?")));
 		if (RestartButtonLabel)
 		{
 			RestartButtonLabel->SetText(FText::FromString(bConfirmingClearExit
@@ -733,14 +733,16 @@ void URLRunStatusWidget::UpdateResultsPanel()
 	}
 	else
 	{
-		ResultsText->SetText(FText::FromString(BoundGameMode->IsEndlessRun()
-			? FString::Printf(TEXT("ROUNDS CLEARED  %d\nBEST COMBO  %d"),
+		const FString SessionStatus = RunState == ERLRunState::GameOver
+			? TEXT("SUBJECT LOST. EQUIPMENT NOMINAL.\n") : TEXT("SESSION RECORDED.\n");
+		ResultsText->SetText(FText::FromString(SessionStatus + (BoundGameMode->IsEndlessRun()
+			? FString::Printf(TEXT("TESTS PASSED  %d\nBEST COMBO  %d"),
 				BoundGameMode->GetRoundsCleared(), BoundGameMode->GetBestParryCombo())
 			: FString::Printf(
-			TEXT("ROUNDS  %d / %d\nBEST COMBO  %d"),
+			TEXT("TESTS  %d / %d\nBEST COMBO  %d"),
 			BoundGameMode->GetRoundsCleared(),
 			BoundGameMode->GetRoundCount(),
-			BoundGameMode->GetBestParryCombo())));
+			BoundGameMode->GetBestParryCombo()))));
 		if (RestartButtonLabel)
 		{
 			RestartButtonLabel->SetText(FText::FromString(TEXT("RETRY")));
@@ -944,7 +946,7 @@ void URLRunStatusWidget::UpdateStateText()
 	{
 	case ERLRunState::Waiting:
 		SetStateMessage(
-			FText::FromString(TEXT("READY")),
+			NSLOCTEXT("ReflectionLab", "CalibrationReady", "AWAITING SUBJECT"),
 			FLinearColor(1.0f, 0.75f, 0.15f),
 			48);
 		break;
@@ -963,9 +965,9 @@ void URLRunStatusWidget::UpdateStateText()
 		if (StartMessageRemaining > 0.0f)
 		{
 			SetStateMessage(
-				FText::FromString(TEXT("START")),
+				NSLOCTEXT("ReflectionLab", "CalibrationStart", "TEST ACTIVE"),
 				FLinearColor(0.1f, 1.0f, 0.45f),
-				72);
+				56);
 		}
 		else
 		{
@@ -981,7 +983,7 @@ void URLRunStatusWidget::UpdateStateText()
 			SetStateMessage(
 				FText::FromString(BoundGameMode->IsCurrentRoundTutorial()
 					? TEXT("TUTORIAL COMPLETE")
-					: TEXT("ROUND CLEAR")),
+					: TEXT("TEST PASSED")),
 				FLinearColor(0.1f, 0.9f, 1.0f),
 				72);
 		}
@@ -989,7 +991,7 @@ void URLRunStatusWidget::UpdateStateText()
 		{
 			SetStateMessage(
 				FText::FromString(FString::Printf(
-					TEXT("NEXT ROUND IN %d"),
+					TEXT("NEXT TEST IN %d"),
 					FMath::CeilToInt(BoundGameMode->GetIntermissionRemainingSeconds()))),
 				FLinearColor(1.0f, 0.75f, 0.15f),
 				48);
@@ -1002,21 +1004,21 @@ void URLRunStatusWidget::UpdateStateText()
 			64);
 		break;
 	case ERLRunState::CampaignCleared:
-		SetStateMessage(FText::FromString(TEXT("GAME CLEAR")),
+		SetStateMessage(NSLOCTEXT("ReflectionLab", "ValidationComplete", "VALIDATION COMPLETE"),
 			FLinearColor(0.1f, 0.9f, 1.0f), 64);
 		break;
 	case ERLRunState::RunCompleted:
 		SetStateMessage(
 			FText::FromString(
 				RoundClearMessageRemaining > 0.0f
-					? TEXT("ROUND CLEAR")
-					: TEXT("RUN COMPLETE")),
+					? TEXT("TEST PASSED")
+					: TEXT("SESSION COMPLETE")),
 			FLinearColor(0.1f, 0.9f, 1.0f),
 			RoundClearMessageRemaining > 0.0f ? 72 : 56);
 		break;
 	case ERLRunState::GameOver:
 		SetStateMessage(
-			FText::FromString(TEXT("FAILED")),
+			NSLOCTEXT("ReflectionLab", "SubjectLost", "SUBJECT LOST"),
 			FLinearColor(1.0f, 0.08f, 0.03f),
 			72);
 		break;
