@@ -849,7 +849,7 @@ void ARLGameModeBase::BeginWave(int32 WaveIndex)
 		for (int32 Attempt = 0; Attempt < ValidSpawners.Num(); ++Attempt)
 		{
 			const int32 SpawnerIndex = (EnemyIndex + Attempt) % ValidSpawners.Num();
-			if (Experiment && Experiment->Type == ERLArenaExperimentType::Crossfire)
+			if (Experiment && (Experiment->Type == ERLArenaExperimentType::Crossfire || Experiment->Type == ERLArenaExperimentType::MirrorArena))
 			{
 				FTransform ExperimentSpawn;
 				if (!ArenaExperiment->FindTeamSpawn(EnemyIndex, RequestedEnemyCount, ExperimentSpawn)) { continue; }
@@ -1331,7 +1331,7 @@ void ARLGameModeBase::CleanupRoundActors(const FRLRoundDefinition& RoundDefiniti
 	{
 		for (TActorIterator<ARLExpandingRingAttack> Iterator(GetWorld()); Iterator; ++Iterator)
 		{
-			if (Iterator->IsPoolActive()) { Iterator->ReturnToPool(); }
+			if (Iterator->IsPoolActive()) { Iterator->BeginFadeOut(); }
 		}
 		for (TActorIterator<ARLProjectile> Iterator(GetWorld()); Iterator; ++Iterator)
 		{

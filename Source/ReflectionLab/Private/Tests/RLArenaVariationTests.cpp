@@ -56,6 +56,15 @@ bool FRLArenaVariationTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Old side safe"), Variation->IsZoneDangerous(FVector(-500,0,0)));
 	Variation->ResetVariation();
 	TestFalse(TEXT("Cleanup disables hazard"), Variation->IsZoneDangerous(FVector(500,0,0)));
+	Data->ZoneHalfExtent = FVector2D(450,700); Data->ZoneCenterDistance = 750;
+	Data->PhaseDuration = 4.5f; Data->WarningDuration = 1.5f;
+	TestTrue(TEXT("Compact hazard configuration"), Variation->Configure(Data)); Variation->Advance(1.6f);
+	TestTrue(TEXT("Compact left hazard active"), Variation->IsZoneDangerous(FVector(-750,0,0)));
+	TestFalse(TEXT("Can escape along upper edge"), Variation->IsZoneDangerous(FVector(-750,800,0)));
+	TestFalse(TEXT("Can escape along outer edge"), Variation->IsZoneDangerous(FVector(-1300,0,0)));
+	Variation->Advance(4.5f);
+	TestTrue(TEXT("Faster configured swap activates right"), Variation->IsZoneDangerous(FVector(750,0,0)));
+	Variation->ResetVariation();
 	GEngine->DestroyWorldContext(World); World->DestroyWorld(false);
 	return true;
 }

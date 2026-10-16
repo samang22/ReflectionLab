@@ -1,5 +1,7 @@
 #include "Framework/RLArenaExperimentComponent.h"
 #include "Framework/RLArenaVariationComponent.h"
+#include "Framework/RLBallisticsExperimentComponent.h"
+#include "Framework/RLMirrorArenaComponent.h"
 #include "Framework/GameMode/RLGameModeBase.h"
 #include "Data/RLArenaExperimentDataAsset.h"
 #include "Enemies/RLEnemyCharacter.h"
@@ -16,6 +18,7 @@
 URLArenaExperimentComponent::URLArenaExperimentComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.TickGroup = TG_PostPhysics;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 }
 
@@ -23,6 +26,19 @@ void URLArenaExperimentComponent::Configure(URLArenaExperimentDataAsset* Data)
 {
 	ResetExperiment();
 	if (!Data) { return; }
+	if (Data->Type == ERLArenaExperimentType::MirrorArena)
+	{
+		if (!MirrorArena) { MirrorArena = NewObject<URLMirrorArenaComponent>(GetOwner()); MirrorArena->RegisterComponent(); }
+		if (MirrorArena->Configure(Data)) { Settings = Data; SetComponentTickEnabled(true); }
+		return;
+	}
+	if (Data->Type == ERLArenaExperimentType::AccelerationField || Data->Type == ERLArenaExperimentType::RefractionGate)
+	{
+		if (!Ballistics) { Ballistics = NewObject<URLBallisticsExperimentComponent>(GetOwner()); Ballistics->RegisterComponent(); }
+		if (Ballistics->Configure(Data)) { Settings = Data; SetComponentTickEnabled(true); }
+		else { UE_LOG(LogTemp, Error, TEXT("Invalid ballistics experiment: %s"), *GetNameSafe(Data)); }
+		return;
+	}
 	if (Data->Type != ERLArenaExperimentType::Crossfire)
 	{
 		if (!Variation) { Variation = NewObject<URLArenaVariationComponent>(GetOwner()); Variation->RegisterComponent(); }
@@ -76,6 +92,8 @@ void URLArenaExperimentComponent::Configure(URLArenaExperimentDataAsset* Data)
 
 void URLArenaExperimentComponent::ResetExperiment()
 {
+	if (MirrorArena) { MirrorArena->ResetArena(); }
+	if (Ballistics) { Ballistics->ResetExperiment(); }
 	if (Variation) { Variation->ResetVariation(); }
 	for (const auto& Entry : Enemies)
 	{
@@ -127,6 +145,8 @@ void URLArenaExperimentComponent::TickComponent(float DeltaTime, ELevelTick Tick
 void URLArenaExperimentComponent::AdvanceExperiment(float DeltaTime)
 {
 	if (!Settings) { return; }
+	if (Settings->Type == ERLArenaExperimentType::MirrorArena) { return; }
+	if (Settings->Type == ERLArenaExperimentType::AccelerationField || Settings->Type == ERLArenaExperimentType::RefractionGate) { Ballistics->Advance(); return; }
 	if (Settings->Type != ERLArenaExperimentType::Crossfire) { Variation->Advance(DeltaTime); return; }
 	Elapsed += FMath::Max(0.0f, DeltaTime);
 	const int32 Phase = static_cast<int32>(Elapsed / Settings->PhaseDuration);
@@ -140,7 +160,6 @@ void URLArenaExperimentComponent::AdvanceExperiment(float DeltaTime)
 		}
 	}
 	const float Time = PhaseTime();
-	const float MoveAlpha = FMath::Clamp((Time - Settings->WarningDuration) / Settings->ShutterMoveDuration, 0.0f, 1.0f);
 	for (int32 Index = 0; Index < Shutters.Num(); ++Index)
 	{
 		const bool bClose = (Index == 0) != Settings->IsLeftPhase(Elapsed);
@@ -150,11 +169,16 @@ void URLArenaExperimentComponent::AdvanceExperiment(float DeltaTime)
 		{
 			const float Target = bClose && !bSkipClosing[Index] ? Settings->ShutterSize.Z * 0.5f : -Settings->ShutterSize.Z * 0.5f;
 			FVector Position = Shutters[Index]->GetActorLocation();
-			Position.Z = bSkipClosing[Index] ? -Settings->ShutterSize.Z * 0.5f : FMath::Lerp(PhaseStartHeight[Index], Target, MoveAlpha);
+			// Never lift, drop or teleport a player standing over the panel footprint.
+			// Resume travel smoothly once the player leaves, including during opening.
+			const bool bOccupied = PlayerBlocksShutter(Index);
+			const float TravelDelta = FMath::Min(FMath::Max(0.0f, DeltaTime), Time - Settings->WarningDuration);
+			if (!bOccupied) { Position.Z = FMath::FInterpConstantTo(Position.Z, Target, TravelDelta, Settings->ShutterSize.Z / Settings->ShutterMoveDuration); }
 			Shutters[Index]->SetActorLocation(Position);
 			// Projectile spheres block WorldStatic but ignore WorldDynamic. Mobility
 			// remains Movable for animation; the closed panel uses the wall profile.
-			const FName Profile = bClose && !bSkipClosing[Index] && MoveAlpha >= 1 ? TEXT("BlockAll") : TEXT("NoCollision");
+			const bool bClosed = Position.Z >= Settings->ShutterSize.Z * 0.5f - 0.1f;
+			const FName Profile = bClosed ? TEXT("BlockAll") : TEXT("NoCollision");
 			if (Mesh->GetCollisionProfileName() != Profile) { Mesh->SetCollisionProfileName(Profile); }
 		}
 		if (Materials[Index])
@@ -168,6 +192,7 @@ void URLArenaExperimentComponent::AdvanceExperiment(float DeltaTime)
 bool URLArenaExperimentComponent::FindTeamSpawn(int32 Index, int32 Count, FTransform& OutTransform) const
 {
 	if (!Settings) { return false; }
+	if (Settings->Type == ERLArenaExperimentType::MirrorArena) { return MirrorArena->FindSpawn(Index,OutTransform); }
 	const int32 TeamCount = FMath::Max(1, (Count + 1) / 2);
 	const float Y = TeamCount > 1 ? FMath::Lerp(-Settings->TeamSpread, Settings->TeamSpread, static_cast<float>(Index / 2) / (TeamCount - 1)) : 0;
 	for (int32 Attempt = 0; Attempt < 20; ++Attempt)
@@ -186,6 +211,8 @@ bool URLArenaExperimentComponent::FindTeamSpawn(int32 Index, int32 Count, FTrans
 void URLArenaExperimentComponent::RegisterEnemy(ARLEnemyCharacter* Enemy, int32 Index)
 {
 	if (!Settings || !Enemy) { return; }
+	if (Settings->Type == ERLArenaExperimentType::MirrorArena) { MirrorArena->RegisterEnemy(Enemy); return; }
+	if (Settings->Type == ERLArenaExperimentType::AccelerationField || Settings->Type == ERLArenaExperimentType::RefractionGate) { return; }
 	if (Settings->Type != ERLArenaExperimentType::Crossfire) { Variation->RegisterEnemy(Enemy, Index); return; }
 	Enemies.Add({Enemy});
 	Enemy->SetTutorialMovementLocked(true);
@@ -196,6 +223,8 @@ void URLArenaExperimentComponent::RegisterEnemy(ARLEnemyCharacter* Enemy, int32 
 FText URLArenaExperimentComponent::GetStatusText() const
 {
 	if (!Settings) { return FText::GetEmpty(); }
+	if (Settings->Type == ERLArenaExperimentType::MirrorArena) { return MirrorArena->GetStatusText(); }
+	if (Settings->Type == ERLArenaExperimentType::AccelerationField || Settings->Type == ERLArenaExperimentType::RefractionGate) { return Ballistics->GetStatusText(); }
 	if (Settings->Type != ERLArenaExperimentType::Crossfire) { return Variation->GetStatusText(); }
 	const TCHAR* Cover = Settings->IsLeftPhase(Elapsed) ? TEXT("RIGHT COVER - LEFT LANE EXPOSED") : TEXT("LEFT COVER - RIGHT LANE EXPOSED");
 	return FText::FromString(FString::Printf(TEXT("%s\n%s"), *Settings->DisplayName.ToString(),

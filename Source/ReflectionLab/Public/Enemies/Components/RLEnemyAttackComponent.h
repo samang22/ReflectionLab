@@ -9,6 +9,7 @@
 class ARLProjectile;
 class ARLExpandingRingAttack;
 class USceneComponent;
+class ARLProjectileMirrorWall;
 struct FRLEnemyCombatRow;
 
 // Owns attack timing, pattern selection and spawning. The character keeps the
@@ -33,6 +34,8 @@ public:
 	void SetExperimentAttackAllowed(bool bAllowed, bool bResume = true);
 	bool IsExperimentAttackAllowed() const { return bExperimentAttackAllowed; }
 	void Fire();
+	void SetAimMirror(ARLProjectileMirrorWall* Mirror);
+	void PlayLaunchSound(const URLProjectileDefinitionDataAsset* Definition, const FVector& Location) const;
 	void SetTutorialCombatControlled(bool bControlled);
 	bool FireTutorialProjectile(URLProjectileDefinitionDataAsset* ProjectileDefinition);
 	ARLExpandingRingAttack* FireTutorialRingAttack();
@@ -44,6 +47,7 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	TWeakObjectPtr<ARLProjectileMirrorWall> AimMirror;
 	void CacheBaseCombatValues();
 	void BeginBurst();
 	void FireNextShot();

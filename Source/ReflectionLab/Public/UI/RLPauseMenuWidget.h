@@ -7,6 +7,7 @@
 class UButton;
 class UTextBlock;
 class UVerticalBox;
+class USizeBox;
 
 enum class ERLPauseConfirmation : uint8
 {
@@ -30,6 +31,9 @@ protected:
 	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 private:
+	void RefreshRewards();
+	UPROPERTY(Transient) TObjectPtr<UTextBlock> RewardsText;
+	UPROPERTY(Transient) TObjectPtr<USizeBox> RewardsPanel;
 	void BuildWidgetTree();
 	void ShowConfirmation(ERLPauseConfirmation Action);
 	UFUNCTION()

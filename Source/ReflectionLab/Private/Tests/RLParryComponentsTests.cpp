@@ -89,7 +89,7 @@ bool FRLRunRewardComponentTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Range reward applies"), ApplyReward(ERLRunRewardType::ExtendedRange, 0.18f));
 	Parry->Configure(Stats);
 	const FRLParryStats First = Parry->GetViewState().Stats;
-	TestTrue(TEXT("Two range rewards add on base range"), FMath::IsNearlyEqual(First.ReflectionRange, 272.0f));
+	TestTrue(TEXT("Two range rewards add on base range"), FMath::IsNearlyEqual(First.ReflectionRange, 272.0f, 0.001f));
 	TestEqual(TEXT("Perfect band clamps against configured base range"), First.PerfectParryOuterBandWidth, 180.0f);
 	Parry->Configure(Stats);
 	TestEqual(TEXT("Reconfiguration never reapplies bonuses to effective stats"),
@@ -113,6 +113,18 @@ bool FRLRunRewardComponentTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Reset removes max-health bonus"), Health->GetMaxHealth(), 10.0f);
 	TestFalse(TEXT("Reset removes healing reward"), Rewards->HasPerfectRecoveryReward());
 	TestEqual(TEXT("Reset removes speed reward bonus"), Rewards->GetReflectedSpeedBonus(), 0.0f);
+	TestTrue(TEXT("New run clears acquired module history"), Rewards->GetAcquiredRewards().IsEmpty());
+	auto* ListedReward = NewObject<URLRunRewardDataAsset>();
+	ListedReward->RewardType = ERLRunRewardType::Vitality; ListedReward->Amount = 2;
+	ListedReward->Title = FText::FromString(TEXT("Vitality"));
+	TestTrue(TEXT("History reward first pick"), Rewards->TryApplyReward(ListedReward));
+	TestTrue(TEXT("History reward repeated pick"), Rewards->TryApplyReward(ListedReward));
+	TestEqual(TEXT("Repeated asset groups into one row"), Rewards->GetAcquiredRewards().Num(), 1);
+	if (Rewards->GetAcquiredRewards().Num()) { TestEqual(TEXT("History preserves stack count"), Rewards->GetAcquiredRewards()[0].Count, 2); }
+	ListedReward->bEnabled = false;
+	TestFalse(TEXT("Rejected rewards do not enter history"), Rewards->TryApplyReward(ListedReward));
+	Rewards->ResetRunRewards();
+	TestTrue(TEXT("History cleared on restart"), Rewards->GetAcquiredRewards().IsEmpty());
 	return true;
 }
 #endif

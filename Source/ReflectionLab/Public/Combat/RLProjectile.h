@@ -17,6 +17,7 @@ class URLProjectileVisualComponent;
 class URLProjectileSpecialComponent;
 class URLProjectileRallyComponent;
 class URLProjectileContactComponent;
+class URLProjectileFieldResponseComponent;
 class URLProjectileDefinitionDataAsset;
 
 UCLASS()
@@ -25,6 +26,7 @@ class REFLECTIONLAB_API ARLProjectile : public AActor
 	GENERATED_BODY()
 
 public:
+	URLProjectileFieldResponseComponent* GetFieldResponse() const { return FieldResponse; }
 	ARLProjectile();
 	virtual void Tick(float DeltaTime) override;
 
@@ -212,6 +214,8 @@ protected:
 	void OnExploded(const FVector& ExplosionLocation, float BlastRadius);
 
 private:
+	UPROPERTY(VisibleAnywhere, Category="Projectile|Components")
+	TObjectPtr<URLProjectileFieldResponseComponent> FieldResponse;
 
 	void CompleteReturnToPool();
 	bool IsOutsidePlayArea() const;

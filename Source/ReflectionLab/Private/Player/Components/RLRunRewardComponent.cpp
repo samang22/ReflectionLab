@@ -39,13 +39,19 @@ void URLRunRewardComponent::ApplyRunReward(ERLRunRewardType RewardType)
 	case ERLRunRewardType::Vitality: Amount = 2.0f; break;
 	default: break;
 	}
-	if (ApplyRewardEffect(RewardType, Amount)) { OnRewardsChanged.Broadcast(); }
+	if (ApplyRewardEffect(RewardType, Amount))
+	{
+		RecordReward(FName(*FString::Printf(TEXT("Legacy_%d"), static_cast<int32>(RewardType))),
+			StaticEnum<ERLRunRewardType>()->GetDisplayNameTextByValue(static_cast<int64>(RewardType)), FText::GetEmpty());
+		OnRewardsChanged.Broadcast();
+	}
 }
 
 bool URLRunRewardComponent::TryApplyReward(const URLRunRewardDataAsset* Definition)
 {
 	if (!IsValid(Definition) || !Definition->bEnabled || !Definition->HasValidEffect()) { return false; }
 	if (!ApplyRewardEffect(Definition->RewardType, Definition->Amount)) { return false; }
+	RecordReward(FName(*Definition->GetPathName()), Definition->Title, Definition->Description);
 	OnRewardsChanged.Broadcast();
 	return true;
 }
@@ -90,8 +96,16 @@ bool URLRunRewardComponent::ApplyRewardEffect(ERLRunRewardType RewardType, float
 	return true;
 }
 
+void URLRunRewardComponent::RecordReward(FName Id, const FText& Title, const FText& Description)
+{
+	FRLAcquiredReward* Entry = AcquiredRewards.FindByPredicate([Id](const auto& Item) { return Item.Id == Id; });
+	if (!Entry) { Entry = &AcquiredRewards.AddDefaulted_GetRef(); Entry->Id = Id; Entry->Title = Title; Entry->Description = Description; }
+	Entry->Count = FMath::Min(Entry->Count, MAX_int32 - 1) + 1;
+}
+
 void URLRunRewardComponent::ResetRunRewards()
 {
+	AcquiredRewards.Reset();
 	if (!IsValid(HealthComponent)) { return; }
 	const float PreviousMaxHealthBonus = RunRewardMaxHealthBonus;
 	RunRewardRangeMultiplier = 1.0f;

@@ -52,6 +52,12 @@ bool FRLProjectileReflectionTest::RunTest(const FString& Parameters)
 	ARLEnemyCharacter* FarEnemy = World->SpawnActor<ARLEnemyCharacter>(
 		ARLEnemyCharacter::StaticClass(), FVector(0.0f, 600.0f, 100.0f), FRotator::ZeroRotator, Spawn);
 	ARLProjectile* Projectile = World->SpawnActor<ARLProjectile>();
+	// Native test actors do not inherit BP_RLProjectile's visual mesh. Pool-return
+	// VFX require that mesh, so reproduce the production actor's visual prerequisite.
+	if (Projectile)
+	{
+		Projectile->GetVisualMesh()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube")));
+	}
 	APlayerController* Controller = World->SpawnActor<APlayerController>();
 	if (TestNotNull(TEXT("Player"), Player) && TestNotNull(TEXT("Near enemy"), NearEnemy) &&
 		TestNotNull(TEXT("Far enemy"), FarEnemy) && TestNotNull(TEXT("Projectile"), Projectile) &&

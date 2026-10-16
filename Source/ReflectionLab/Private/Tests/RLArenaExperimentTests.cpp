@@ -112,6 +112,22 @@ bool FRLArenaExperimentTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Reset clears enemy attack gates"), LeftAttack->IsExperimentAttackAllowed() && RightAttack->IsExperimentAttackAllowed());
 	TestFalse(TEXT("Reset disables experiment"), Experiment->HasActiveExperiment());
 	TestFalse(TEXT("Reset removes barrier collision"), IsBlocked(-1400));
+	Player->SetActorLocation(FVector(1000,1200,96));
+	Experiment->Configure(Data); Experiment->AdvanceExperiment(1.5f);
+	Player->SetActorLocation(FVector(500,0,276));
+	Experiment->AdvanceExperiment(6.0f);
+	for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+	{
+		if (It->GetActorLocation().X > 0 && It->GetActorScale3D().Z > 1)
+		{ TestTrue(TEXT("Opening waits while player stands on closed wall"), It->GetActorLocation().Z > 0); }
+	}
+	Player->SetActorLocation(FVector(1000,1200,96)); Experiment->AdvanceExperiment(0.5f);
+	for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+	{
+		if (It->GetActorLocation().X > 0 && It->GetActorScale3D().Z > 1)
+		{ TestTrue(TEXT("Opening resumes after player leaves wall"), It->GetActorLocation().Z < 0); }
+	}
+	Experiment->ResetExperiment();
 	World->DestroyWorld(false); GEngine->DestroyWorldContext(World);
 	return true;
 }

@@ -6,6 +6,7 @@
 
 class UStaticMeshComponent;
 class UMaterialInstanceDynamic;
+class ARLEnemyCharacter;
 
 UCLASS(ClassGroup = (ReflectionLab), meta = (BlueprintSpawnableComponent))
 class REFLECTIONLAB_API URLEnemyShieldComponent : public UActorComponent
@@ -18,8 +19,14 @@ public:
 	void SetEmitter(bool bEnabled);
 	bool IsEmitterActive() const;
 	bool TryAbsorbReflectedProjectile();
+	void SetSupportSource(ARLEnemyCharacter* Source, const FLinearColor& Color = FLinearColor(0.65f,0.15f,1));
+	bool IsSupportProtected() const;
 
 private:
+	TWeakObjectPtr<ARLEnemyCharacter> SupportSource;
+	uint64 SupportSourceSerial = 0;
+	FLinearColor PersonalColor = FLinearColor::White;
+	FLinearColor SupportColor = FLinearColor(0.65f,0.15f,1);
 	void UpdateVisual();
 
 	UPROPERTY(Transient)

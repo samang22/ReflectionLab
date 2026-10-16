@@ -10,6 +10,10 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Framework/PlayerController/RLPlayerController.h"
 #include "InputCoreTypes.h"
+#include "Components/ScrollBox.h"
+#include "Components/SizeBox.h"
+#include "Player/Components/RLRunRewardComponent.h"
+#include "GameFramework/Pawn.h"
 
 #define LOCTEXT_NAMESPACE "ReflectionLabPause"
 
@@ -24,6 +28,24 @@ void URLPauseMenuWidget::ShowMenu(bool bCanReturnToMainMenu)
 {
 	if (MainMenuButton) { MainMenuButton->SetIsEnabled(bCanReturnToMainMenu); }
 	CancelConfirmation();
+	RefreshRewards();
+}
+
+void URLPauseMenuWidget::RefreshRewards()
+{
+	if (!RewardsText) { return; }
+	const APawn* Pawn = GetOwningPlayerPawn();
+	const auto* Rewards = Pawn ? Pawn->FindComponentByClass<URLRunRewardComponent>() : nullptr;
+	FString Text = TEXT("ACQUIRED MODULES\n\n");
+	if (!Rewards || Rewards->GetAcquiredRewards().IsEmpty()) { Text += TEXT("No modules acquired yet."); }
+	else
+	{
+		for (const auto& Entry : Rewards->GetAcquiredRewards())
+		{
+			Text += FString::Printf(TEXT("%s  x%d\n%s\n\n"), *Entry.Title.ToString(), Entry.Count, *Entry.Description.ToString());
+		}
+	}
+	RewardsText->SetText(FText::FromString(Text));
 }
 
 void URLPauseMenuWidget::CancelConfirmation()
@@ -33,12 +55,14 @@ void URLPauseMenuWidget::CancelConfirmation()
 	if (BodyText) { BodyText->SetText(LOCTEXT("ResumeHint", "Press ESC to resume.")); }
 	if (MenuButtons) { MenuButtons->SetVisibility(ESlateVisibility::Visible); }
 	if (ConfirmationButtons) { ConfirmationButtons->SetVisibility(ESlateVisibility::Collapsed); }
+	if (RewardsPanel) { RewardsPanel->SetVisibility(ESlateVisibility::Visible); }
 	if (ResumeButton && IsInViewport()) { ResumeButton->SetKeyboardFocus(); }
 }
 
 void URLPauseMenuWidget::ShowConfirmation(ERLPauseConfirmation Action)
 {
 	Confirmation = Action;
+	if (RewardsPanel) { RewardsPanel->SetVisibility(ESlateVisibility::Collapsed); }
 	if (TitleText)
 	{
 		TitleText->SetText(Action == ERLPauseConfirmation::RestartRun
@@ -124,7 +148,7 @@ void URLPauseMenuWidget::BuildWidgetTree()
 	UCanvasPanelSlot* PanelSlot = Root->AddChildToCanvas(Panel);
 	PanelSlot->SetAnchors(FAnchors(0.5f, 0.5f));
 	PanelSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-	PanelSlot->SetSize(FVector2D(560.0f, 440.0f));
+	PanelSlot->SetSize(FVector2D(700.0f, 640.0f));
 	UVerticalBox* Content = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("Content"));
 	Panel->SetContent(Content);
 
@@ -142,9 +166,18 @@ void URLPauseMenuWidget::BuildWidgetTree()
 	BodyFont.Size = 18;
 	BodyText->SetFont(BodyFont);
 	UVerticalBoxSlot* BodySlot = Content->AddChildToVerticalBox(BodyText);
-	BodySlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	BodySlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
 	BodySlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 20.0f));
 
+	RewardsPanel = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("RewardsPanel"));
+	RewardsPanel->SetHeightOverride(230);
+	UScrollBox* RewardsScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("RewardsScroll"));
+	RewardsPanel->SetContent(RewardsScroll);
+	RewardsText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("RewardsText"));
+	RewardsText->SetAutoWrapText(true);
+	FSlateFontInfo RewardFont = RewardsText->GetFont(); RewardFont.Size = 17; RewardsText->SetFont(RewardFont);
+	RewardsScroll->AddChild(RewardsText);
+	Content->AddChildToVerticalBox(RewardsPanel)->SetPadding(FMargin(0,0,0,14));
 	MenuButtons = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("MenuButtons"));
 	Content->AddChildToVerticalBox(MenuButtons);
 	ConfirmationButtons = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ConfirmationButtons"));

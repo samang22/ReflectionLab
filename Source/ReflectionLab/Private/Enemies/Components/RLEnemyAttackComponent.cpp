@@ -2,7 +2,10 @@
 
 #include "Combat/RLExpandingRingAttack.h"
 #include "Combat/RLRingAttackPoolSubsystem.h"
+#include "Sound/SoundBase.h"
 #include "Combat/RLProjectile.h"
+#include "Combat/RLProjectileMirrorWall.h"
+#include "Components/SphereComponent.h"
 #include "Combat/RLProjectilePoolSubsystem.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
@@ -44,6 +47,7 @@ void URLEnemyAttackComponent::Configure(const FRLEnemyCombatRow& Config,
 
 void URLEnemyAttackComponent::ActivateForPool()
 {
+	AimMirror.Reset();
 	SupportAttackRate = 1.0f;
 	StopFiring();
 	bExperimentAttackAllowed = true;
@@ -56,6 +60,7 @@ void URLEnemyAttackComponent::ActivateForPool()
 
 void URLEnemyAttackComponent::DeactivateForPool()
 {
+	AimMirror.Reset();
 	SupportAttackRate = 1.0f;
 	StopFiring();
 	bExperimentAttackAllowed = true;
@@ -422,14 +427,22 @@ bool URLEnemyAttackComponent::SpawnProjectile(
 		}
 	}
 	const FVector SpawnLocation = MuzzlePoint->GetComponentLocation();
+	FVector AimTarget = TargetPawn->GetActorLocation();
+	if (AimMirror.IsValid())
+	{
+		const float Radius = ProjectileClass->GetDefaultObject<ARLProjectile>()->GetCollisionSphere()->GetUnscaledSphereRadius()
+			* FMath::Max(0.1f, ProjectileDefinition->VisualScale);
+		AimTarget = AimMirror->GetMirroredTarget(AimTarget, Radius);
+	}
 	const bool bSocketMuzzle = MuzzlePoint->GetAttachSocketName() == FName(TEXT("muzzle"));
 	FVector ShotDirection = bSocketMuzzle
 		? MuzzlePoint->GetForwardVector().GetSafeNormal2D()
-		: (TargetPawn->GetActorLocation() - SpawnLocation).GetSafeNormal();
+		: (AimTarget - SpawnLocation).GetSafeNormal();
+	if (AimMirror.IsValid()) { ShotDirection = (AimTarget - SpawnLocation).GetSafeNormal2D(); }
 	if (ShotDirection.IsNearlyZero()) { ShotDirection = Enemy->GetActorForwardVector().GetSafeNormal2D(); }
 	const FRotator SpawnRotation = ShotDirection.Rotation();
 	// Socket-mounted guns fire from the barrel, not synthetic cross offsets.
-	if (bSocketMuzzle) { ShotPattern = ERLShotPattern::Single; }
+	if (bSocketMuzzle || AimMirror.IsValid()) { ShotPattern = ERLShotPattern::Single; }
 	auto SpawnConfiguredProjectile = [
 		this,
 		Enemy,
@@ -442,6 +455,7 @@ bool URLEnemyAttackComponent::SpawnProjectile(
 		if (Projectile)
 		{
 			Projectile->InitializeFromDefinition(ProjectileDefinition, TargetPawn);
+			PlayLaunchSound(ProjectileDefinition, SpawnTransform.GetLocation());
 		}
 		return Projectile != nullptr;
 	};
@@ -474,6 +488,24 @@ bool URLEnemyAttackComponent::SpawnProjectile(
 		OnShotSpawned.ExecuteIfBound();
 	}
 	return bSpawned;
+}
+
+void URLEnemyAttackComponent::SetAimMirror(ARLProjectileMirrorWall* Mirror)
+{
+	AimMirror = Mirror;
+}
+
+void URLEnemyAttackComponent::PlayLaunchSound(const URLProjectileDefinitionDataAsset* Definition, const FVector& Location) const
+{
+	if (!Definition || !Definition->LaunchSound || !FMath::IsFinite(Definition->LaunchSoundVolume)) { return; }
+	const float Volume = FMath::Clamp(Definition->LaunchSoundVolume, 0.0f, 1.0f);
+	if (Volume > 0)
+	{
+		const float Pitch = FMath::IsFinite(Definition->LaunchSoundPitch) ? FMath::Clamp(Definition->LaunchSoundPitch, 0.5f, 2.0f) : 1.4f;
+		// Attribute concurrency to the shooter so other enemies cannot silence a robot's shot.
+		UGameplayStatics::PlaySoundAtLocation(this, Definition->LaunchSound, Location, FRotator::ZeroRotator, Volume,
+			Pitch * FMath::FRandRange(0.95f, 1.05f), 0.0f, nullptr, nullptr, GetOwner());
+	}
 }
 
 void URLEnemyAttackComponent::SetTutorialCombatControlled(bool bControlled)

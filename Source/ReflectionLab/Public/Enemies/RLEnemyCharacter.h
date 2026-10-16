@@ -29,6 +29,7 @@ class REFLECTIONLAB_API ARLEnemyCharacter : public ACharacter
 	GENERATED_BODY()
 
 public:
+	uint64 GetPoolActivationSerial() const { return PoolActivationSerial; }
 	ARLEnemyCharacter();
 
 	virtual float TakeDamage(
@@ -155,6 +156,7 @@ protected:
 	TObjectPtr<URLEnemySpawnVisualComponent> SpawnVisualComponent;
 
 private:
+	uint64 PoolActivationSerial = 0;
 	friend class URLEnemyPoolSubsystem;
 
 	void ConfigureEnemyComponents();

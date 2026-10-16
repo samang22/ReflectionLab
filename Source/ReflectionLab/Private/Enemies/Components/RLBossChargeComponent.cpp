@@ -159,6 +159,7 @@ void URLBossChargeComponent::FireCounterShots()
 			FTransform(Direction.Rotation(), Socket.GetLocation()), Enemy, Enemy))
 		{
 			Projectile->InitializeFromDefinition(Settings->ProjectileDefinition, nullptr);
+			if (auto* Attack = GetOwner()->FindComponentByClass<URLEnemyAttackComponent>()) { Attack->PlayLaunchSound(Settings->ProjectileDefinition, Projectile->GetActorLocation()); }
 			bSpawned = true;
 		}
 	}

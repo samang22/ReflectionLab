@@ -7,6 +7,8 @@ class ARLEnemyCharacter;
 class AStaticMeshActor;
 class UMaterialInstanceDynamic;
 class URLArenaVariationComponent;
+class URLBallisticsExperimentComponent;
+class URLMirrorArenaComponent;
 
 UCLASS(ClassGroup=(ReflectionLab), meta=(BlueprintSpawnableComponent))
 class REFLECTIONLAB_API URLArenaExperimentComponent : public UActorComponent
@@ -26,6 +28,8 @@ public:
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 private:
+	UPROPERTY(Transient) TObjectPtr<URLMirrorArenaComponent> MirrorArena;
+	UPROPERTY(Transient) TObjectPtr<URLBallisticsExperimentComponent> Ballistics;
 	UPROPERTY(Transient) TObjectPtr<URLArenaVariationComponent> Variation;
 	struct FEnemyEntry { TWeakObjectPtr<ARLEnemyCharacter> Enemy; };
 	TArray<FEnemyEntry> Enemies;

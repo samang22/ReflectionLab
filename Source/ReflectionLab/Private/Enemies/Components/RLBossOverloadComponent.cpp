@@ -161,6 +161,7 @@ void URLBossOverloadComponent::FireSpinningShot()
 		FTransform(Direction.Rotation(), SocketTransform.GetLocation()), Enemy, Enemy))
 	{
 		Projectile->InitializeFromDefinition(Settings->ProjectileDefinition, nullptr);
+		if (auto* Attack = GetOwner()->FindComponentByClass<URLEnemyAttackComponent>()) { Attack->PlayLaunchSound(Settings->ProjectileDefinition, Projectile->GetActorLocation()); }
 		if (auto* Attack = GetOwner()->FindComponentByClass<URLEnemyAttackComponent>()) { Attack->OnShotSpawned.ExecuteIfBound(); }
 	}
 }

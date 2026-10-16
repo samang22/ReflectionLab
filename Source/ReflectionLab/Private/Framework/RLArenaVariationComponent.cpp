@@ -5,6 +5,7 @@
 #include "Data/RLRobotMinionDataAsset.h"
 #include "Enemies/Components/RLEnemyAttackComponent.h"
 #include "Enemies/Components/RLBossLaserComponent.h"
+#include "Enemies/Components/RLEnemyShieldComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/StaticMesh.h"
@@ -39,16 +40,17 @@ bool URLArenaVariationComponent::Configure(URLArenaExperimentDataAsset* Data)
 		!FMath::IsFinite(Data->ArenaHalfExtent) || Data->ArenaHalfExtent <= 100 ||
 		!FMath::IsFinite(Data->ZoneDamageInterval) || Data->ZoneDamageInterval < 0.1f ||
 		!FMath::IsFinite(Data->ZoneDamage) || Data->ZoneDamage < 0 ||
+		Data->ZoneHalfExtent.ContainsNaN() || Data->ZoneHalfExtent.GetMin() <= 0 ||
+		!FMath::IsFinite(Data->ZoneCenterDistance) || Data->ZoneCenterDistance < 0 ||
 		(Data->Type == ERLArenaExperimentType::SupportNetwork && !Data->SupportEnemyClass)) { return false; }
 	Settings = Data;
 	if (Data->Type == ERLArenaExperimentType::AlternatingZones)
 	{
 		// Thin floor plates, not blocking volumes. Leave a safe central crossing lane.
-		const float Half = Data->ArenaHalfExtent;
 		for (int32 Index = 0; Index < 2; ++Index)
 		{
-			if (!MakeVisual(FVector((Index ? 1 : -1) * (Half + 100) * 0.5f, 0, 1),
-				FVector((Half - 100) / 100, Half / 50, 0.01f))) { ResetVariation(); return false; }
+			if (!MakeVisual(FVector((Index ? 1 : -1) * Data->ZoneCenterDistance, 0, 1),
+				FVector(Data->ZoneHalfExtent.X / 50, Data->ZoneHalfExtent.Y / 50, 0.01f))) { ResetVariation(); return false; }
 		}
 	}
 	Advance(0);
@@ -62,6 +64,7 @@ void URLArenaVariationComponent::RegisterEnemy(ARLEnemyCharacter* Enemy, int32 I
 	if (Settings->Type == ERLArenaExperimentType::SupportNetwork && Index == 0)
 	{
 		Support = Enemy;
+		SupportSerial = Enemy->GetPoolActivationSerial();
 		if (const auto* Robot = Cast<ARLRobotMinionCharacter>(Enemy); Robot && Robot->Settings)
 		{
 			FRLWaveDefinition BasicWave;
@@ -82,15 +85,19 @@ void URLArenaVariationComponent::RegisterEnemy(ARLEnemyCharacter* Enemy, int32 I
 	{
 		MakeVisual(Enemy->GetActorLocation(), FVector(1, 0.025f, 0.025f));
 	}
+	if (Settings->Type == ERLArenaExperimentType::SupportNetwork)
+	{
+		if (auto* Shield = Enemy->FindComponentByClass<URLEnemyShieldComponent>())
+		{ Shield->SetSupportSource(Settings->bSupportGrantsInvulnerability && Enemy != Support.Get() ? Support.Get() : nullptr, Settings->SupportShieldColor); }
+	}
 }
 
 bool URLArenaVariationComponent::IsZoneDangerous(const FVector& Position) const
 {
 	return Settings && Settings->Type == ERLArenaExperimentType::AlternatingZones &&
 		FMath::Fmod(Elapsed, Settings->PhaseDuration) >= Settings->WarningDuration &&
-		FMath::Abs(Position.X) > 100 && FMath::Abs(Position.X) <= Settings->ArenaHalfExtent &&
-		FMath::Abs(Position.Y) <= Settings->ArenaHalfExtent &&
-		((Position.X < 0) == Settings->IsLeftPhase(Elapsed));
+		FMath::Abs(Position.X - (Settings->IsLeftPhase(Elapsed) ? -1 : 1) * Settings->ZoneCenterDistance) < Settings->ZoneHalfExtent.X &&
+		FMath::Abs(Position.Y) < Settings->ZoneHalfExtent.Y;
 }
 
 void URLArenaVariationComponent::Advance(float DeltaTime)
@@ -99,7 +106,7 @@ void URLArenaVariationComponent::Advance(float DeltaTime)
 	Elapsed += DeltaTime;
 	if (Settings->Type == ERLArenaExperimentType::SupportNetwork)
 	{
-		const bool bSupportAlive = Support.IsValid() && Support->IsPoolActive();
+		const bool bSupportAlive = Support.IsValid() && Support->IsPoolActive() && Support->GetPoolActivationSerial() == SupportSerial;
 		for (int32 Index = 0; Index < Enemies.Num(); ++Index)
 		{
 			ARLEnemyCharacter* Enemy = Enemies[Index].Get();
@@ -108,7 +115,10 @@ void URLArenaVariationComponent::Advance(float DeltaTime)
 			const bool bLinked = bSupportAlive && Enemy != Support.Get() &&
 				FVector::DistSquared2D(Enemy->GetActorLocation(), Support->GetActorLocation()) <= FMath::Square(Settings->SupportRadius);
 			Enemy->FindComponentByClass<URLEnemyAttackComponent>()->SetSupportAttackRate(bLinked ? Settings->SupportAttackRate : 1);
-			if (bLinked && Visuals.IsValidIndex(Index))
+			if (auto* Shield = Enemy->FindComponentByClass<URLEnemyShieldComponent>())
+			{ Shield->SetSupportSource(Settings->bSupportGrantsInvulnerability && bSupportAlive && Enemy != Support.Get() ? Support.Get() : nullptr, Settings->SupportShieldColor); }
+			const bool bProtected = Settings->bSupportGrantsInvulnerability && bSupportAlive && Enemy != Support.Get();
+			if ((bLinked || bProtected) && Visuals.IsValidIndex(Index))
 			{
 				FVector From = Support->GetActorLocation(); From.Z = 60;
 				FVector To = Enemy->GetActorLocation(); To.Z = 60;
@@ -116,6 +126,8 @@ void URLArenaVariationComponent::Advance(float DeltaTime)
 				Visuals[Index]->SetActorLocation((From + To) * 0.5f);
 				Visuals[Index]->SetActorRotation((To - From).Rotation());
 				Visuals[Index]->SetActorScale3D(FVector((To - From).Size() / 100, 0.025f, 0.025f));
+				if (auto* Material = Cast<UMaterialInstanceDynamic>(Visuals[Index]->GetStaticMeshComponent()->GetMaterial(0)))
+				{ Material->SetVectorParameterValue(TEXT("SurfaceColor"), bProtected ? Settings->SupportShieldColor : FLinearColor(0.05f,0.65f,0.7f)); }
 			}
 		}
 		if (Visuals.Num())
@@ -147,13 +159,17 @@ void URLArenaVariationComponent::Advance(float DeltaTime)
 
 void URLArenaVariationComponent::ResetVariation()
 {
-	if (Support.IsValid())
+	if (Support.IsValid() && Support->GetPoolActivationSerial() == SupportSerial)
 	{
 		if (auto* Laser = Support->FindComponentByClass<URLBossLaserComponent>()) { Laser->SetComponentTickEnabled(bSupportLaserTickEnabled); }
 	}
 	for (const auto& Entry : Enemies)
 	{
-		if (auto* Enemy = Entry.Get()) { Enemy->FindComponentByClass<URLEnemyAttackComponent>()->SetSupportAttackRate(1); }
+		if (auto* Enemy = Entry.Get())
+		{
+			Enemy->FindComponentByClass<URLEnemyAttackComponent>()->SetSupportAttackRate(1);
+			Enemy->FindComponentByClass<URLEnemyShieldComponent>()->SetSupportSource(nullptr);
+		}
 	}
 	for (AStaticMeshActor* Actor : Visuals) { if (IsValid(Actor)) { Actor->Destroy(); } }
 	Visuals.Empty(); Enemies.Empty(); Support.Reset(); Settings = nullptr;
@@ -166,7 +182,7 @@ FText URLArenaVariationComponent::GetStatusText() const
 	const TCHAR* Hint = TEXT("SUPPORT OFFLINE");
 	if (Settings->Type == ERLArenaExperimentType::SupportNetwork)
 	{
-		if (Support.IsValid() && Support->IsPoolActive()) { Hint = TEXT("CYAN MARKER: SUPPORT LINK ACTIVE"); }
+		if (Support.IsValid() && Support->IsPoolActive()) { Hint = Settings->bSupportGrantsInvulnerability ? TEXT("DESTROY CYAN SUPPORT TO REMOVE PURPLE SHIELDS") : TEXT("CYAN MARKER: SUPPORT LINK ACTIVE"); }
 	}
 	else { Hint = FMath::Fmod(Elapsed, Settings->PhaseDuration) < Settings->WarningDuration ? TEXT("AMBER ZONE: RELOCATE BEFORE ACTIVATION") : TEXT("RED ZONE ACTIVE - CENTER LANE SAFE"); }
 	return FText::FromString(Settings->DisplayName.ToString() + TEXT("\n") + Hint);

@@ -1,4 +1,6 @@
 #include "Combat/RLProjectile.h"
+#include "Combat/RLProjectileFieldResponseComponent.h"
+#include "Combat/RLProjectileMirrorWall.h"
 
 #include "Combat/RLProjectilePoolSubsystem.h"
 #include "Combat/RLProjectileFeedbackComponent.h"
@@ -23,6 +25,7 @@ namespace
 
 ARLProjectile::ARLProjectile()
 {
+	FieldResponse = CreateDefaultSubobject<URLProjectileFieldResponseComponent>(TEXT("FieldResponse"));
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 
@@ -166,6 +169,7 @@ void ARLProjectile::ActivateProjectile(
 	bIsReflected = false;
 	bIsFadingOut = false;
 	bCanBeReflected = true;
+	FieldResponse->ResetForActivation(SpawnTransform.GetLocation());
 	SpecialComponent->ResetRuntimeState();
 	RallyComponent->ResetRuntimeState(ProjectileSpeed);
 	VisualComponent->ResetRuntimeState();
@@ -204,6 +208,7 @@ void ARLProjectile::ActivateProjectile(
 
 	ProjectileMovement->StopMovementImmediately();
 	ProjectileMovement->SetUpdatedComponent(CollisionComponent);
+	ProjectileMovement->bShouldBounce = false;
 	ProjectileMovement->InitialSpeed = ProjectileSpeed;
 	ProjectileMovement->MaxSpeed = ProjectileSpeed;
 	ProjectileMovement->Activate(true);
@@ -331,8 +336,9 @@ bool ARLProjectile::Reflect(
 	}
 
 	const FVector ReflectedDirection = NewDirection.GetSafeNormal();
+	FieldResponse->ResetForActivation(GetActorLocation());
 	const float ReflectedSpeed = SpecialComponent->CalculateReturnSpeed(
-		ReflectionParams.SpeedMultiplier, ReflectedSpeedMultiplier);
+		ReflectionParams.SpeedMultiplier, ReflectedSpeedMultiplier) * FieldResponse->GetSpeedMultiplier();
 	SetActorRotation(ReflectedDirection.Rotation());
 	ProjectileMovement->StopMovementImmediately();
 	ProjectileMovement->InitialSpeed = ReflectedSpeed;
@@ -514,7 +520,7 @@ void ARLProjectile::SetProjectileSpeed(float NewSpeed, const FVector& Direction)
 		return;
 	}
 
-	const float SafeSpeed = FMath::Max(1.0f, NewSpeed);
+	const float SafeSpeed = FMath::Max(1.0f, NewSpeed) * FieldResponse->GetSpeedMultiplier();
 	SetActorRotation(SafeDirection.Rotation());
 	ProjectileMovement->InitialSpeed = SafeSpeed;
 	ProjectileMovement->MaxSpeed = SafeSpeed;
@@ -542,6 +548,20 @@ void ARLProjectile::HandleProjectileHit(
 	FVector NormalImpulse,
 	const FHitResult& Hit)
 {
+	if (const auto* Mirror = Cast<ARLProjectileMirrorWall>(OtherActor))
+	{
+		if (!FieldResponse->TryConsumeMirrorBounce(Mirror->GetBounceLimit()))
+		{
+			ProjectileMovement->bShouldBounce = false;
+			ReturnToPool();
+			return;
+		}
+		// SafeMove emits this hit before ProjectileMovement handles its remaining
+		// substep. Let the engine reflect and sweep the rest, preserving ownership.
+		Mirror->ConfigureBounce(ProjectileMovement);
+		return;
+	}
+	ProjectileMovement->bShouldBounce = false;
 	ContactComponent->ResolveProjectileContact(OtherActor);
 }
 

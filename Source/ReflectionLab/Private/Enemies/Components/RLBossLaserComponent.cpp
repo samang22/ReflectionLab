@@ -3,6 +3,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/DecalComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/AudioComponent.h"
+#include "Sound/SoundBase.h"
 #include "Data/RLBossLaserDataAsset.h"
 #include "Enemies/RLEnemyCharacter.h"
 #include "Enemies/Components/RLBossOverloadComponent.h"
@@ -49,6 +51,14 @@ void URLBossLaserComponent::BeginPreparation()
 	bAimLocked = false;
 	UpdateVisualOpacity(1.0f);
 	Remaining = FMath::Max(0.1f, Settings->PreparationDuration);
+	StopLaserAudio();
+	if (Settings->ChargeSound)
+	{
+		const float Pitch = FMath::Clamp(Settings->ChargeSound->GetDuration() / Remaining, 0.25f, 4.0f);
+		ChargeAudio = UGameplayStatics::SpawnSoundAttached(Settings->ChargeSound, Mesh, TEXT("laser"),
+			FVector::ZeroVector, EAttachLocation::SnapToTarget, true,
+			FMath::Clamp(Settings->ChargeVolume, 0.0f, 1.0f), Pitch);
+	}
 	UE_LOG(LogTemp, Verbose, TEXT("Laser %s preparing for %.2fs."), *GetNameSafe(GetOwner()), Remaining);
 	if (auto* Attack = GetOwner()->FindComponentByClass<URLEnemyAttackComponent>()) { Attack->StopFiring(); }
 	if (auto* Movement = GetOwner()->FindComponentByClass<URLEnemyMovementComponent>())
@@ -95,6 +105,13 @@ void URLBossLaserComponent::BeginFiring()
 	if (!PlayerPawn) { Cancel(true); return; }
 	if (auto* Movement = GetOwner()->FindComponentByClass<URLEnemyMovementComponent>()) { Movement->SetFacingLocked(true); }
 	Phase = EPhase::Firing;
+	if (IsValid(ChargeAudio)) { ChargeAudio->Stop(); ChargeAudio = nullptr; }
+	if (Settings->FireSound)
+	{
+		FireAudio = UGameplayStatics::SpawnSoundAttached(Settings->FireSound, Mesh, TEXT("laser"),
+			FVector::ZeroVector, EAttachLocation::SnapToTarget, true,
+			FMath::Clamp(Settings->FireVolume, 0.0f, 1.0f));
+	}
 	Remaining = FMath::Max(0.1f, Settings->FiringDuration);
 	UE_LOG(LogTemp, Verbose, TEXT("Laser %s firing after preparation."), *GetNameSafe(GetOwner()));
 	DamageDelay = 0.0f;
@@ -208,6 +225,7 @@ bool URLBossLaserComponent::HasActivePeerLaser() const
 
 void URLBossLaserComponent::Cancel(bool bResumeCombat)
 {
+	StopLaserAudio();
 	const bool bWasActive = Phase != EPhase::Waiting;
 	Phase = EPhase::Waiting;
 	bAimLocked = false;
@@ -227,6 +245,14 @@ void URLBossLaserComponent::Cancel(bool bResumeCombat)
 	{
 		if (auto* Attack = GetOwner()->FindComponentByClass<URLEnemyAttackComponent>()) { Attack->StartFiring(); }
 	}
+}
+
+void URLBossLaserComponent::StopLaserAudio()
+{
+	if (IsValid(ChargeAudio)) { ChargeAudio->Stop(); }
+	if (IsValid(FireAudio)) { FireAudio->Stop(); }
+	ChargeAudio = nullptr;
+	FireAudio = nullptr;
 }
 
 void URLBossLaserComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)

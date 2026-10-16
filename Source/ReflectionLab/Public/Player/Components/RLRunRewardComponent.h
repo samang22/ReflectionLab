@@ -9,6 +9,16 @@
 class URLHealthComponent;
 class URLRunRewardDataAsset;
 
+USTRUCT()
+struct FRLAcquiredReward
+{
+	GENERATED_BODY()
+	UPROPERTY() FName Id;
+	UPROPERTY() FText Title;
+	UPROPERTY() FText Description;
+	UPROPERTY() int32 Count = 0;
+};
+
 DECLARE_MULTICAST_DELEGATE(FRLRunRewardsChangedSignature);
 
 UCLASS(ClassGroup = (ReflectionLab), meta = (BlueprintSpawnableComponent))
@@ -32,9 +42,12 @@ public:
 	float GetMaxHealthBonus() const { return RunRewardMaxHealthBonus; }
 	float GetReflectedSpeedBonus() const { return RunRewardReflectedSpeedBonus; }
 	bool HasPerfectRecoveryReward() const { return RunRewardPerfectRecoveryAmount > 0; }
+	const TArray<FRLAcquiredReward>& GetAcquiredRewards() const { return AcquiredRewards; }
 	FRLRunRewardsChangedSignature OnRewardsChanged;
 
 private:
+	void RecordReward(FName Id, const FText& Title, const FText& Description);
+	UPROPERTY(Transient) TArray<FRLAcquiredReward> AcquiredRewards;
 	bool ApplyRewardEffect(ERLRunRewardType RewardType, float Amount);
 	UPROPERTY(Transient)
 	TObjectPtr<URLHealthComponent> HealthComponent;

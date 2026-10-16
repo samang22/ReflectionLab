@@ -166,6 +166,7 @@ float ARLEnemyCharacter::TakeDamage(float DamageAmount, const FDamageEvent& Dama
 	if (IsSpawning()) { return RejectDamage(TEXT("SpawningEnemy")); }
 	if (bTutorialInvulnerable) { return RejectDamage(TEXT("TutorialInvulnerability")); }
 	if (HealthComponent->IsDead()) { return RejectDamage(TEXT("DeadEnemy")); }
+	if (ShieldComponent->IsSupportProtected()) { return RejectDamage(TEXT("SupportProtection")); }
 	if (!FMath::IsFinite(DamageAmount) || DamageAmount <= 0.0f) { return RejectDamage(TEXT("InvalidDamage")); }
 	if (Projectile && Projectile->IsReflected() && TryAbsorbReflectedProjectile()) { return RejectDamage(TEXT("Shield")); }
 
@@ -281,6 +282,7 @@ void ARLEnemyCharacter::ReturnToPool()
 
 void ARLEnemyCharacter::ActivateFromPool(const FTransform& SpawnTransform)
 {
+	++PoolActivationSerial;
 	if (auto* Burn = FindComponentByClass<URLPaperBurnComponent>()) { Burn->Cancel(); }
 	if (auto* Summon = FindComponentByClass<URLBossSummonComponent>()) { Summon->Reset(); }
 	if (auto* Charge = FindComponentByClass<URLBossChargeComponent>()) { Charge->Cancel(); }
@@ -297,6 +299,7 @@ void ARLEnemyCharacter::ActivateFromPool(const FTransform& SpawnTransform)
 	bTutorialInvulnerable = false;
 	HealthComponent->InitializeHealth(HealthComponent->GetMaxHealth());
 	ShieldComponent->SetEmitter(false);
+	ShieldComponent->SetSupportSource(nullptr);
 	SetActorHiddenInGame(false);
 	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
 	{
@@ -342,6 +345,7 @@ void ARLEnemyCharacter::HandleSpawnFinished()
 
 void ARLEnemyCharacter::DeactivateForPool()
 {
+	ShieldComponent->SetSupportSource(nullptr);
 	if (auto* Burn = FindComponentByClass<URLPaperBurnComponent>()) { Burn->Cancel(); }
 	if (auto* Summon = FindComponentByClass<URLBossSummonComponent>()) { Summon->Reset(); }
 	if (auto* Charge = FindComponentByClass<URLBossChargeComponent>()) { Charge->Cancel(); }

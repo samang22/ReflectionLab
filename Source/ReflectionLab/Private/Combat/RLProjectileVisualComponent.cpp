@@ -1,4 +1,5 @@
 #include "Combat/RLProjectileVisualComponent.h"
+#include "Combat/RLProjectileFieldResponseComponent.h"
 
 #include "Combat/RLProjectile.h"
 #include "Data/RLProjectileDefinitionDataAsset.h"
@@ -170,6 +171,12 @@ void URLProjectileVisualComponent::UpdateProjectileMaterial()
 	if (Projectile->GetSpecialComponent()->GetVisualStyle(SpecialColor, SpecialEmissive, SpecialOpacity))
 	{
 		ApplySpecialColor(SpecialColor, SpecialEmissive, SpecialOpacity);
+	}
+	else if (Projectile->GetFieldResponse()->GetSpeedMultiplier() > 1.0f)
+	{
+		// Keep special bullet type colors; ordinary accelerated shots and their
+		// afterimages use amber (hostile) or cyan (returned) to signal the speed change.
+		ApplySpecialColor(Projectile->IsReflected() ? FLinearColor(0.1f,0.8f,1.0f) : FLinearColor(1.0f,0.35f,0.02f), 12.0f);
 	}
 
 	for (UStaticMeshComponent* AfterimageMesh : ReflectedAfterimageMeshes)

@@ -23,6 +23,7 @@ private:
 	UPROPERTY(Transient) TArray<TObjectPtr<AStaticMeshActor>> Visuals;
 	TArray<TWeakObjectPtr<ARLEnemyCharacter>> Enemies;
 	TWeakObjectPtr<ARLEnemyCharacter> Support;
+	uint64 SupportSerial = 0;
 	float Elapsed = 0;
 	float DamageCooldown = 0;
 	bool bSupportLaserTickEnabled = false;

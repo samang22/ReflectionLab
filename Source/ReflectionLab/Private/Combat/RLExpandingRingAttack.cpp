@@ -141,7 +141,14 @@ void ARLExpandingRingAttack::Tick(float DeltaSeconds)
 	}
 	const float PreviousRadius = CurrentRadius;
 	CurrentRadius += ActiveSettings.ExpansionSpeed * DeltaTime;
-	if (CurrentRadius >= WallStopRadius) { ReturnToPool(); return; }
+	if (CurrentRadius >= WallStopRadius)
+	{
+		// Stop at the boundary, then dissolve instead of popping out of the pool.
+		CurrentRadius = WallStopRadius;
+		UpdateVisual();
+		BeginFadeOut();
+		return;
+	}
 	UpdateVisual();
 	CheckPlayerHit(PreviousRadius);
 }

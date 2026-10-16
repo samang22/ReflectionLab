@@ -7,6 +7,7 @@ class USkeletalMeshComponent;
 class UStaticMeshComponent;
 class UDecalComponent;
 class UMaterialInstanceDynamic;
+class UAudioComponent;
 
 UCLASS(ClassGroup=(ReflectionLab), meta=(BlueprintSpawnableComponent))
 class REFLECTIONLAB_API URLBossLaserComponent : public UActorComponent
@@ -35,6 +36,9 @@ private:
 	void UpdatePreparationPreview();
 	void UpdateDecalProgress(float Progress);
 	bool HasActivePeerLaser() const;
+	void StopLaserAudio();
+	UPROPERTY(Transient) TObjectPtr<UAudioComponent> ChargeAudio;
+	UPROPERTY(Transient) TObjectPtr<UAudioComponent> FireAudio;
 	UPROPERTY(Transient) TObjectPtr<USkeletalMeshComponent> Mesh;
 	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> Beam;
 	UPROPERTY(Transient) TObjectPtr<UDecalComponent> Decal;

@@ -33,6 +33,12 @@ class REFLECTIONLAB_API URLProjectileDefinitionDataAsset : public UDataAsset
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Launch|Audio")
+	TObjectPtr<USoundBase> LaunchSound;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Launch|Audio", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float LaunchSoundVolume = 0.18f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Launch|Audio", meta = (ClampMin = "0.5", ClampMax = "2.0"))
+	float LaunchSoundPitch = 1.4f;
 	URLProjectileDefinitionDataAsset();
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Pool Return|Audio")

@@ -3,6 +3,8 @@
 #include "Combat/RLExpandingRingAttack.h"
 #include "Combat/RLRingAttackPoolSubsystem.h"
 #include "Components/BoxComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
@@ -42,6 +44,7 @@ bool FRLRingWallPoolTest::RunTest(const FString& Parameters)
 	URLRingAttackDataAsset* Data = NewObject<URLRingAttackDataAsset>();
 	Data->Settings.StartRadius = 50;
 	Data->Settings.ExpansionSpeed = 1000;
+	Data->Settings.FadeOutDuration = 0.4f;
 	URLRingAttackPoolSubsystem* Pool = World->GetSubsystem<URLRingAttackPoolSubsystem>();
 	ARLExpandingRingAttack* Ring = Pool->AcquireRing(FTransform::Identity, nullptr, nullptr, Data, false);
 	if (TestNotNull(TEXT("Ring"), Ring))
@@ -51,12 +54,22 @@ bool FRLRingWallPoolTest::RunTest(const FString& Parameters)
 		Ring->Tick(0.1f);
 		TestTrue(TEXT("Before wall remains active"), Ring->IsPoolActive());
 		Ring->Tick(0.2f);
-		TestFalse(TEXT("Fast expansion across wall returns to pool"), Ring->IsPoolActive());
+		TestTrue(TEXT("Wall contact keeps ring visible until fade completes"), Ring->IsPoolActive() && !Ring->IsHidden());
+		Ring->Tick(0.2f);
+		auto* Visual = Ring->FindComponentByClass<UInstancedStaticMeshComponent>();
+		auto* Material = Cast<UMaterialInstanceDynamic>(Visual->GetMaterial(0));
+		if (TestNotNull(TEXT("Fade material"), Material))
+		{
+			TestEqual(TEXT("Halfway fade opacity"), Material->K2_GetScalarParameterValue(TEXT("FadeOpacity")), 0.5f);
+		}
+		Ring->Tick(0.21f);
+		TestFalse(TEXT("Wall fade completes before pool return"), Ring->IsPoolActive());
 		TestTrue(TEXT("Returned ring hidden"), Ring->IsHidden());
 		TestFalse(TEXT("Returned ring stops ticking"), Ring->IsActorTickEnabled());
 		Wall->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		ARLExpandingRingAttack* Reused = Pool->AcquireRing(FTransform::Identity, nullptr, nullptr, Data, true);
 		TestEqual(TEXT("Same ring reused"), Reused, Ring);
+		if (Material) { TestEqual(TEXT("Reuse restores opacity"), Material->K2_GetScalarParameterValue(TEXT("FadeOpacity")), 1.0f); }
 		Ring->Tick(1.0f);
 		TestTrue(TEXT("Ground does not count as a wall"), Ring->IsPoolActive());
 		Ring->BeginFadeOut();
