@@ -24,6 +24,12 @@ URLArenaExperimentComponent::URLArenaExperimentComponent()
 
 void URLArenaExperimentComponent::Configure(URLArenaExperimentDataAsset* Data)
 {
+	// Waves share one mirror arena for the whole round. Rebuilding it here
+	// restores the player camera before zooming out again on every wave.
+	if (Data && Settings == Data && Data->Type == ERLArenaExperimentType::MirrorArena)
+	{
+		return;
+	}
 	ResetExperiment();
 	if (!Data) { return; }
 	if (Data->Type == ERLArenaExperimentType::MirrorArena)

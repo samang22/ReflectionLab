@@ -47,12 +47,20 @@ public:
 	float MirrorDistance = 1600;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Experiment|Mirror", meta=(ClampMin="100"))
 	float MirrorHalfWidth = 1800;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Experiment|Mirror", meta=(ClampMin="400", ClampMax="1200"))
+	float DiagonalMirrorHalfLength = 650;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Experiment|Mirror")
+	FVector2D DiagonalMirrorCenter = FVector2D(950, 800);
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Experiment|Mirror|Camera", meta=(ClampMin="2000", ClampMax="6000"))
+	float MirrorCameraArmLength = 4300;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Experiment|Mirror", meta=(ClampMin="100"))
 	float LaneHalfWidth = 550;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Experiment|Mirror", meta=(ClampMin="100"))
 	float LaneHalfLength = 300;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Experiment|Mirror", meta=(ClampMin="10",ClampMax="100"))
 	float LaneBarrierVisualHeight = 45;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Experiment|Mirror", meta=(ClampMin="20",ClampMax="200"))
+	float ShotBarrierVisualHeight = 100;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Experiment|Mirror", meta=(ClampMin="1",ClampMax="8"))
 	int32 MaxMirrorBounces = 4;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Experiment|Zones", meta=(ClampMin="100"))

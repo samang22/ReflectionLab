@@ -62,7 +62,11 @@ bool FRLMirrorAndSupportTest::RunTest(const FString& Parameters)
 	for (TActorIterator<AStaticMeshActor> It(World);It;++It)
 	{
 		auto* Visual=It->GetStaticMeshComponent();
-		TestTrue(TEXT("Lane barrier visual no taller than configured height"),Visual->Bounds.GetBox().Max.Z <= Data->LaneBarrierVisualHeight+0.1f);
+		const auto* Collision=Cast<UPrimitiveComponent>(It->GetRootComponent());
+		const bool bShotBlocker=Collision && Collision->GetCollisionObjectType()==ECC_WorldStatic;
+		const float ExpectedHeight=bShotBlocker ? FMath::Max(Data->ShotBarrierVisualHeight,Data->LaneBarrierVisualHeight+5.0f) : Data->LaneBarrierVisualHeight;
+		TestTrue(TEXT("Barrier visual matches its role-specific height"),FMath::IsNearlyEqual(Visual->Bounds.GetBox().Max.Z,ExpectedHeight,0.1f));
+		if (bShotBlocker) { TestTrue(TEXT("Bullet cover sits above movement rails"),Visual->Bounds.GetBox().Max.Z>Data->LaneBarrierVisualHeight); }
 	}
 	ARLProjectileMirrorWall* Mirror=nullptr;
 	ARLProjectileMirrorWall* BottomMirror=nullptr;
@@ -70,8 +74,8 @@ bool FRLMirrorAndSupportTest::RunTest(const FString& Parameters)
 	for(TActorIterator<ARLProjectileMirrorWall> It(World);It;++It)
 	{
 		++MirrorCount;
-		if(It->GetActorLocation().Y>1000) { Mirror=*It; }
-		if(It->GetActorLocation().Y<-1000) { BottomMirror=*It; }
+		if(It->GetActorLocation().X>0 && It->GetActorLocation().Y>0) { Mirror=*It; }
+		if(It->GetActorLocation().X>0 && It->GetActorLocation().Y<0) { BottomMirror=*It; }
 	}
 	TestEqual(TEXT("Four reflector walls created"),MirrorCount,4);
 	if(TestNotNull(TEXT("Reflecting wall"),Mirror))
@@ -81,11 +85,13 @@ bool FRLMirrorAndSupportTest::RunTest(const FString& Parameters)
 		auto* Shot=Shots->AcquireProjectile(ARLProjectile::StaticClass(),FTransform((Mirror->GetMirroredTarget(FVector(0,0,80),16)-FVector(1100,0,80)).Rotation(),FVector(1100,0,80)),Owner,nullptr);
 		Shot->InitializeFromDefinition(Definition,nullptr);
 		auto* Movement=Shot->FindComponentByClass<UProjectileMovementComponent>();
-		for(int32 Step=0;Step<19;++Step) { Movement->TickComponent(0.1f,LEVELTICK_All,nullptr); }
+		const int32 RouteSteps=FMath::RoundToInt(FVector::Dist2D(Mirror->GetMirroredTarget(FVector(0,0,80),16),FVector(1100,0,80))/100);
+		for(int32 Step=0;Step<RouteSteps-5;++Step) { Movement->TickComponent(0.1f,LEVELTICK_All,nullptr); }
+		AddInfo(FString::Printf(TEXT("Diagonal shot steps=%d location=%s velocity=%s"),RouteSteps,*Shot->GetActorLocation().ToString(),*Movement->Velocity.ToString()));
 		TestTrue(TEXT("Hostile shot survives real mirror collision"),Shot->IsPoolActive()&&!Shot->IsFadingOut());
 		TestTrue(TEXT("Engine bounce turns velocity back into arena"),Movement->Velocity.Y<0);
 		TestFalse(TEXT("Wall bounce does not mark a hostile as player-reflected"),Shot->IsReflected());
-		for(int32 Step=0;Step<14;++Step) { Movement->TickComponent(0.1f,LEVELTICK_All,nullptr); }
+		for(int32 Step=0;Step<5;++Step) { Movement->TickComponent(0.1f,LEVELTICK_All,nullptr); }
 		TestTrue(TEXT("Mirrored enemy aim reaches player lane"),Shot->GetActorLocation().Size2D()<100);
 		Shots->ReleaseProjectile(Shot);
 		if (TestNotNull(TEXT("Additional bottom mirror"),BottomMirror))
@@ -93,11 +99,11 @@ bool FRLMirrorAndSupportTest::RunTest(const FString& Parameters)
 			Shot=Shots->AcquireProjectile(ARLProjectile::StaticClass(),FTransform((BottomMirror->GetMirroredTarget(FVector(0,0,80),16)-FVector(1100,0,80)).Rotation(),FVector(1100,0,80)),Owner,nullptr);
 			Shot->InitializeFromDefinition(Definition,nullptr);
 			Movement=Shot->FindComponentByClass<UProjectileMovementComponent>();
-			for(int32 Step=0;Step<33;++Step) { Movement->TickComponent(0.1f,LEVELTICK_All,nullptr); }
+			for(int32 Step=0;Step<RouteSteps;++Step) { Movement->TickComponent(0.1f,LEVELTICK_All,nullptr); }
 			TestTrue(TEXT("Additional bottom route reaches central lane"),Shot->IsPoolActive()&&!Shot->IsFadingOut()&&Shot->GetActorLocation().Size2D()<100);
 			Shots->ReleaseProjectile(Shot);
 		}
-		Shot=Shots->AcquireProjectile(ARLProjectile::StaticClass(),FTransform(FRotator(0,90,0),FVector(0,0,80)),Owner,nullptr);
+		Shot=Shots->AcquireProjectile(ARLProjectile::StaticClass(),FTransform(FRotator(0,45,0),FVector(0,0,80)),Owner,nullptr);
 		Shot->InitializeFromDefinition(Definition,nullptr);
 		Movement=Shot->FindComponentByClass<UProjectileMovementComponent>();
 		for(int32 Step=0;Step<180 && !Shot->IsFadingOut();++Step) { Movement->TickComponent(0.1f,LEVELTICK_All,nullptr); }
@@ -112,7 +118,7 @@ bool FRLMirrorAndSupportTest::RunTest(const FString& Parameters)
 		const FVector EnemyLocation(1100,0,80);
 		TestTrue(TEXT("Player can send a return via mirror"),Shot->Reflect(Reflector,Reflector,(Mirror->GetMirroredTarget(EnemyLocation,Shot->GetDefaultCollisionRadius())-Shot->GetActorLocation()).GetSafeNormal(),Params));
 		Movement=Shot->FindComponentByClass<UProjectileMovementComponent>();
-		for(int32 Step=0;Step<33;++Step) { Movement->TickComponent(0.1f,LEVELTICK_All,nullptr); }
+		for(int32 Step=0;Step<RouteSteps;++Step) { Movement->TickComponent(0.1f,LEVELTICK_All,nullptr); }
 		TestTrue(TEXT("Return arrives in side pocket after a real bounce"),FVector::Dist2D(Shot->GetActorLocation(),EnemyLocation)<120);
 		TestTrue(TEXT("Return ownership preserved"),Shot->IsReflected()&&Shot->GetOwner()==Reflector);
 		TestTrue(TEXT("Mirror return deals real enemy damage"),Victim->FindComponentByClass<URLHealthComponent>()->GetCurrentHealth()<4);
