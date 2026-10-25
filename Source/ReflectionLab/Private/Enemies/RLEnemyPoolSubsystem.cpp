@@ -2,6 +2,7 @@
 
 #include "Enemies/RLEnemyCharacter.h"
 #include "Engine/World.h"
+#include "Framework/RLPoolDiagnosticsSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 
 void URLEnemyPoolSubsystem::PrewarmPool(
@@ -48,6 +49,7 @@ ARLEnemyCharacter* URLEnemyPoolSubsystem::AcquireEnemy(
 		Enemy = Pool.InactiveEnemies.Pop(EAllowShrinking::No);
 	}
 
+	const bool bReused = IsValid(Enemy);
 	if (!Enemy)
 	{
 		Enemy = SpawnEnemy(EnemyClass);
@@ -55,6 +57,7 @@ ARLEnemyCharacter* URLEnemyPoolSubsystem::AcquireEnemy(
 
 	if (Enemy)
 	{
+		URLPoolDiagnosticsSubsystem::Acquired(Enemy,TEXT("Enemy"),bReused);
 		Enemy->ActivateFromPool(SpawnTransform);
 	}
 
@@ -69,6 +72,7 @@ void URLEnemyPoolSubsystem::ReleaseEnemy(ARLEnemyCharacter* Enemy)
 	}
 
 	Enemy->DeactivateForPool();
+	URLPoolDiagnosticsSubsystem::Released(Enemy,TEXT("Enemy"));
 	EnemyPools.FindOrAdd(Enemy->GetClass()).InactiveEnemies.AddUnique(Enemy);
 }
 
@@ -96,5 +100,6 @@ ARLEnemyCharacter* URLEnemyPoolSubsystem::SpawnEnemy(
 	Enemy->bIsPoolActive = false;
 	UGameplayStatics::FinishSpawningActor(Enemy, InactiveTransform);
 	Enemy->DeactivateForPool();
+	URLPoolDiagnosticsSubsystem::Created(Enemy,TEXT("Enemy"));
 	return Enemy;
 }

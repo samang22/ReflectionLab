@@ -2,6 +2,7 @@
 
 #include "Combat/RLProjectile.h"
 #include "Engine/World.h"
+#include "Framework/RLPoolDiagnosticsSubsystem.h"
 
 void URLProjectilePoolSubsystem::PrewarmPool(
 	TSubclassOf<ARLProjectile> ProjectileClass,
@@ -50,6 +51,7 @@ ARLProjectile* URLProjectilePoolSubsystem::AcquireProjectile(
 		Projectile = Pool.InactiveProjectiles.Pop(EAllowShrinking::No);
 	}
 
+	const bool bReused = IsValid(Projectile);
 	if (!Projectile)
 	{
 		Projectile = SpawnProjectile(ProjectileClass);
@@ -57,6 +59,7 @@ ARLProjectile* URLProjectilePoolSubsystem::AcquireProjectile(
 
 	if (Projectile)
 	{
+		URLPoolDiagnosticsSubsystem::Acquired(Projectile,TEXT("Projectile"),bReused);
 		Projectile->ActivateProjectile(SpawnTransform, NewOwner, NewInstigator);
 	}
 
@@ -71,6 +74,7 @@ void URLProjectilePoolSubsystem::ReleaseProjectile(ARLProjectile* Projectile)
 	}
 
 	Projectile->DeactivateForPool();
+	URLPoolDiagnosticsSubsystem::Released(Projectile,TEXT("Projectile"));
 	ProjectilePools.FindOrAdd(Projectile->GetClass()).InactiveProjectiles.AddUnique(Projectile);
 }
 
@@ -95,6 +99,7 @@ ARLProjectile* URLProjectilePoolSubsystem::SpawnProjectile(
 	if (Projectile)
 	{
 		Projectile->DeactivateForPool();
+		URLPoolDiagnosticsSubsystem::Created(Projectile,TEXT("Projectile"));
 	}
 
 	return Projectile;

@@ -4,6 +4,7 @@
 #include "Engine/World.h"
 #include "Materials/MaterialInterface.h"
 #include "Player/RLRollAfterimage.h"
+#include "Framework/RLPoolDiagnosticsSubsystem.h"
 
 void URLRollAfterimagePoolSubsystem::RemoveInvalidEntries()
 {
@@ -44,6 +45,7 @@ ARLRollAfterimage* URLRollAfterimagePoolSubsystem::AcquireAfterimage(
 		return nullptr;
 	}
 	RemoveInvalidEntries();
+	const bool bReused = !InactiveAfterimages.IsEmpty();
 	ARLRollAfterimage* Image = InactiveAfterimages.IsEmpty()
 		? SpawnAfterimage() : InactiveAfterimages.Pop(EAllowShrinking::No).Get();
 	if (!Image) { return nullptr; }
@@ -53,6 +55,7 @@ ARLRollAfterimage* URLRollAfterimagePoolSubsystem::AcquireAfterimage(
 		InactiveAfterimages.AddUnique(Image);
 		return nullptr;
 	}
+	URLPoolDiagnosticsSubsystem::Acquired(Image,TEXT("RollAfterimage"),bReused);
 	return Image;
 }
 
@@ -64,6 +67,7 @@ void URLRollAfterimagePoolSubsystem::ReleaseAfterimage(ARLRollAfterimage* Afteri
 		return;
 	}
 	Afterimage->DeactivateForPool();
+	URLPoolDiagnosticsSubsystem::Released(Afterimage,TEXT("RollAfterimage"));
 	InactiveAfterimages.AddUnique(Afterimage);
 }
 
@@ -80,6 +84,7 @@ ARLRollAfterimage* URLRollAfterimagePoolSubsystem::SpawnAfterimage()
 	{
 		Image->DeactivateForPool();
 		AllAfterimages.Add(Image);
+		URLPoolDiagnosticsSubsystem::Created(Image,TEXT("RollAfterimage"));
 	}
 	return Image;
 }
