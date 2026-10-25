@@ -1,4 +1,6 @@
 #include "Combat/RLExplosionVisual.h"
+#include "Combat/RLProjectileEffectPoolSubsystem.h"
+#include "Engine/World.h"
 
 #include "Components/DecalComponent.h"
 #include "Components/SceneComponent.h"
@@ -74,6 +76,43 @@ void ARLExplosionVisual::ConfigureProjectileDissolve()
 	ShardArcHeight = 12.0f;
 }
 
+bool ARLExplosionVisual::ActivatePooledProjectileEffect(UStaticMesh* Mesh, UMaterialInterface* SourceMaterial)
+{
+	if (!Mesh || !SourceMaterial) { return false; }
+	// Recreate only when the base material changes; copy parameters from this shot on every acquisition.
+	if (!PooledShardMaterial || PooledShardMaterial->GetMaterial() != SourceMaterial->GetMaterial())
+	{
+		PooledShardMaterial = UMaterialInstanceDynamic::Create(SourceMaterial->GetMaterial(), this);
+	}
+	if (!PooledShardMaterial) { return false; }
+	PooledShardMaterial->ClearParameterValues();
+	PooledShardMaterial->CopyMaterialUniformParameters(SourceMaterial);
+	PooledShardMaterial->SetScalarParameterValue(TEXT("Opacity"), 1.0f);
+	PooledShardMaterial->SetScalarParameterValue(TEXT("FadeOpacity"), 1.0f);
+	PooledShardMaterial->SetScalarParameterValue(TEXT("EmissiveIntensity"), 18.0f);
+	bPooledProjectileEffect = true;
+	ConfigureProjectileDissolve();
+	SetActorHiddenInGame(false);
+	SetActorEnableCollision(false);
+	SetActorTickEnabled(true);
+	Initialize(Mesh, PooledShardMaterial, FVector(0.22f, 0.07f, 0.07f), 50.0f, FLinearColor::White, false);
+	return true;
+}
+
+void ARLExplosionVisual::DeactivateForPool()
+{
+	bInitialized = false;
+	ElapsedTime = 0.0f;
+	SetActorTickEnabled(false);
+	SetActorHiddenInGame(true);
+	SetOwner(nullptr);
+	SetInstigator(nullptr);
+	for (UStaticMeshComponent* Shard : ShardMeshes)
+	{
+		if (Shard) { Shard->SetVisibility(false, true); }
+	}
+}
+
 void ARLExplosionVisual::Initialize(
 	UStaticMesh* ShardMesh,
 	UMaterialInterface* ShardMaterial,
@@ -98,6 +137,7 @@ void ARLExplosionVisual::Initialize(
 			continue;
 		}
 		ExplosionDecal->SetVisibility(bShowGroundDecal, true);
+		if (!bShowGroundDecal) { continue; }
 
 		const float DecalRadius = CachedBlastRadius * DecalRadiusMultiplier;
 		ExplosionDecal->DecalSize = FVector(96.0f, DecalRadius, DecalRadius);
@@ -118,7 +158,10 @@ void ARLExplosionVisual::Initialize(
 		}
 	}
 
-	ShardMeshes.Reset();
+	for (UStaticMeshComponent* Shard : ShardMeshes)
+	{
+		if (Shard) { Shard->SetVisibility(false, true); }
+	}
 	ShardDirections.Reset();
 	if (ShardMesh && ShardMaterial)
 	{
@@ -143,15 +186,25 @@ void ARLExplosionVisual::Initialize(
 					TEXT("ExplosionShard_%d_%d"),
 					RayIndex,
 					SegmentIndex));
-				UStaticMeshComponent* ShardComponent = NewObject<UStaticMeshComponent>(
-					this,
-					ComponentName);
+				const int32 MeshIndex = RayIndex * SegmentCount + SegmentIndex;
+				UStaticMeshComponent* ShardComponent = ShardMeshes.IsValidIndex(MeshIndex)
+					? ShardMeshes[MeshIndex].Get() : nullptr;
+				if (!ShardComponent)
+				{
+					ShardComponent = NewObject<UStaticMeshComponent>(this, ComponentName);
+					if (ShardComponent)
+					{
+						ShardComponent->SetupAttachment(SceneRoot);
+						ShardComponent->RegisterComponent();
+						if (ShardMeshes.IsValidIndex(MeshIndex)) { ShardMeshes[MeshIndex] = ShardComponent; }
+						else { ShardMeshes.Add(ShardComponent); }
+					}
+				}
 				if (!ShardComponent)
 				{
 					continue;
 				}
 
-				ShardComponent->SetupAttachment(SceneRoot);
 				ShardComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 				ShardComponent->SetCanEverAffectNavigation(false);
 				ShardComponent->SetCastShadow(false);
@@ -161,8 +214,6 @@ void ARLExplosionVisual::Initialize(
 				ShardComponent->SetStaticMesh(ShardMesh);
 				ShardComponent->SetMaterial(0, ShardMaterial);
 				ShardComponent->SetVisibility(false, true);
-				ShardComponent->RegisterComponent();
-				ShardMeshes.Add(ShardComponent);
 			}
 		}
 	}
@@ -255,6 +306,11 @@ void ARLExplosionVisual::Tick(float DeltaTime)
 
 	if (EffectAlpha >= 1.0f)
 	{
-		Destroy();
+		if (bPooledProjectileEffect)
+		{
+			if (auto* Pool = GetWorld()->GetSubsystem<URLProjectileEffectPoolSubsystem>()) { Pool->ReleaseEffect(this); }
+			else { Destroy(); }
+		}
+		else { Destroy(); }
 	}
 }

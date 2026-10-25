@@ -1,6 +1,7 @@
 #include "Combat/RLProjectileFeedbackComponent.h"
 
 #include "Combat/RLExplosionVisual.h"
+#include "Combat/RLProjectileEffectPoolSubsystem.h"
 #include "Data/RLProjectileDefinitionDataAsset.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
@@ -40,18 +41,7 @@ void URLProjectileFeedbackComponent::PlayPoolReturnEffect(UStaticMeshComponent* 
 	UMaterialInterface* SourceMaterial = Visual->GetMaterial(0);
 	if (!SourceMaterial) { return; }
 	const FVector Center = Visual->GetComponentTransform().TransformPosition(Visual->GetStaticMesh()->GetBounds().Origin);
-	FActorSpawnParameters Parameters;
-	Parameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	ARLExplosionVisual* Effect = World->SpawnActor<ARLExplosionVisual>(
-		ARLExplosionVisual::StaticClass(), Center - FVector(0.0f, 0.0f, 18.0f), FRotator::ZeroRotator, Parameters);
-	if (!Effect) { return; }
-	UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(SourceMaterial->GetMaterial(), Effect);
-	if (!Material) { Effect->Destroy(); return; }
-	Material->CopyMaterialUniformParameters(SourceMaterial);
-	Material->SetScalarParameterValue(TEXT("Opacity"), 1.0f);
-	Material->SetScalarParameterValue(TEXT("FadeOpacity"), 1.0f);
-	Material->SetScalarParameterValue(TEXT("EmissiveIntensity"), 18.0f);
-	Effect->ConfigureProjectileDissolve();
-	Effect->Initialize(ShardMesh, Material, FVector(0.22f, 0.07f, 0.07f), 50.0f, FLinearColor::White, false);
+	auto* Pool = World->GetSubsystem<URLProjectileEffectPoolSubsystem>();
+	if (!Pool || !Pool->PlayEffect(Center - FVector(0.0f, 0.0f, 18.0f), ShardMesh, SourceMaterial)) { return; }
 	UE_LOG(LogTemp, Display, TEXT("[ProjectilePoolReturnEffect] %s at %s"), *GetNameSafe(GetOwner()), *Center.ToCompactString());
 }

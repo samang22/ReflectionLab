@@ -21,6 +21,8 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 	void ConfigureProjectileDissolve();
+	bool ActivatePooledProjectileEffect(UStaticMesh* Mesh, UMaterialInterface* SourceMaterial);
+	void DeactivateForPool();
 
 	void Initialize(
 		UStaticMesh* ShardMesh,
@@ -80,6 +82,9 @@ private:
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> ExplosionDecalMaterialInstances;
 
 	TArray<FVector> ShardDirections;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> PooledShardMaterial;
+	bool bPooledProjectileEffect = false;
 	FVector CachedShardBaseScale = FVector::OneVector;
 	float CachedBlastRadius = 1.0f;
 	float ElapsedTime = 0.0f;
