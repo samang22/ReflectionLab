@@ -10,6 +10,18 @@ class ARLEnemyCharacter;
 class URLArenaExperimentDataAsset;
 
 USTRUCT(BlueprintType)
+struct REFLECTIONLAB_API FRLEnemyHealthMix
+{
+	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="1")) float NormalHealth = 2;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="1")) float ReinforcedHealth = 4;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="1")) float HeavyHealth = 5;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0", ClampMax="1")) float ReinforcedRatio = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0", ClampMax="1")) float HeavyRatio = 0;
+	float GetHealthForSpawn(int32 Index, int32 Count) const;
+};
+
+USTRUCT(BlueprintType)
 struct REFLECTIONLAB_API FRLRoundDefinition
 {
 	GENERATED_BODY()
@@ -27,8 +39,26 @@ struct REFLECTIONLAB_API FRLRoundDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Round", meta = (ClampMin = "0.0"))
 	float IntermissionDurationSeconds = 3.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Round")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Instanced, Category = "Round")
 	TObjectPtr<URLDifficultyScheduleDataAsset> DifficultySchedule;
+
+	// These belong to this displayed round, never to an index in a second map.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Round|Experiment")
+	TObjectPtr<URLArenaExperimentDataAsset> Experiment;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Round|Enemies")
+	TSubclassOf<ARLEnemyCharacter> EnemyClass;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Round|Enemies", meta=(ClampMin="0", ToolTip="0 uses the wave enemy count multiplied by EnemyCountMultiplier."))
+	int32 EnemyCountOverride = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Round|Enemies", meta=(ClampMin="1"))
+	int32 EnemyCountMultiplier = 2;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Round|Enemies")
+	bool bSingleWave = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Round|Enemies")
+	bool bOverrideEnemyHealth = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Round|Enemies", meta=(EditCondition="bOverrideEnemyHealth", EditConditionHides))
+	FRLEnemyHealthMix EnemyHealth;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Round|Combat", meta=(ClampMin="0.1"))
+	float BaseAttackTimingMultiplier = 2;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Round|Cleanup")
 	bool bClearEnemiesOnComplete = true;
@@ -37,42 +67,17 @@ struct REFLECTIONLAB_API FRLRoundDefinition
 	bool bClearProjectilesOnComplete = true;
 };
 
-USTRUCT(BlueprintType)
-struct REFLECTIONLAB_API FRLEnemyHealthMix
-{
-	GENERATED_BODY()
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Health", meta = (ClampMin = "1.0"))
-	float NormalHealth = 2.0f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Health", meta = (ClampMin = "1.0"))
-	float ReinforcedHealth = 4.0f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Health", meta = (ClampMin = "1.0"))
-	float HeavyHealth = 5.0f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Health", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float ReinforcedRatio = 0.0f;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Health", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float HeavyRatio = 0.0f;
-
-	// Evenly spread authored proportions without random all-heavy waves.
-	float GetHealthForSpawn(int32 Index, int32 Count) const
-	{
-		const float Alpha = (FMath::Max(0, Index) + 0.5f) / FMath::Max(1, Count);
-		const float Heavy = FMath::IsFinite(HeavyRatio) ? FMath::Clamp(HeavyRatio, 0.0f, 1.0f) : 0.0f;
-		const float Reinforced = FMath::IsFinite(ReinforcedRatio) ? FMath::Clamp(ReinforcedRatio, 0.0f, 1.0f - Heavy) : 0.0f;
-		const float Health = Alpha < Heavy ? HeavyHealth : (Alpha < Heavy + Reinforced ? ReinforcedHealth : NormalHealth);
-		return FMath::IsFinite(Health) ? FMath::Max(1.0f, Health) : 2.0f;
-	}
-};
-
 UCLASS(BlueprintType)
 class REFLECTIONLAB_API URLRunDefinitionDataAsset : public UDataAsset
 {
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Experiments")
+	// Migration-only source fields. Runtime uses FRLRoundDefinition exclusively.
+	UPROPERTY()
 	TMap<int32, TObjectPtr<URLArenaExperimentDataAsset>> RoundExperiments;
 	// Displayed rounds. Custom enemy classes (boss encounters) retain their own health.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Enemies")
+	UPROPERTY()
 	TMap<int32, FRLEnemyHealthMix> RoundEnemyHealthMixes;
 
 	const FRLEnemyHealthMix* GetEnemyHealthMix(int32 RoundNumber) const
@@ -90,14 +95,20 @@ public:
 		return Result;
 	}
 	// Uses displayed main-game round numbers, after wave splitting; tutorial is excluded.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Enemies")
+	UPROPERTY()
 	TMap<int32, TSubclassOf<ARLEnemyCharacter>> RoundEnemyClasses;
 	// Explicit encounter sizes bypass the ordinary doubled-enemy balance rule.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Enemies", meta = (ClampMin = "1"))
+	UPROPERTY()
 	TMap<int32, int32> RoundEnemyCounts;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Enemies")
+	UPROPERTY()
 	TSet<int32> SingleWaveRounds;
-	// Uses the displayed main-game round number after short-round preparation.
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, AdvancedDisplay, Category="Run|Migration", meta=(ToolTip="Enabled after migration. For a newly authored run, enable this before adding displayed rounds; legacy assets must use MigrateLegacyRoundLayout first."))
+	bool bExplicitRoundLayout = false;
+	// One-time conversion, also available to editor Python. Never saves implicitly.
+	UFUNCTION(BlueprintCallable, Category="Run|Migration")
+	bool MigrateLegacyRoundLayout();
+	// Uses the displayed main-game round number in Rounds; tutorial is excluded.
 	// Zero preserves normal entry; tutorial-only mode ignores this override.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Run|Testing", meta = (ClampMin = "0", ToolTip = "0: normal start. Positive values: start at this main-game round (excluding tutorial). Skipped rewards are not granted. Ignored in tutorial-only mode."))
 	int32 StartingRoundNumber = 0;

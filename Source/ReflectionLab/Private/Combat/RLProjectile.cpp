@@ -1,6 +1,7 @@
 #include "Combat/RLProjectile.h"
 #include "Combat/RLProjectileFieldResponseComponent.h"
 #include "Combat/RLProjectileMirrorWall.h"
+#include "Combat/RLAccelerationBarrier.h"
 
 #include "Combat/RLProjectilePoolSubsystem.h"
 #include "Combat/RLProjectileFeedbackComponent.h"
@@ -575,6 +576,11 @@ void ARLProjectile::HandleProjectileOverlap(
 	bool bFromSweep,
 	const FHitResult& SweepResult)
 {
+	if (auto* Barrier = Cast<ARLAccelerationBarrier>(OtherActor))
+	{
+		Barrier->HandleProjectile(this, bFromSweep ? FVector(SweepResult.Location) : GetActorLocation());
+		return;
+	}
 	if (IsValid(OtherActor))
 	{
 		if (auto* Overload = OtherActor->FindComponentByClass<URLBossOverloadComponent>())

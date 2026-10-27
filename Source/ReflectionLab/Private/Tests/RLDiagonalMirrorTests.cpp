@@ -73,10 +73,10 @@ bool FRLDiagonalMirrorTest::RunTest(const FString& Parameters)
 	{
 		if (It->GetOwner()==Owner) { It->TickComponent(1,LEVELTICK_All,nullptr); }
 	}
-	TestEqual(TEXT("First entry zooms out"),Boom->TargetArmLength,Data->MirrorCameraArmLength);
+	TestEqual(TEXT("First entry zooms out"),Boom->TargetArmLength,Data->Mirror.MirrorCameraArmLength);
 	Player->SetActorLocation(FVector(100,100,96));
 	Experiment->Configure(Data);
-	TestEqual(TEXT("Next wave preserves zoom"),Boom->TargetArmLength,Data->MirrorCameraArmLength);
+	TestEqual(TEXT("Next wave preserves zoom"),Boom->TargetArmLength,Data->Mirror.MirrorCameraArmLength);
 	TestTrue(TEXT("Next wave does not teleport player"),Player->GetActorLocation().Equals(FVector(100,100,96)));
 	Experiment->ResetExperiment();
 	TestEqual(TEXT("Round exit restores original camera"),Boom->TargetArmLength,1950.0f);

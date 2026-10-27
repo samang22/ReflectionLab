@@ -1,5 +1,6 @@
 #include "Framework/GameMode/RLGameModeBase.h"
 #include "Framework/RLArenaExperimentComponent.h"
+#include "Framework/RLWaveDefinitionResolver.h"
 #include "Data/RLArenaExperimentDataAsset.h"
 
 #include "Combat/RLProjectile.h"
@@ -17,178 +18,10 @@
 #include "Player/RLPlayerCharacter.h"
 #include "Player/Components/RLHealthComponent.h"
 #include "Player/Components/RLRunRewardComponent.h"
-#if WITH_DEV_AUTOMATION_TESTS
-#include "Player/Components/RLParryProgressionComponent.h"
-#endif
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
-#if WITH_DEV_AUTOMATION_TESTS
-#include "Misc/AutomationTest.h"
-#include "Engine/Engine.h"
-#include "GameFramework/PlayerController.h"
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRLTutorialRewardTest, "ReflectionLab.Run.TutorialReward",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FRLTutorialRewardTest::RunTest(const FString& Parameters)
-{
-	const UWorld::InitializationValues Settings = UWorld::InitializationValues()
-		.AllowAudioPlayback(false).CreatePhysicsScene(true).CreateNavigation(false)
-		.CreateAISystem(false).ShouldSimulatePhysics(false).SetTransactional(false);
-	UWorld* World = UWorld::CreateWorld(EWorldType::Game, false, NAME_None, nullptr,
-		true, ERHIFeatureLevel::Num, &Settings);
-	if (!TestNotNull(TEXT("Test world"), World))
-	{
-		return false;
-	}
-	GEngine->CreateNewWorldContext(EWorldType::Game).SetCurrentWorld(World);
-	FActorSpawnParameters Spawn;
-	Spawn.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	ARLGameModeBase* Mode = World->SpawnActor<ARLGameModeBase>();
-	APlayerController* Controller = World->SpawnActor<APlayerController>();
-	ARLPlayerCharacter* Player = World->SpawnActor<ARLPlayerCharacter>(
-		ARLPlayerCharacter::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Spawn);
-	if (TestNotNull(TEXT("Game mode"), Mode) && TestNotNull(TEXT("Player controller"), Controller)
-		&& TestNotNull(TEXT("Player"), Player))
-	{
-		Controller->Possess(Player);
-		URLRunRewardComponent* TestRewards = Player->GetRunRewardComponent();
-		TestRewards->Initialize(Player->GetHealthComponent());
-		auto ApplyTestReward = [Mode, TestRewards](ERLRunRewardType Type, float Amount)
-		{
-			URLRunRewardDataAsset* Reward = NewObject<URLRunRewardDataAsset>(Mode);
-			Reward->RewardType = Type;
-			Reward->Amount = Amount;
-			return TestRewards->TryApplyReward(Reward);
-		};
-		// This isolated world has not begun play, so register its player explicitly.
-		World->AddController(Controller);
-		TestTrue(TEXT("Player available to gameplay lookup"),
-			UGameplayStatics::GetPlayerCharacter(Mode, 0) == Player);
-		Mode->RunDefinition = NewObject<URLRunDefinitionDataAsset>(Mode);
-		for (ERLRunRewardType Type : {ERLRunRewardType::WiderArc,
-			ERLRunRewardType::ExtendedRange, ERLRunRewardType::PiercingReturn})
-		{
-			URLRunRewardDataAsset* Reward = NewObject<URLRunRewardDataAsset>(Mode->RunDefinition);
-			Reward->RewardType = Type;
-			Reward->Amount = 1.0f;
-			Reward->Title = FText::FromString(TEXT("Test reward"));
-			Mode->RunDefinition->RewardPool.Add(Reward);
-		}
-		Mode->RunDefinition->Rounds.AddDefaulted_GetRef().bIsTutorial = true;
-		Mode->CurrentRoundIndex = 0;
-		Mode->bTutorialOnlyMode = true;
-		Mode->RunState = ERLRunState::PlayingRound;
-		Mode->FinishRound();
-		TestTrue(TEXT("Tutorial ends in reward selection"), Mode->IsChoosingReward());
-		TestEqual(TEXT("Three practice cards"), Mode->GetRewardChoiceCount(), 3);
-		TestFalse(TEXT("Invalid reward rejected"), Mode->SelectReward(-1));
-		TestTrue(TEXT("Practice reward applied"), Mode->SelectReward(0));
-		TestTrue(TEXT("Selection completes tutorial"), Mode->GetRunState() == ERLRunState::TutorialCompleted);
-		TestFalse(TEXT("Duplicate selection rejected"), Mode->SelectReward(0));
-		TestRewards->ResetRunRewards();
-		const float BaseHealth = Player->GetMaxHealth();
-		TestEqual(TEXT("Default max HP"), BaseHealth, 10.0f);
-		Player->GetHealthComponent()->InitializeHealth(Player->GetMaxHealth());
-		Player->GetHealthComponent()->ApplyDamage(Player->GetMaxHealth() - 5.0f);
-		TestTrue(TEXT("Vitality applies through component"), ApplyTestReward(ERLRunRewardType::Vitality, 2.0f));
-		TestEqual(TEXT("Vitality increases max HP"), Player->GetMaxHealth(), BaseHealth + 2.0f);
-		TestEqual(TEXT("Vitality restores HP"), Player->GetCurrentHealth(), 7.0f);
-		auto RegisterSuccessfulParry = [Player](int32 Count, bool bPerfect, bool bClose, bool bOverdrive)
-		{
-			const FRLParryResult Result{Count, bPerfect, bClose, bOverdrive};
-			Player->GetRunRewardComponent()->ApplyPerfectRecovery(Result);
-			Player->GetParryProgressionComponent()->RegisterSuccess(Result);
-		};
-		TestTrue(TEXT("Healing reward applies"), ApplyTestReward(ERLRunRewardType::PerfectRecovery, 1.0f));
-		RegisterSuccessfulParry(3, true, false, false);
-		TestEqual(TEXT("Multi perfect parry heals once"), Player->GetCurrentHealth(), 8.0f);
-		RegisterSuccessfulParry(1, false, false, false);
-		TestEqual(TEXT("Normal parry does not heal"), Player->GetCurrentHealth(), 8.0f);
-		TestTrue(TEXT("Healing reward stacks"), ApplyTestReward(ERLRunRewardType::PerfectRecovery, 1.0f));
-		RegisterSuccessfulParry(1, true, false, false);
-		TestEqual(TEXT("Second recovery reward heals two HP"), Player->GetCurrentHealth(), 10.0f);
-		TestTrue(TEXT("Healing reward stacks again"), ApplyTestReward(ERLRunRewardType::PerfectRecovery, 1.0f));
-		Player->GetHealthComponent()->ApplyDamage(Player->GetCurrentHealth() - 5.0f);
-		RegisterSuccessfulParry(1, true, false, false);
-		TestEqual(TEXT("Third recovery reward heals three HP"), Player->GetCurrentHealth(), 8.0f);
-		Player->RestoreHealth(Player->GetMaxHealth());
-		RegisterSuccessfulParry(1, true, false, false);
-		TestEqual(TEXT("Healing respects max HP"), Player->GetCurrentHealth(), Player->GetMaxHealth());
-		TestRewards->ResetRunRewards();
-		TestEqual(TEXT("Reset restores base max HP"), Player->GetMaxHealth(), BaseHealth);
-		TestFalse(TEXT("Reset clears recovery reward"), Player->HasPerfectRecoveryReward());
-	}
-	World->DestroyWorld(false);
-	GEngine->DestroyWorldContext(World);
-	return true;
-}
-
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRLShortRoundsTest, "ReflectionLab.Run.ShortRounds",
-	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
-
-bool FRLShortRoundsTest::RunTest(const FString& Parameters)
-{
-	ARLGameModeBase* Mode = GetMutableDefault<ARLGameModeBase>();
-	URLRunDefinitionDataAsset* Original = Mode->RunDefinition;
-	const bool bWasPrepared = Mode->bShortRoundsPrepared;
-	Mode->RunDefinition = DuplicateObject<URLRunDefinitionDataAsset>(Original, GetTransientPackage());
-	Mode->bShortRoundsPrepared = false;
-	const TArray<FRLRoundDefinition> Before = Mode->RunDefinition->Rounds;
-	Mode->PrepareShortRounds();
-	int32 OutputIndex = 0;
-	int32 MainRounds = 0;
-	for (const FRLRoundDefinition& Round : Before)
-	{
-		const int32 Parts = Round.bIsTutorial ? 1 : 2;
-		int32 WaveIndex = 0;
-		for (int32 Part = 0; Part < Parts; ++Part)
-		{
-			if (!TestTrue(TEXT("Split round exists"), Mode->RunDefinition->Rounds.IsValidIndex(OutputIndex)))
-			{
-				break;
-			}
-			const FRLRoundDefinition& Result = Mode->RunDefinition->Rounds[OutputIndex++];
-			MainRounds += Result.bIsTutorial ? 0 : 1;
-			for (const FRLWaveDefinition& Wave : Result.DifficultySchedule->Waves)
-			{
-				TestEqual(TEXT("Wave order preserved"), Wave.WaveName,
-					Round.DifficultySchedule->Waves[WaveIndex++].WaveName);
-			}
-		}
-		TestEqual(TEXT("All waves preserved"), WaveIndex, Round.DifficultySchedule->Waves.Num());
-	}
-	TestEqual(TEXT("Ten main rounds"), MainRounds, 10);
-	const int32 Count = Mode->RunDefinition->Rounds.Num();
-	Mode->PrepareShortRounds();
-	TestEqual(TEXT("Restart does not split again"), Mode->RunDefinition->Rounds.Num(), Count);
-	const bool bWasTutorialOnly = Mode->bTutorialOnlyMode;
-	Mode->bTutorialOnlyMode = false;
-	Mode->RunDefinition->StartingRoundNumber = 0;
-	const int32 NormalStart = Mode->ResolveStartingRoundIndex();
-	Mode->RunDefinition->StartingRoundNumber = 10;
-	const int32 TenthRoundIndex = Mode->ResolveStartingRoundIndex();
-	int32 MainRoundNumber = 0;
-	for (int32 Index = 0; Index <= TenthRoundIndex; ++Index)
-	{
-		MainRoundNumber += Mode->RunDefinition->Rounds[Index].bIsTutorial ? 0 : 1;
-	}
-	TestEqual(TEXT("Start override selects displayed round ten after splitting"), MainRoundNumber, 10);
-	Mode->bTutorialOnlyMode = true;
-	const int32 TutorialIndex = Mode->RunDefinition->Rounds.IndexOfByPredicate(
-		[](const FRLRoundDefinition& Round) { return Round.bIsTutorial; });
-	TestEqual(TEXT("Tutorial mode ignores the main-round override"), Mode->ResolveStartingRoundIndex(), TutorialIndex);
-	Mode->bTutorialOnlyMode = false;
-	Mode->RunDefinition->StartingRoundNumber = 999;
-	AddExpectedError(TEXT("Starting round 999 does not exist"), EAutomationExpectedErrorFlags::Contains, 1);
-	TestEqual(TEXT("Invalid start override falls back to normal entry"), Mode->ResolveStartingRoundIndex(), NormalStart);
-	Mode->bTutorialOnlyMode = bWasTutorialOnly;
-	Mode->RunDefinition = Original;
-	Mode->bShortRoundsPrepared = bWasPrepared;
-	return true;
-}
-#endif
 
 ARLGameModeBase::ARLGameModeBase()
 {
@@ -203,9 +36,8 @@ ARLGameModeBase::ARLGameModeBase()
 
 URLArenaExperimentDataAsset* ARLGameModeBase::GetCurrentArenaExperiment() const
 {
-	if (!RunDefinition || IsCurrentRoundTutorial() || RunDefinition->RoundEnemyClasses.Contains(GetCurrentRoundNumber())) { return nullptr; }
-	const auto* Data = RunDefinition->RoundExperiments.Find(GetCurrentRoundNumber());
-	return Data ? Data->Get() : nullptr;
+	const auto* Round = GetCurrentRoundDefinition();
+	return Round && !Round->bIsTutorial && !Round->EnemyClass ? Round->Experiment.Get() : nullptr;
 }
 
 FText ARLGameModeBase::GetArenaExperimentStatus() const
@@ -279,38 +111,9 @@ void ARLGameModeBase::PrepareShortRounds()
 		return;
 	}
 
-	// Keep shared editor assets untouched and do not split again on run restart.
+	// Legacy assets are converted on a private copy; migrated assets already contain displayed rounds.
 	RunDefinition = DuplicateObject<URLRunDefinitionDataAsset>(RunDefinition, this);
-	TArray<FRLRoundDefinition> ShortRounds;
-	for (const FRLRoundDefinition& Round : RunDefinition->Rounds)
-	{
-		const URLDifficultyScheduleDataAsset* Schedule = Round.DifficultySchedule;
-		if (Round.bIsTutorial || !Schedule || Schedule->Waves.Num() < 2)
-		{
-			ShortRounds.Add(Round);
-			continue;
-		}
-
-		const int32 SplitIndex = (Schedule->Waves.Num() + 1) / 2;
-		for (int32 Part = 0; Part < 2; ++Part)
-		{
-			FRLRoundDefinition& ShortRound = ShortRounds.Add_GetRef(Round);
-			ShortRound.RoundName = FName(*FString::Printf(TEXT("%s %d"),
-				*Round.RoundName.ToString(), Part + 1));
-			URLDifficultyScheduleDataAsset* ShortSchedule =
-				DuplicateObject<URLDifficultyScheduleDataAsset>(Schedule, RunDefinition,
-					MakeUniqueObjectName(RunDefinition, URLDifficultyScheduleDataAsset::StaticClass()));
-			ShortSchedule->Waves.Reset();
-			const int32 Begin = Part == 0 ? 0 : SplitIndex;
-			const int32 End = Part == 0 ? SplitIndex : Schedule->Waves.Num();
-			for (int32 Index = Begin; Index < End; ++Index)
-			{
-				ShortSchedule->Waves.Add(Schedule->Waves[Index]);
-			}
-			ShortRound.DifficultySchedule = ShortSchedule;
-		}
-	}
-	RunDefinition->Rounds = MoveTemp(ShortRounds);
+	if (!RunDefinition->MigrateLegacyRoundLayout()) { return; }
 	bShortRoundsPrepared = true;
 	UE_LOG(LogTemp, Display, TEXT("Prepared short rounds: %d rounds including tutorial."),
 		RunDefinition->Rounds.Num());
@@ -532,7 +335,8 @@ int32 ARLGameModeBase::GetCurrentPhaseCount() const
 
 int32 ARLGameModeBase::GetCurrentWaveCount() const
 {
-	if (IsCurrentRoundTutorial() || (RunDefinition && RunDefinition->SingleWaveRounds.Contains(GetCurrentRoundNumber())))
+	const auto* CurrentRound = GetCurrentRoundDefinition();
+	if (IsCurrentRoundTutorial() || (CurrentRound && CurrentRound->bSingleWave))
 	{
 		return 1;
 	}
@@ -756,7 +560,7 @@ void ARLGameModeBase::UpdateRound()
 		return;
 	}
 
-	if (RunDefinition->SingleWaveRounds.Contains(GetCurrentRoundNumber()) ||
+	if (RoundDefinition->bSingleWave ||
 		CurrentWaveIndex + 1 >= Schedule->Waves.Num())
 	{
 		FinishRound();
@@ -781,42 +585,12 @@ void ARLGameModeBase::BeginWave(int32 WaveIndex)
 		return;
 	}
 
-	// Balance a per-wave copy so authored schedules and retries never compound
-	// the multipliers, including when the final round is repeated.
-	FRLWaveDefinition WaveDefinition = Schedule->Waves[WaveIndex];
-	if (!RoundDefinition->bIsTutorial)
-	{
-		WaveDefinition.EnemyCount = static_cast<int32>(FMath::Clamp<int64>(
-			static_cast<int64>(WaveDefinition.EnemyCount) * 2, 1, MAX_int32));
-		if (const int32* CountOverride = RunDefinition->RoundEnemyCounts.Find(GetCurrentRoundNumber()))
-		{
-			WaveDefinition.EnemyCount = FMath::Max(1, *CountOverride);
-		}
-		// Round one retains the existing half-frequency baseline. Later rounds
-		// accelerate without mutating the schedule or compounding per wave.
-		const float AttackTimingScale = 2.0f / GetRoundAttackFrequencyMultiplier();
-		WaveDefinition.AttackIntervalMultiplier *= AttackTimingScale;
-		WaveDefinition.TimeBetweenShotsMultiplier *= AttackTimingScale;
-	}
 	URLArenaExperimentDataAsset* Experiment = GetCurrentArenaExperiment();
 	ArenaExperiment->Configure(Experiment);
 	if (!ArenaExperiment->HasActiveExperiment()) { Experiment = nullptr; }
-	if (Experiment)
-	{
-		const float Frequency = FMath::IsFinite(Experiment->AttackFrequencyMultiplier)
-			? FMath::Clamp(Experiment->AttackFrequencyMultiplier, 0.1f, 3.0f) : 1.0f;
-		WaveDefinition.AttackIntervalMultiplier /= Frequency;
-		WaveDefinition.TimeBetweenShotsMultiplier /= Frequency;
-	}
-	if (Experiment && Experiment->ProjectileDefinition)
-	{
-		WaveDefinition.DefaultProjectileDefinition = Experiment->ProjectileDefinition;
-		WaveDefinition.ProjectileRules.Empty();
-		WaveDefinition.RingAttack.Weight = 0;
-		WaveDefinition.RingAttack.ShotInterval = 0;
-		WaveDefinition.bUseWeightedPatterns = true;
-		WaveDefinition.DefaultProjectileWeight = 1;
-	}
+	const FRLWaveDefinition WaveDefinition = RLWaveDefinitionResolver::Resolve(
+		Schedule->Waves[WaveIndex], *RoundDefinition, GetRoundAttackFrequencyMultiplier(), Experiment);
+
 	ApplyWaveDefinition(WaveDefinition, WaveIndex);
 
 	TArray<ARLEnemySpawner*> ValidSpawners;
@@ -825,9 +599,7 @@ void ARLGameModeBase::BeginWave(int32 WaveIndex)
 		if (ARLEnemySpawner* Spawner = SpawnerPtr.Get())
 		{
 			Spawner->ConfigureWave(WaveDefinition);
-			const TSubclassOf<ARLEnemyCharacter>* RoundEnemyClass = !RoundDefinition->bIsTutorial
-				? RunDefinition->RoundEnemyClasses.Find(GetCurrentRoundNumber()) : nullptr;
-			Spawner->SetRoundEnemyClass(RoundEnemyClass ? *RoundEnemyClass : nullptr);
+			Spawner->SetRoundEnemyClass(!RoundDefinition->bIsTutorial ? RoundDefinition->EnemyClass : TSubclassOf<ARLEnemyCharacter>());
 			ValidSpawners.Add(Spawner);
 		}
 	}
@@ -849,27 +621,25 @@ void ARLGameModeBase::BeginWave(int32 WaveIndex)
 		for (int32 Attempt = 0; Attempt < ValidSpawners.Num(); ++Attempt)
 		{
 			const int32 SpawnerIndex = (EnemyIndex + Attempt) % ValidSpawners.Num();
-			if (Experiment && (Experiment->Type == ERLArenaExperimentType::Crossfire || Experiment->Type == ERLArenaExperimentType::MirrorArena))
+			if (Experiment && (Experiment->Type == ERLArenaExperimentType::Crossfire || Experiment->Type == ERLArenaExperimentType::MirrorArena ||
+				(Experiment->Type == ERLArenaExperimentType::AccelerationField && Experiment->Acceleration.bEnableReturnBarriers)))
 			{
 				FTransform ExperimentSpawn;
 				if (!ArenaExperiment->FindTeamSpawn(EnemyIndex, RequestedEnemyCount, ExperimentSpawn)) { continue; }
 				ValidSpawners[SpawnerIndex]->SetNextSpawnTransform(ExperimentSpawn);
 			}
 			const bool bSupportSpawn = Experiment && Experiment->Type == ERLArenaExperimentType::SupportNetwork && EnemyIndex == 0;
-			if (bSupportSpawn) { ValidSpawners[SpawnerIndex]->SetRoundEnemyClass(Experiment->SupportEnemyClass); }
+			if (bSupportSpawn) { ValidSpawners[SpawnerIndex]->SetRoundEnemyClass(Experiment->Support.SupportEnemyClass); }
 			ARLEnemyCharacter* SpawnedEnemy = ValidSpawners[SpawnerIndex]->SpawnEnemy();
 			if (bSupportSpawn) { ValidSpawners[SpawnerIndex]->SetRoundEnemyClass(nullptr); }
 			if (SpawnedEnemy)
 			{
 				if (Experiment) { ArenaExperiment->RegisterEnemy(SpawnedEnemy, EnemyIndex); }
 				++SpawnedEnemyCount;
-				if (!bTutorialRound && !RunDefinition->RoundEnemyClasses.Contains(GetCurrentRoundNumber()))
+				if (!bTutorialRound && !RoundDefinition->EnemyClass && RoundDefinition->bOverrideEnemyHealth)
 				{
-					if (const FRLEnemyHealthMix* Mix = RunDefinition->GetEnemyHealthMix(GetCurrentRoundNumber()))
-					{
-						SpawnedEnemy->FindComponentByClass<URLHealthComponent>()->InitializeHealth(
-							Mix->GetHealthForSpawn(EnemyIndex, RequestedEnemyCount));
-					}
+					SpawnedEnemy->FindComponentByClass<URLHealthComponent>()->InitializeHealth(
+						RoundDefinition->EnemyHealth.GetHealthForSpawn(EnemyIndex, RequestedEnemyCount));
 				}
 				if (bTutorialRound)
 				{

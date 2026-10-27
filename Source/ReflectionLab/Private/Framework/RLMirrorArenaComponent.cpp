@@ -26,7 +26,7 @@ void URLMirrorArenaComponent::TickComponent(float DeltaTime, ELevelTick TickType
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	if (Settings && CameraBoom.IsValid())
 	{
-		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, Settings->MirrorCameraArmLength, DeltaTime, 3);
+		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, Settings->Mirror.MirrorCameraArmLength, DeltaTime, 3);
 		CameraBoom->SetWorldLocation(FMath::VInterpTo(CameraBoom->GetComponentLocation(), CameraAnchor, DeltaTime, 3));
 	}
 }
@@ -65,12 +65,12 @@ bool URLMirrorArenaComponent::AddBarrier(const FVector& Location, const FVector&
 		Collision->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 		Collision->SetCollisionResponseToChannel(ECC_Pawn,ECR_Block);
 	}
-	if (Settings->ShutterMaterial) { Mesh->SetMaterial(0,Settings->ShutterMaterial); }
+	if (Settings->SurfaceMaterial) { Mesh->SetMaterial(0,Settings->SurfaceMaterial); }
 	if (auto* Material = Mesh->CreateDynamicMaterialInstance(0))
 	{ Material->SetVectorParameterValue(TEXT("SurfaceColor"),bPawnOnly ? FLinearColor(0.1f,0.55f,0.6f) : FLinearColor(0.3f,0.32f,0.35f)); }
 	// Keep the overlapping gray cover above cyan rails to avoid coplanar tops.
-	const float VisualHeight = bPawnOnly ? Settings->LaneBarrierVisualHeight
-		: FMath::Max(Settings->ShotBarrierVisualHeight,Settings->LaneBarrierVisualHeight+5.0f);
+	const float VisualHeight = bPawnOnly ? Settings->Mirror.LaneBarrierVisualHeight
+		: FMath::Max(Settings->Mirror.ShotBarrierVisualHeight,Settings->Mirror.LaneBarrierVisualHeight+5.0f);
 	Mesh->SetRelativeLocation(FVector(0,0,(VisualHeight-Size.Z)*0.5f));
 	Mesh->SetRelativeScale3D(FVector(Size.X,Size.Y,VisualHeight)/100);
 	return true;
@@ -79,15 +79,16 @@ bool URLMirrorArenaComponent::AddBarrier(const FVector& Location, const FVector&
 bool URLMirrorArenaComponent::Configure(URLArenaExperimentDataAsset* Data)
 {
 	ResetArena();
-	if (!Data || !FMath::IsFinite(Data->LaneHalfWidth) || Data->LaneHalfWidth < 300 || Data->LaneHalfWidth > 600 ||
-		!FMath::IsFinite(Data->LaneHalfLength) || Data->LaneHalfLength < 150 || Data->LaneHalfLength > 350 ||
-		!FMath::IsFinite(Data->DiagonalMirrorHalfLength) || Data->DiagonalMirrorHalfLength < 400 || Data->DiagonalMirrorHalfLength > 1200 ||
-		Data->DiagonalMirrorCenter.ContainsNaN() || Data->DiagonalMirrorCenter.X < 800 || Data->DiagonalMirrorCenter.Y < 650 ||
-		Data->DiagonalMirrorCenter.X > 1200 || Data->DiagonalMirrorCenter.Y > 1200 ||
-		!FMath::IsFinite(Data->MirrorCameraArmLength) || Data->MirrorCameraArmLength < 2000 || Data->MirrorCameraArmLength > 6000 ||
-		!FMath::IsFinite(Data->LaneBarrierVisualHeight) || Data->LaneBarrierVisualHeight < 10 || Data->LaneBarrierVisualHeight > 100 ||
-		!FMath::IsFinite(Data->ShotBarrierVisualHeight) || Data->ShotBarrierVisualHeight < 20 || Data->ShotBarrierVisualHeight > 200 ||
-		Data->MaxMirrorBounces < 1 || Data->MaxMirrorBounces > 8) { return false; }
+	if (!Data || !FMath::IsFinite(Data->Mirror.LaneHalfWidth) || Data->Mirror.LaneHalfWidth < 300 || Data->Mirror.LaneHalfWidth > 600 ||
+		!FMath::IsFinite(Data->Mirror.LaneHalfLength) || Data->Mirror.LaneHalfLength < 150 || Data->Mirror.LaneHalfLength > 350 ||
+		!FMath::IsFinite(Data->Mirror.DiagonalMirrorHalfLength) || Data->Mirror.DiagonalMirrorHalfLength < 400 || Data->Mirror.DiagonalMirrorHalfLength > 1200 ||
+		Data->Mirror.DiagonalMirrorCenter.ContainsNaN() || Data->Mirror.DiagonalMirrorCenter.X < 800 || Data->Mirror.DiagonalMirrorCenter.Y < 650 ||
+		Data->Mirror.DiagonalMirrorCenter.X > 1200 || Data->Mirror.DiagonalMirrorCenter.Y > 1200 ||
+		!FMath::IsFinite(Data->Mirror.MirrorCameraArmLength) || Data->Mirror.MirrorCameraArmLength < 2000 || Data->Mirror.MirrorCameraArmLength > 6000 ||
+		!FMath::IsFinite(Data->Mirror.LaneBarrierVisualHeight) || Data->Mirror.LaneBarrierVisualHeight < 10 || Data->Mirror.LaneBarrierVisualHeight > 100 ||
+		!FMath::IsFinite(Data->Mirror.ShotBarrierVisualHeight) || Data->Mirror.ShotBarrierVisualHeight < 20 || Data->Mirror.ShotBarrierVisualHeight > 200 ||
+		!FMath::IsFinite(Data->Mirror.ShotBarrierLength) || Data->Mirror.ShotBarrierLength < 100 || Data->Mirror.ShotBarrierLength > 1200 ||
+		Data->Mirror.MaxMirrorBounces < 1 || Data->Mirror.MaxMirrorBounces > 8) { return false; }
 	Settings = Data;
 	// Move an out-of-lane player before constructing colliders, never inside a wall.
 	if (auto* Player = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(this,0)))
@@ -98,11 +99,11 @@ bool URLMirrorArenaComponent::Configure(URLArenaExperimentDataAsset* Data)
 		Player->SetBase(static_cast<FMovementBaseInterfaceData*>(nullptr));
 		Player->SetActorLocation(Safe,false,nullptr,ETeleportType::TeleportPhysics);
 	}
-	const float X = Data->DiagonalMirrorCenter.X;
-	const float Y = Data->DiagonalMirrorCenter.Y;
+	const float X = Data->Mirror.DiagonalMirrorCenter.X;
+	const float Y = Data->Mirror.DiagonalMirrorCenter.Y;
 	Mirror = GetWorld()->SpawnActor<ARLProjectileMirrorWall>(FVector(-X,Y,100),FRotator(0,45,0));
 	if (!Mirror) { ResetArena(); return false; }
-	Mirror->Configure(Data->DiagonalMirrorHalfLength,Data->ShutterMaterial,Data->MaxMirrorBounces);
+	Mirror->Configure(Data->Mirror.DiagonalMirrorHalfLength,Data->SurfaceMaterial,Data->Mirror.MaxMirrorBounces);
 	const FVector Positions[] = {FVector(X,Y,100), FVector(-X,-Y,100), FVector(X,-Y,100)};
 	const float Yaws[] = {-45,135,-135};
 	for (int32 Index=0;Index<3;++Index)
@@ -110,13 +111,13 @@ bool URLMirrorArenaComponent::Configure(URLArenaExperimentDataAsset* Data)
 		auto* Extra = GetWorld()->SpawnActor<ARLProjectileMirrorWall>(Positions[Index],FRotator(0,Yaws[Index],0));
 		if (!Extra) { ResetArena(); return false; }
 		ExtraMirrors.Add(Extra);
-		Extra->Configure(Data->DiagonalMirrorHalfLength,Data->ShutterMaterial,Data->MaxMirrorBounces);
+		Extra->Configure(Data->Mirror.DiagonalMirrorHalfLength,Data->SurfaceMaterial,Data->Mirror.MaxMirrorBounces);
 	}
 	for (float Side : {-1.0f,1.0f})
 	{
-		if (!AddBarrier(FVector(Side*(Data->LaneHalfWidth+100),0,100),FVector(80,Data->LaneHalfLength*0.9f,200),false) ||
-			!AddBarrier(FVector(Side*(Data->LaneHalfWidth+100),0,70),FVector(50,(Data->LaneHalfLength+70)*2,140),true) ||
-			!AddBarrier(FVector(0,Side*(Data->LaneHalfLength+70),70),FVector((Data->LaneHalfWidth+100)*2,50,140),true))
+		if (!AddBarrier(FVector(Side*(Data->Mirror.LaneHalfWidth+100),0,100),FVector(80,Data->Mirror.ShotBarrierLength,200),false) ||
+			!AddBarrier(FVector(Side*(Data->Mirror.LaneHalfWidth+100),0,70),FVector(50,(Data->Mirror.LaneHalfLength+70)*2,140),true) ||
+			!AddBarrier(FVector(0,Side*(Data->Mirror.LaneHalfLength+70),70),FVector((Data->Mirror.LaneHalfWidth+100)*2,50,140),true))
 		{ ResetArena(); return false; }
 	}
 	if (auto* Player = UGameplayStatics::GetPlayerPawn(this,0))

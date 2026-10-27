@@ -28,7 +28,8 @@ bool FRLBallisticsExperimentTest::RunTest(const FString& Parameters)
 	auto* Experiment = NewObject<URLBallisticsExperimentComponent>(Owner); Experiment->RegisterComponent();
 	auto* Settings = NewObject<URLArenaExperimentDataAsset>();
 	Settings->Type = ERLArenaExperimentType::AccelerationField;
-	Settings->FieldCenters = {FVector2D::ZeroVector}; Settings->FieldHalfExtent = FVector2D(100,500);
+	Settings->Refraction.RefractionAngleDegrees = 999; // Inactive refraction data is ignored.
+	Settings->FieldLayout.FieldCenters = {FVector2D::ZeroVector}; Settings->FieldLayout.FieldHalfExtent = FVector2D(100,500);
 	TestTrue(TEXT("Acceleration config"), Experiment->Configure(Settings));
 	auto* Definition = NewObject<URLProjectileDefinitionDataAsset>(); Definition->ProjectileSpeed = 1000;
 	auto* Pool = World->GetSubsystem<URLProjectilePoolSubsystem>();
@@ -44,7 +45,7 @@ bool FRLBallisticsExperimentTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Special movement retains environmental multiplier"), Movement->Velocity.Size(), 1200.0);
 	Experiment->ResetExperiment();
 	TestEqual(TEXT("Experiment cleanup restores unmodified speed"), Movement->Velocity.Size(), 800.0);
-	Settings->BaselineHostileSpeedMultiplier = 0.65f;
+	Settings->Acceleration.BaselineHostileSpeedMultiplier = 0.65f;
 	TestTrue(TEXT("Slow baseline config"), Experiment->Configure(Settings));
 	Bullet->ActivateProjectile(FTransform(FVector(-600,0,80)), Owner, nullptr);
 	Bullet->InitializeFromDefinition(Definition, nullptr); Experiment->Advance();
@@ -54,6 +55,8 @@ bool FRLBallisticsExperimentTest::RunTest(const FString& Parameters)
 	Movement->TickComponent(1.2f, LEVELTICK_All, nullptr); Experiment->Advance();
 	TestTrue(TEXT("Field boosts to authored speed, not slow baseline times boost"), FMath::IsNearlyEqual(Movement->Velocity.Size(), 1500.0, 0.01));
 	Experiment->ResetExperiment();
+	Settings->Refraction.RefractionAngleDegrees = 35;
+	Settings->Acceleration.FieldSpeedMultiplier = -1; // Inactive acceleration data is ignored.
 	TestTrue(TEXT("Refraction config"), [&] { Settings->Type = ERLArenaExperimentType::RefractionGate; return Experiment->Configure(Settings); }());
 	Bullet->ActivateProjectile(FTransform(FVector(-300,0,999)), Owner, nullptr);
 	Bullet->InitializeFromDefinition(Definition, nullptr);

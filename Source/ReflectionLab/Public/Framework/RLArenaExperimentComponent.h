@@ -9,6 +9,7 @@ class UMaterialInstanceDynamic;
 class URLArenaVariationComponent;
 class URLBallisticsExperimentComponent;
 class URLMirrorArenaComponent;
+class URLCrossfireExperimentComponent;
 
 UCLASS(ClassGroup=(ReflectionLab), meta=(BlueprintSpawnableComponent))
 class REFLECTIONLAB_API URLArenaExperimentComponent : public UActorComponent
@@ -31,20 +32,6 @@ private:
 	UPROPERTY(Transient) TObjectPtr<URLMirrorArenaComponent> MirrorArena;
 	UPROPERTY(Transient) TObjectPtr<URLBallisticsExperimentComponent> Ballistics;
 	UPROPERTY(Transient) TObjectPtr<URLArenaVariationComponent> Variation;
-	struct FEnemyEntry { TWeakObjectPtr<ARLEnemyCharacter> Enemy; };
-	TArray<FEnemyEntry> Enemies;
-	UPROPERTY(Transient)
-	TObjectPtr<URLArenaExperimentDataAsset> Settings;
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<AStaticMeshActor>> Shutters;
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<AStaticMeshActor>> Indicators;
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UMaterialInstanceDynamic>> Materials;
-	float Elapsed = 0;
-	int32 LastPhase = INDEX_NONE;
-	bool bSkipClosing[2] = {false, false};
-	float PhaseStartHeight[2] = {0, 0};
-	float PhaseTime() const;
-	bool PlayerBlocksShutter(int32 Index) const;
+	UPROPERTY(Transient) TObjectPtr<URLCrossfireExperimentComponent> Crossfire;
+	UPROPERTY(Transient) TObjectPtr<URLArenaExperimentDataAsset> Settings;
 };

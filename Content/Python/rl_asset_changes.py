@@ -15,6 +15,39 @@ class AssetChangeError(RuntimeError):
     pass
 
 
+def property_parts(prop):
+    if not isinstance(prop, str) or not re.fullmatch(r'[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*){0,3}', prop):
+        raise AssetChangeError('Expected a snake_case property or struct leaf path (maximum depth 4)')
+    return prop.split('.')
+
+
+def read_struct_leaf(root, prop, struct_type):
+    parts = property_parts(prop)
+    current = root
+    for index, name in enumerate(parts):
+        current = current.get_editor_property(name)
+        if index < len(parts) - 1 and not isinstance(current, struct_type):
+            raise AssetChangeError('Intermediate properties must be structs, not object references or containers')
+    return current
+
+
+def write_struct_leaf(root, prop, value, struct_type):
+    parts = property_parts(prop)
+    owners = []
+    current = root
+    for name in parts[:-1]:
+        child = current.get_editor_property(name)
+        if not isinstance(child, struct_type):
+            raise AssetChangeError('Intermediate properties must be structs, not object references or containers')
+        owners.append((current, name))
+        current = child
+    current.set_editor_property(parts[-1], value)
+    # Unreal struct wrappers can be copies. Write each modified child back to its parent.
+    for owner, name in reversed(owners):
+        owner.set_editor_property(name, current)
+        current = owner
+
+
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
@@ -60,8 +93,7 @@ class AssetChangeService:
             raise AssetChangeError('Use a canonical /Game/... package path, without object suffix')
         if not any(asset.startswith(root) for root in self.allowed_roots):
             raise AssetChangeError('Asset is outside configured allowed roots: ' + asset)
-        if not re.fullmatch(r'[a-z][a-z0-9_]*', prop):
-            raise AssetChangeError('Only direct snake_case editor properties are supported')
+        property_parts(prop)
 
     def preview(self, request):
         self.backend.ensure_editor_idle()
@@ -260,10 +292,22 @@ class UnrealBackend:
         return self.encode(self.decode(value))
 
     def read(self, path, prop):
-        return self.encode(self.asset(path).get_editor_property(prop))
+        asset = self.asset(path)
+        self._reject_legacy_arena_property(asset, prop)
+        return self.encode(read_struct_leaf(asset, prop, self.u.StructBase))
 
     def write(self, path, prop, value):
-        self.asset(path).set_editor_property(prop,self.decode(value))
+        asset = self.asset(path)
+        self._reject_legacy_arena_property(asset, prop)
+        write_struct_leaf(asset, prop, self.decode(value), self.u.StructBase)
+
+    def _reject_legacy_arena_property(self, asset, prop):
+        arena_class = getattr(self.u, 'RLArenaExperimentDataAsset', None)
+        if arena_class and isinstance(asset, arena_class) and '.' not in prop:
+            from rl_arena_settings_schema import GROUPS
+            legacy = {name for fields in GROUPS.values() for name in fields}
+            if prop in legacy | {'mirror_distance', 'mirror_half_width', 'shutter_material'}:
+                raise AssetChangeError('Legacy arena property is no longer editable; use the grouped leaf path or surface_material')
 
     def save(self, path):
         if not self.u.EditorAssetLibrary.save_loaded_asset(self.asset(path),False):

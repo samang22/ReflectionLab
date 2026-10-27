@@ -15,7 +15,7 @@ class RLAssetToolset(unreal.ToolsetDefinition):
         """Read-only asset preview. Saves a reviewed change plan, but never saves assets.
 
         Args:
-            request_json: JSON with changes:[{asset:/Game/... package,property:snake_case,value:JSON,expected:optional current JSON}].
+            request_json: JSON with changes:[{asset:/Game/... package,property:snake_case or struct.leaf,value:JSON,expected:optional current JSON}].
         """
         return json.dumps(editor_service().preview(json.loads(request_json)),ensure_ascii=False)
 

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2] / 'Content/Python'))
-from rl_asset_changes import AssetChangeService, AssetChangeError, equivalent
+from rl_asset_changes import AssetChangeService, AssetChangeError, equivalent, property_parts, read_struct_leaf, write_struct_leaf
 
 
 class FakeBackend:
@@ -141,6 +141,50 @@ class AssetChangeTests(unittest.TestCase):
     def test_tolerance_does_not_confuse_bool_and_integer(self):
         self.assertTrue(equivalent(1.0,1.0000001))
         self.assertFalse(equivalent(True,1))
+
+
+class CopyingStruct:
+    def __init__(self, **values):
+        self.values = values
+
+    def get_editor_property(self, name):
+        return copy.deepcopy(self.values[name])
+
+    def set_editor_property(self, name, value):
+        self.values[name] = copy.deepcopy(value)
+
+
+class StructLeafTests(unittest.TestCase):
+    def test_nested_copy_is_written_back(self):
+        root = CopyingStruct(mirror=CopyingStruct(camera=CopyingStruct(distance=4300.0), height=120.0), untouched=7)
+        write_struct_leaf(root, 'mirror.camera.distance', 4500.0, CopyingStruct)
+        self.assertEqual(read_struct_leaf(root, 'mirror.camera.distance', CopyingStruct), 4500.0)
+        self.assertEqual(read_struct_leaf(root, 'mirror.height', CopyingStruct), 120.0)
+        self.assertEqual(read_struct_leaf(root, 'untouched', CopyingStruct), 7)
+
+    def test_path_cannot_traverse_references_or_containers(self):
+        root = CopyingStruct(reference=object(), array=[1], dictionary={'x': 2})
+        for path in ['reference.value', 'array.value', 'dictionary.x']:
+            with self.assertRaises(AssetChangeError):
+                read_struct_leaf(root, path, CopyingStruct)
+            with self.assertRaises(AssetChangeError):
+                write_struct_leaf(root, path, 4, CopyingStruct)
+
+    def test_invalid_paths_rejected(self):
+        for path in ['', '.x', 'x.', 'a..b', 'x[0]', '__dict__', 'a.b.c.d.e', 'a/B', 'a.b()']:
+            with self.assertRaises(AssetChangeError):
+                property_parts(path)
+
+    def test_struct_leaf_plans_reuse_existing_apply_and_rollback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            backend = FakeBackend()
+            backend.values['/Game/ReflectionLab/A']['mirror.height'] = 100.0
+            backend.disk = copy.deepcopy(backend.values)
+            service = AssetChangeService(backend, directory, ['/Game/ReflectionLab/'])
+            plan = service.preview({'changes': [{'asset': '/Game/ReflectionLab/A', 'property': 'mirror.height', 'value': 120.0}]})
+            self.assertTrue(service.apply(plan['id'])['matches'])
+            self.assertTrue(service.rollback(plan['id'])['matches'])
+            self.assertEqual(backend.read('/Game/ReflectionLab/A', 'mirror.height'), 100.0)
 
 
 if __name__ == '__main__':

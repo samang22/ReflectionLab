@@ -143,7 +143,7 @@ struct REFLECTIONLAB_API FRLWaveDefinition
 	int32 ShieldEnemyInterval = 0;
 };
 
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, EditInlineNew)
 class REFLECTIONLAB_API URLDifficultyScheduleDataAsset : public UDataAsset
 {
 	GENERATED_BODY()

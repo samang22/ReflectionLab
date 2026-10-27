@@ -25,7 +25,8 @@ bool FRLArenaVariationTest::RunTest(const FString& Parameters)
 	auto* Variation = NewObject<URLArenaVariationComponent>(Owner); Variation->RegisterComponent();
 	auto* Data = NewObject<URLArenaExperimentDataAsset>();
 	Data->Type = ERLArenaExperimentType::SupportNetwork;
-	Data->SupportEnemyClass = ARLEnemyCharacter::StaticClass();
+	Data->Support.SupportEnemyClass = ARLEnemyCharacter::StaticClass();
+	Data->Zones.PhaseDuration = -1; // Inactive settings must not invalidate support.
 	TestTrue(TEXT("Support configuration"), Variation->Configure(Data));
 	auto* Pool = World->GetSubsystem<URLEnemyPoolSubsystem>();
 	auto* Support = Pool->AcquireEnemy(ARLEnemyCharacter::StaticClass(), FTransform(FVector(0,0,96)));
@@ -43,7 +44,8 @@ bool FRLArenaVariationTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("Support death clears buff"), Attack->GetSupportAttackRate(), 1.0f);
 	Variation->ResetVariation();
 	Data->Type = ERLArenaExperimentType::AlternatingZones;
-	Data->PhaseDuration = 8; Data->WarningDuration = 2.5f;
+	Data->Support.SupportRadius = -1; // The zone type does not consume support settings.
+	Data->Zones.PhaseDuration = 8; Data->Zones.WarningDuration = 2.5f;
 	TestTrue(TEXT("Zone configuration"), Variation->Configure(Data));
 	Variation->Advance(2.4f);
 	TestFalse(TEXT("Warning cannot hurt"), Variation->IsZoneDangerous(FVector(-500,0,0)));
@@ -56,8 +58,8 @@ bool FRLArenaVariationTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("Old side safe"), Variation->IsZoneDangerous(FVector(-500,0,0)));
 	Variation->ResetVariation();
 	TestFalse(TEXT("Cleanup disables hazard"), Variation->IsZoneDangerous(FVector(500,0,0)));
-	Data->ZoneHalfExtent = FVector2D(450,700); Data->ZoneCenterDistance = 750;
-	Data->PhaseDuration = 4.5f; Data->WarningDuration = 1.5f;
+	Data->Zones.ZoneHalfExtent = FVector2D(450,700); Data->Zones.ZoneCenterDistance = 750;
+	Data->Zones.PhaseDuration = 4.5f; Data->Zones.WarningDuration = 1.5f;
 	TestTrue(TEXT("Compact hazard configuration"), Variation->Configure(Data)); Variation->Advance(1.6f);
 	TestTrue(TEXT("Compact left hazard active"), Variation->IsZoneDangerous(FVector(-750,0,0)));
 	TestFalse(TEXT("Can escape along upper edge"), Variation->IsZoneDangerous(FVector(-750,800,0)));

@@ -24,7 +24,7 @@ AStaticMeshActor* URLArenaVariationComponent::MakeVisual(const FVector& Position
 	Mesh->SetCollisionProfileName(TEXT("NoCollision"));
 	Mesh->SetCanEverAffectNavigation(false);
 	Mesh->SetCastShadow(false);
-	if (Settings->ShutterMaterial) { Mesh->SetMaterial(0, Settings->ShutterMaterial); }
+	if (Settings->SurfaceMaterial) { Mesh->SetMaterial(0, Settings->SurfaceMaterial); }
 	Mesh->CreateDynamicMaterialInstance(0);
 	Actor->SetActorScale3D(Scale);
 	return Actor;
@@ -33,24 +33,33 @@ AStaticMeshActor* URLArenaVariationComponent::MakeVisual(const FVector& Position
 bool URLArenaVariationComponent::Configure(URLArenaExperimentDataAsset* Data)
 {
 	ResetVariation();
-	if (!Data || !FMath::IsFinite(Data->PhaseDuration) || !FMath::IsFinite(Data->WarningDuration) ||
-		Data->WarningDuration < 1 || Data->PhaseDuration <= Data->WarningDuration + 1 ||
-		!FMath::IsFinite(Data->SupportRadius) || Data->SupportRadius <= 0 ||
-		!FMath::IsFinite(Data->SupportAttackRate) || Data->SupportAttackRate < 1 || Data->SupportAttackRate > 3 ||
-		!FMath::IsFinite(Data->ArenaHalfExtent) || Data->ArenaHalfExtent <= 100 ||
-		!FMath::IsFinite(Data->ZoneDamageInterval) || Data->ZoneDamageInterval < 0.1f ||
-		!FMath::IsFinite(Data->ZoneDamage) || Data->ZoneDamage < 0 ||
-		Data->ZoneHalfExtent.ContainsNaN() || Data->ZoneHalfExtent.GetMin() <= 0 ||
-		!FMath::IsFinite(Data->ZoneCenterDistance) || Data->ZoneCenterDistance < 0 ||
-		(Data->Type == ERLArenaExperimentType::SupportNetwork && !Data->SupportEnemyClass)) { return false; }
+	if (!Data) { return false; }
+	if (Data->Type == ERLArenaExperimentType::SupportNetwork)
+	{
+		const auto& SupportSettings = Data->Support;
+		if (!SupportSettings.SupportEnemyClass || !FMath::IsFinite(SupportSettings.SupportRadius) || SupportSettings.SupportRadius <= 0 ||
+			!FMath::IsFinite(SupportSettings.SupportAttackRate) || SupportSettings.SupportAttackRate < 1 || SupportSettings.SupportAttackRate > 3) { return false; }
+	}
+	else if (Data->Type == ERLArenaExperimentType::AlternatingZones)
+	{
+		const auto& ZoneSettings = Data->Zones;
+		if (!FMath::IsFinite(ZoneSettings.PhaseDuration) || !FMath::IsFinite(ZoneSettings.WarningDuration) ||
+			ZoneSettings.WarningDuration < 1 || ZoneSettings.PhaseDuration <= ZoneSettings.WarningDuration + 1 ||
+			!FMath::IsFinite(ZoneSettings.ArenaHalfExtent) || ZoneSettings.ArenaHalfExtent <= 100 ||
+			!FMath::IsFinite(ZoneSettings.ZoneDamageInterval) || ZoneSettings.ZoneDamageInterval < 0.1f ||
+			!FMath::IsFinite(ZoneSettings.ZoneDamage) || ZoneSettings.ZoneDamage < 0 ||
+			ZoneSettings.ZoneHalfExtent.ContainsNaN() || ZoneSettings.ZoneHalfExtent.GetMin() <= 0 ||
+			!FMath::IsFinite(ZoneSettings.ZoneCenterDistance) || ZoneSettings.ZoneCenterDistance < 0) { return false; }
+	}
+	else { return false; }
 	Settings = Data;
 	if (Data->Type == ERLArenaExperimentType::AlternatingZones)
 	{
 		// Thin floor plates, not blocking volumes. Leave a safe central crossing lane.
 		for (int32 Index = 0; Index < 2; ++Index)
 		{
-			if (!MakeVisual(FVector((Index ? 1 : -1) * Data->ZoneCenterDistance, 0, 1),
-				FVector(Data->ZoneHalfExtent.X / 50, Data->ZoneHalfExtent.Y / 50, 0.01f))) { ResetVariation(); return false; }
+			if (!MakeVisual(FVector((Index ? 1 : -1) * Data->Zones.ZoneCenterDistance, 0, 1),
+				FVector(Data->Zones.ZoneHalfExtent.X / 50, Data->Zones.ZoneHalfExtent.Y / 50, 0.01f))) { ResetVariation(); return false; }
 		}
 	}
 	Advance(0);
@@ -88,16 +97,16 @@ void URLArenaVariationComponent::RegisterEnemy(ARLEnemyCharacter* Enemy, int32 I
 	if (Settings->Type == ERLArenaExperimentType::SupportNetwork)
 	{
 		if (auto* Shield = Enemy->FindComponentByClass<URLEnemyShieldComponent>())
-		{ Shield->SetSupportSource(Settings->bSupportGrantsInvulnerability && Enemy != Support.Get() ? Support.Get() : nullptr, Settings->SupportShieldColor); }
+		{ Shield->SetSupportSource(Settings->Support.bSupportGrantsInvulnerability && Enemy != Support.Get() ? Support.Get() : nullptr, Settings->Support.SupportShieldColor); }
 	}
 }
 
 bool URLArenaVariationComponent::IsZoneDangerous(const FVector& Position) const
 {
 	return Settings && Settings->Type == ERLArenaExperimentType::AlternatingZones &&
-		FMath::Fmod(Elapsed, Settings->PhaseDuration) >= Settings->WarningDuration &&
-		FMath::Abs(Position.X - (Settings->IsLeftPhase(Elapsed) ? -1 : 1) * Settings->ZoneCenterDistance) < Settings->ZoneHalfExtent.X &&
-		FMath::Abs(Position.Y) < Settings->ZoneHalfExtent.Y;
+		FMath::Fmod(Elapsed, Settings->Zones.PhaseDuration) >= Settings->Zones.WarningDuration &&
+		FMath::Abs(Position.X - (Settings->IsLeftPhase(Elapsed) ? -1 : 1) * Settings->Zones.ZoneCenterDistance) < Settings->Zones.ZoneHalfExtent.X &&
+		FMath::Abs(Position.Y) < Settings->Zones.ZoneHalfExtent.Y;
 }
 
 void URLArenaVariationComponent::Advance(float DeltaTime)
@@ -113,11 +122,11 @@ void URLArenaVariationComponent::Advance(float DeltaTime)
 			if (Index > 0 && Visuals.IsValidIndex(Index)) { Visuals[Index]->SetActorHiddenInGame(true); }
 			if (!Enemy || !Enemy->IsPoolActive()) { continue; }
 			const bool bLinked = bSupportAlive && Enemy != Support.Get() &&
-				FVector::DistSquared2D(Enemy->GetActorLocation(), Support->GetActorLocation()) <= FMath::Square(Settings->SupportRadius);
-			Enemy->FindComponentByClass<URLEnemyAttackComponent>()->SetSupportAttackRate(bLinked ? Settings->SupportAttackRate : 1);
+				FVector::DistSquared2D(Enemy->GetActorLocation(), Support->GetActorLocation()) <= FMath::Square(Settings->Support.SupportRadius);
+			Enemy->FindComponentByClass<URLEnemyAttackComponent>()->SetSupportAttackRate(bLinked ? Settings->Support.SupportAttackRate : 1);
 			if (auto* Shield = Enemy->FindComponentByClass<URLEnemyShieldComponent>())
-			{ Shield->SetSupportSource(Settings->bSupportGrantsInvulnerability && bSupportAlive && Enemy != Support.Get() ? Support.Get() : nullptr, Settings->SupportShieldColor); }
-			const bool bProtected = Settings->bSupportGrantsInvulnerability && bSupportAlive && Enemy != Support.Get();
+			{ Shield->SetSupportSource(Settings->Support.bSupportGrantsInvulnerability && bSupportAlive && Enemy != Support.Get() ? Support.Get() : nullptr, Settings->Support.SupportShieldColor); }
+			const bool bProtected = Settings->Support.bSupportGrantsInvulnerability && bSupportAlive && Enemy != Support.Get();
 			if ((bLinked || bProtected) && Visuals.IsValidIndex(Index))
 			{
 				FVector From = Support->GetActorLocation(); From.Z = 60;
@@ -127,7 +136,7 @@ void URLArenaVariationComponent::Advance(float DeltaTime)
 				Visuals[Index]->SetActorRotation((To - From).Rotation());
 				Visuals[Index]->SetActorScale3D(FVector((To - From).Size() / 100, 0.025f, 0.025f));
 				if (auto* Material = Cast<UMaterialInstanceDynamic>(Visuals[Index]->GetStaticMeshComponent()->GetMaterial(0)))
-				{ Material->SetVectorParameterValue(TEXT("SurfaceColor"), bProtected ? Settings->SupportShieldColor : FLinearColor(0.05f,0.65f,0.7f)); }
+				{ Material->SetVectorParameterValue(TEXT("SurfaceColor"), bProtected ? Settings->Support.SupportShieldColor : FLinearColor(0.05f,0.65f,0.7f)); }
 			}
 		}
 		if (Visuals.Num())
@@ -138,7 +147,7 @@ void URLArenaVariationComponent::Advance(float DeltaTime)
 	}
 	else
 	{
-		const bool bWarning = FMath::Fmod(Elapsed, Settings->PhaseDuration) < Settings->WarningDuration;
+		const bool bWarning = FMath::Fmod(Elapsed, Settings->Zones.PhaseDuration) < Settings->Zones.WarningDuration;
 		for (int32 Index = 0; Index < Visuals.Num(); ++Index)
 		{
 			const bool bDangerSide = (Index == 0) == Settings->IsLeftPhase(Elapsed);
@@ -151,8 +160,8 @@ void URLArenaVariationComponent::Advance(float DeltaTime)
 		DamageCooldown = FMath::Max(0.0f, DamageCooldown - DeltaTime);
 		if (APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0); Pawn && IsZoneDangerous(Pawn->GetActorLocation()) && DamageCooldown <= 0)
 		{
-			UGameplayStatics::ApplyDamage(Pawn, Settings->ZoneDamage, nullptr, GetOwner(), nullptr);
-			DamageCooldown = Settings->ZoneDamageInterval;
+			UGameplayStatics::ApplyDamage(Pawn, Settings->Zones.ZoneDamage, nullptr, GetOwner(), nullptr);
+			DamageCooldown = Settings->Zones.ZoneDamageInterval;
 		}
 	}
 }
@@ -182,8 +191,8 @@ FText URLArenaVariationComponent::GetStatusText() const
 	const TCHAR* Hint = TEXT("SUPPORT OFFLINE");
 	if (Settings->Type == ERLArenaExperimentType::SupportNetwork)
 	{
-		if (Support.IsValid() && Support->IsPoolActive()) { Hint = Settings->bSupportGrantsInvulnerability ? TEXT("DESTROY CYAN SUPPORT TO REMOVE PURPLE SHIELDS") : TEXT("CYAN MARKER: SUPPORT LINK ACTIVE"); }
+		if (Support.IsValid() && Support->IsPoolActive()) { Hint = Settings->Support.bSupportGrantsInvulnerability ? TEXT("DESTROY CYAN SUPPORT TO REMOVE PURPLE SHIELDS") : TEXT("CYAN MARKER: SUPPORT LINK ACTIVE"); }
 	}
-	else { Hint = FMath::Fmod(Elapsed, Settings->PhaseDuration) < Settings->WarningDuration ? TEXT("AMBER ZONE: RELOCATE BEFORE ACTIVATION") : TEXT("RED ZONE ACTIVE - CENTER LANE SAFE"); }
+	else { Hint = FMath::Fmod(Elapsed, Settings->Zones.PhaseDuration) < Settings->Zones.WarningDuration ? TEXT("AMBER ZONE: RELOCATE BEFORE ACTIVATION") : TEXT("RED ZONE ACTIVE - CENTER LANE SAFE"); }
 	return FText::FromString(Settings->DisplayName.ToString() + TEXT("\n") + Hint);
 }

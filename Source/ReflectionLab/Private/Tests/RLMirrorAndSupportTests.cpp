@@ -64,9 +64,9 @@ bool FRLMirrorAndSupportTest::RunTest(const FString& Parameters)
 		auto* Visual=It->GetStaticMeshComponent();
 		const auto* Collision=Cast<UPrimitiveComponent>(It->GetRootComponent());
 		const bool bShotBlocker=Collision && Collision->GetCollisionObjectType()==ECC_WorldStatic;
-		const float ExpectedHeight=bShotBlocker ? FMath::Max(Data->ShotBarrierVisualHeight,Data->LaneBarrierVisualHeight+5.0f) : Data->LaneBarrierVisualHeight;
+		const float ExpectedHeight=bShotBlocker ? FMath::Max(Data->Mirror.ShotBarrierVisualHeight,Data->Mirror.LaneBarrierVisualHeight+5.0f) : Data->Mirror.LaneBarrierVisualHeight;
 		TestTrue(TEXT("Barrier visual matches its role-specific height"),FMath::IsNearlyEqual(Visual->Bounds.GetBox().Max.Z,ExpectedHeight,0.1f));
-		if (bShotBlocker) { TestTrue(TEXT("Bullet cover sits above movement rails"),Visual->Bounds.GetBox().Max.Z>Data->LaneBarrierVisualHeight); }
+		if (bShotBlocker) { TestTrue(TEXT("Bullet cover sits above movement rails"),Visual->Bounds.GetBox().Max.Z>Data->Mirror.LaneBarrierVisualHeight); }
 	}
 	ARLProjectileMirrorWall* Mirror=nullptr;
 	ARLProjectileMirrorWall* BottomMirror=nullptr;

@@ -17,15 +17,24 @@ try:
         raise RuntimeError('Cannot save temporary test asset')
     service = editor_service()
     plan = service.preview({'changes':[
-        {'asset':path,'property':'lane_barrier_visual_height','value':55.0,'expected':45.0},
-        {'asset':path,'property':'support_grants_invulnerability','value':True},
-        {'asset':path,'property':'diagonal_mirror_center','value':{'$type':'Vector2D','x':900.0,'y':750.0}},
-        {'asset':path,'property':'field_centers','value':[{'$type':'Vector2D','x':100.0,'y':200.0}]},
+        {'asset':path,'property':'mirror.lane_barrier_visual_height','value':55.0,'expected':45.0},
+        {'asset':path,'property':'support.support_grants_invulnerability','value':True},
+        {'asset':path,'property':'mirror.diagonal_mirror_center','value':{'$type':'Vector2D','x':900.0,'y':750.0}},
+        {'asset':path,'property':'field_layout.field_centers','value':[{'$type':'Vector2D','x':100.0,'y':200.0}]},
         {'asset':path,'property':'type','value':{'$type':'Enum','class':'RLArenaExperimentType','value':'MIRROR_ARENA'}},
     ]})
     assert service.verify(plan['id'])['matches']
     assert service.apply(plan['id'])['matches']
     assert service.apply(plan['id'])['matches']
+    asset = unreal.load_asset(path)
+    assert asset.get_editor_property('mirror').get_editor_property('lane_barrier_visual_height') == 55.0
+    assert asset.get_editor_property('mirror').get_editor_property('shot_barrier_visual_height') == 100.0
+    try:
+        service.preview({'changes': [{'asset': path, 'property': 'lane_barrier_visual_height', 'value': 70.0}]})
+    except AssetChangeError:
+        pass
+    else:
+        raise AssertionError('Legacy editor path must not silently update obsolete data')
     assert service.rollback(plan['id'])['matches']
     unreal.log('RL_ASSET_CHANGES_INTEGRATION_PASS ' + json.dumps({'plan_id':plan['id'],'asset':path}))
 finally:
