@@ -6,6 +6,7 @@
 #include "Combat/RLProjectileFeedbackComponent.h"
 #include "Combat/RLProjectileVisualComponent.h"
 #include "Combat/RLProjectileSpecialComponent.h"
+#include "Combat/RLProjectileExplosionComponent.h"
 #include "Combat/RLProjectileRallyComponent.h"
 #include "Combat/RLProjectileContactComponent.h"
 #include "Enemies/Components/RLBossOverloadComponent.h"
@@ -44,6 +45,7 @@ ARLProjectile::ARLProjectile()
 		&ThisClass::HandleProjectileOverlap);
 
 	VisualComponent = CreateDefaultSubobject<URLProjectileVisualComponent>(TEXT("VisualComponent"));
+	ExplosionComponent = CreateDefaultSubobject<URLProjectileExplosionComponent>(TEXT("ExplosionComponent"));
 	SpecialComponent = CreateDefaultSubobject<URLProjectileSpecialComponent>(TEXT("SpecialComponent"));
 	RallyComponent = CreateDefaultSubobject<URLProjectileRallyComponent>(TEXT("RallyComponent"));
 	ContactComponent = CreateDefaultSubobject<URLProjectileContactComponent>(TEXT("ContactComponent"));

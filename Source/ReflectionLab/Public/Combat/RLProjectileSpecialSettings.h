@@ -6,7 +6,7 @@
 class USoundBase;
 
 USTRUCT(BlueprintType)
-struct REFLECTIONLAB_API FRLProjectileSpecialSettings
+struct REFLECTIONLAB_API FRLProjectileExplosionSettings
 {
 	GENERATED_BODY()
 
@@ -60,6 +60,13 @@ struct REFLECTIONLAB_API FRLProjectileSpecialSettings
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Projectile|Delayed Explosive", meta = (ClampMin = "0.1"))
 	float DelayedExplosiveResumeSpeedMultiplier = 1.3f;
+
+};
+
+USTRUCT(BlueprintType)
+struct REFLECTIONLAB_API FRLProjectileSpecialSettings : public FRLProjectileExplosionSettings
+{
+	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Projectile|Fake", meta = (ClampMin = "1.0"))
 	float FakeTriggerDistance = 280.0f;

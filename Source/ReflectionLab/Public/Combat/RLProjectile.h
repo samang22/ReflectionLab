@@ -15,6 +15,7 @@ class URLProjectilePoolSubsystem;
 class URLProjectileFeedbackComponent;
 class URLProjectileVisualComponent;
 class URLProjectileSpecialComponent;
+class URLProjectileExplosionComponent;
 class URLProjectileRallyComponent;
 class URLProjectileContactComponent;
 class URLProjectileFieldResponseComponent;
@@ -129,6 +130,7 @@ public:
 	UStaticMeshComponent* GetVisualMesh() const { return ProjectileMesh; }
 	UNiagaraComponent* GetTrailComponent() const { return ReflectedTrailComponent; }
 	URLProjectileVisualComponent* GetVisualComponent() const { return VisualComponent; }
+	URLProjectileExplosionComponent* GetExplosionComponent() const { return ExplosionComponent; }
 	URLProjectileSpecialComponent* GetSpecialComponent() const { return SpecialComponent; }
 	URLProjectileRallyComponent* GetRallyComponent() const { return RallyComponent; }
 	URLProjectileContactComponent* GetContactComponent() const { return ContactComponent; }
@@ -181,6 +183,8 @@ protected:
 	TObjectPtr<URLProjectileVisualComponent> VisualComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projectile|Components")
 	TObjectPtr<URLProjectileSpecialComponent> SpecialComponent;
+	UPROPERTY(VisibleAnywhere, Category = "Projectile")
+	TObjectPtr<URLProjectileExplosionComponent> ExplosionComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projectile|Components")
 	TObjectPtr<URLProjectileRallyComponent> RallyComponent;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projectile|Components")
