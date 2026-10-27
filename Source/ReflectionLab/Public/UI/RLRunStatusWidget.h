@@ -12,6 +12,7 @@ class UHorizontalBox;
 class UImage;
 class UTexture2D;
 class UVerticalBox;
+class URLRewardSelectionWidget;
 
 UCLASS()
 class REFLECTIONLAB_API URLRunStatusWidget : public UUserWidget
@@ -50,15 +51,6 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> InvincibilityText;
 
-	UFUNCTION()
-	void HandleRewardChoiceOneClicked();
-
-	UFUNCTION()
-	void HandleRewardChoiceTwoClicked();
-
-	UFUNCTION()
-	void HandleRewardChoiceThreeClicked();
-
 	void BuildWidgetTree();
 	void RefreshDisplay();
 	void UpdateTimerText();
@@ -66,6 +58,7 @@ private:
 	void UpdateStateText();
 	void UpdateResultsPanel();
 	void UpdateRewardChoices();
+	UFUNCTION() void HandleRewardSelectionFinished(int32 ChoiceIndex);
 	void UpdateInputMode();
 	void UpdateExplosiveWarning(float DeltaTime);
 	void SetStateMessage(const FText& Message, const FLinearColor& Color, int32 FontSize);
@@ -112,31 +105,7 @@ private:
 	bool bConfirmingClearExit = false;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UHorizontalBox> RewardContainer;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UBorder> RewardBackdrop;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UTextBlock> RewardPromptText;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UButton>> RewardButtons;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UBorder>> RewardCardBorders;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UTextBlock>> RewardTitleTexts;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UTextBlock>> RewardDescriptionTexts;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UBorder>> RewardArtPanels;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<UImage>> RewardArtImages;
+	TObjectPtr<URLRewardSelectionWidget> RewardSelection;
 
 	UPROPERTY(Transient)
 	TObjectPtr<ARLGameModeBase> BoundGameMode;
@@ -154,13 +123,6 @@ private:
 	float StartMessageDuration = 0.65f;
 
 	float ExplosiveWarningUpdateAccumulator = 0.0f;
-	void UpdateRewardEntrance(float DeltaSeconds);
-	void BeginRewardSelectionAnimation(int32 ChoiceIndex);
-	void UpdateRewardSelectionAnimation(float DeltaSeconds);
-	int32 SelectedRewardIndex = INDEX_NONE;
-	float RewardSelectionElapsed = 0.0f;
-	float RewardEntranceElapsed = 0.0f;
-	bool bRewardEntranceVisible = false;
 	float RoundClearMessageRemaining = 0.0f;
 	float StartMessageRemaining = 0.0f;
 };
