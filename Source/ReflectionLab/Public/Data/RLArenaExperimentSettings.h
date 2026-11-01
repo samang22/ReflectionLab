@@ -14,12 +14,16 @@ struct REFLECTIONLAB_API FRLCrossfireMazeWall
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) FVector Size = FVector(90, 650, 180);
 	UPROPERTY(EditAnywhere, BlueprintReadWrite) float Yaw = 0;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0", ClampMax="1")) int32 PhaseGroup = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bAlwaysClosed = false;
 };
 
 USTRUCT(BlueprintType)
 struct REFLECTIONLAB_API FRLCrossfireExperimentSettings
 {
 	GENERATED_BODY()
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bAlternatingFiringLanes = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="300", ClampMax="1000")) float LaneCenterOffset = 650;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite) bool bKeepLastOccupiedLaneOpen = true;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="3")) float PhaseDuration = 6;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0.5")) float WarningDuration = 1;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, meta=(ClampMin="0.1")) float ShutterMoveDuration = 0.4f;

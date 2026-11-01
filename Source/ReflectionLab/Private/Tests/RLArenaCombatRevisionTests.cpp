@@ -3,6 +3,7 @@
 #include "Framework/RLArenaExperimentComponent.h"
 #include "Framework/RLBallisticsExperimentComponent.h"
 #include "Framework/RLMirrorArenaComponent.h"
+#include "Enemies/RLEnemyCharacter.h"
 #include "Combat/RLAccelerationBarrier.h"
 #include "Combat/RLProjectile.h"
 #include "Combat/RLProjectilePoolSubsystem.h"
@@ -163,7 +164,8 @@ bool FRLCrossfireMazeTest::RunTest(const FString& Parameters)
 	if (!TestNotNull(TEXT("World"), World)) { return false; }
 	auto* Data = LoadExperiment(TEXT("DA_CrossfireExperiment"));
 	if (!TestNotNull(TEXT("Authored maze settings"), Data)) { return false; }
-	TestEqual(TEXT("Eight maze walls authored"), Data->Crossfire.MazeWalls.Num(), 8);
+	TestTrue(TEXT("Authored alternating lanes enabled"), Data->Crossfire.bAlternatingFiringLanes);
+	TestEqual(TEXT("Four fixed walls and two gates"), Data->Crossfire.MazeWalls.Num(), 6);
 	auto* Owner = World->SpawnActor<AActor>();
 	auto* Maze = NewObject<URLArenaExperimentComponent>(Owner); Maze->RegisterComponent(); Maze->Configure(Data);
 	if (!TestTrue(TEXT("Maze configured"), Maze->HasActiveExperiment())) { return false; }
@@ -175,20 +177,32 @@ bool FRLCrossfireMazeTest::RunTest(const FString& Parameters)
 		{
 			if (It->GetStaticMeshComponent()->GetCollisionEnabled() != ECollisionEnabled::NoCollision) { ++Closed; }
 		}
-		TestEqual(TEXT("Four walls close per phase"), Closed, 4);
+		TestEqual(TEXT("Four fixed walls and one closed gate"), Closed, 5);
 		const auto Reachable = WalkableCells(World, 130); // A 260cm corridor envelope, not just one capsule.
-		for (const FIntPoint Goal : {FIntPoint(-17,0), FIntPoint(17,0), FIntPoint(0,-17), FIntPoint(0,17)})
-		{
-			TestTrue(TEXT("Wide routes remain to all four outside lanes"), Reachable.Contains(Goal));
-		}
+		TestTrue(TEXT("Wide central route remains between both lanes"),
+			Reachable.Contains(FIntPoint(0,-17)) && Reachable.Contains(FIntPoint(0,17)));
+		const FIntPoint OpenBank = Phase == 0 ? FIntPoint(14,7) : FIntPoint(-14,-7);
+		const FIntPoint ClosedBank = Phase == 0 ? FIntPoint(-14,-7) : FIntPoint(14,7);
+		TestTrue(TEXT("A 260cm route reaches the open enemy bank"), Reachable.Contains(OpenBank));
+		TestFalse(TEXT("Closed bank cannot be reached through its cover"), Reachable.Contains(ClosedBank));
+
 		for (int32 Index = 0; Index < 16; ++Index)
 		{
 			FTransform Spawn;
 			TestTrue(TEXT("Maze keeps enemy spawns free"), Maze->FindTeamSpawn(Index, 16, Spawn));
+			const FVector Start(Spawn.GetLocation().X, Spawn.GetLocation().Y, 80);
+			const FVector Lane(0, Index % 2 == 0 ? -Data->Crossfire.LaneCenterOffset : Data->Crossfire.LaneCenterOffset, 80);
+			FHitResult Trace;
+			TestTrue(TEXT("Standing at center no longer exposes either enemy bank"),
+				World->LineTraceSingleByChannel(Trace, Start, FVector(0,0,80), ECC_Visibility));
+			const bool bBlocked = World->LineTraceSingleByChannel(Trace, Start, Lane, ECC_Visibility);
+			TestEqual(TEXT("Moving to the open lane exposes its bank only"), bBlocked, Index % 2 == Phase);
+
 		}
 	}
 	Maze->AdvanceExperiment(Data->Crossfire.PhaseDuration); // Group 0 closes again.
-	const auto& Panel = Data->Crossfire.MazeWalls[0];
+	const auto& Panel = *Data->Crossfire.MazeWalls.FindByPredicate([](const FRLCrossfireMazeWall& Wall)
+	{ return !Wall.bAlwaysClosed && Wall.PhaseGroup == 0; });
 	auto* Shots = World->GetSubsystem<URLProjectilePoolSubsystem>();
 	auto* Definition = NewObject<URLProjectileDefinitionDataAsset>(); Definition->ProjectileSpeed = 1000;
 	const FVector Launch(Panel.Center.X-150, Panel.Center.Y, 80);
@@ -211,6 +225,18 @@ bool FRLCrossfireMazeTest::RunTest(const FString& Parameters)
 	FHitResult Hit;
 	TestFalse(TEXT("Occupied panel remains open"), World->LineTraceSingleByChannel(Hit,
 		FVector(Panel.Center.X-150, Panel.Center.Y, 80), FVector(Panel.Center.X+150, Panel.Center.Y, 80), ECC_Visibility));
+	Maze->ResetExperiment();
+	Player->SetActorLocation(FVector(0,0,96));
+	Maze->Configure(Data);
+	auto* LeftEnemy = World->SpawnActor<ARLEnemyCharacter>(FVector(-1450,-700,96), FRotator::ZeroRotator);
+	auto* RightEnemy = World->SpawnActor<ARLEnemyCharacter>(FVector(1450,700,96), FRotator::ZeroRotator);
+	LeftEnemy->SetTutorialCombatControlled(true); RightEnemy->SetTutorialCombatControlled(true);
+	Maze->RegisterEnemy(LeftEnemy,0); Maze->RegisterEnemy(RightEnemy,1);
+	Maze->AdvanceExperiment(Data->Crossfire.WarningDuration + Data->Crossfire.ShutterMoveDuration + 0.1f);
+	RightEnemy->ReturnToPool();
+	Maze->AdvanceExperiment(Data->Crossfire.ShutterMoveDuration + 0.1f);
+	TestFalse(TEXT("Last occupied bank opens without waiting for the next phase"), World->LineTraceSingleByChannel(Hit,
+		FVector(-1450,-700,80), FVector(0,-700,80), ECC_Visibility));
 	Maze->ResetExperiment();
 	return true;
 }

@@ -31,6 +31,9 @@ public:
 	void SetSupportAttackRate(float Rate) { SupportAttackRate = FMath::IsFinite(Rate) ? FMath::Clamp(Rate, 1.0f, 3.0f) : 1.0f; }
 	float GetSupportAttackRate() const { return SupportAttackRate; }
 	void StopFiring();
+	void SetCleanupPressure(float Rate, bool bIncomingShot, float MaxIdleWait, float RetryDelay);
+	void ClearCleanupPressure();
+	float GetCleanupAttackRate() const { return CleanupAttackRate; }
 	void SetExperimentAttackAllowed(bool bAllowed, bool bResume = true);
 	bool IsExperimentAttackAllowed() const { return bExperimentAttackAllowed; }
 	void Fire();
@@ -75,6 +78,9 @@ private:
 	FRLEnemyAttackVariation AttackVariation;
 	float AttackInterval = 3.0f;
 	float SupportAttackRate = 1.0f;
+	float CleanupAttackRate = 1.0f;
+	float CleanupRetryDelay = 0.15f;
+	bool bCleanupIncomingShot = false;
 	int32 ShotsPerBurst = 1;
 	float TimeBetweenShots = 0.5f;
 	float InitialFireDelay = 1.0f;

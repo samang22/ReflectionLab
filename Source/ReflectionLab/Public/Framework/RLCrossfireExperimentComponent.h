@@ -24,7 +24,7 @@ public:
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 private:
-	struct FEnemyEntry { TWeakObjectPtr<ARLEnemyCharacter> Enemy; };
+	struct FEnemyEntry { TWeakObjectPtr<ARLEnemyCharacter> Enemy; int32 Team = 0; };
 	TArray<FEnemyEntry> Enemies;
 	UPROPERTY(Transient)
 	TObjectPtr<URLArenaExperimentDataAsset> Settings;
@@ -39,6 +39,9 @@ private:
 	TArray<bool> bSkipClosing;
 	TArray<FVector> ShutterSizes;
 	TArray<int32> ShutterPhaseGroups;
+	TArray<bool> PermanentWalls;
 	float PhaseTime() const;
+	int32 OccupiedTeamMask() const;
+	bool ShouldCloseWall(int32 Index, int32 Phase, int32 OccupiedMask) const;
 	bool PlayerBlocksShutter(int32 Index) const;
 };

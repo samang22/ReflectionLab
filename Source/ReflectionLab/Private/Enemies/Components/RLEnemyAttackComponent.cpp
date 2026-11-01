@@ -47,6 +47,7 @@ void URLEnemyAttackComponent::Configure(const FRLEnemyCombatRow& Config,
 
 void URLEnemyAttackComponent::ActivateForPool()
 {
+	ClearCleanupPressure();
 	AimMirror.Reset();
 	SupportAttackRate = 1.0f;
 	StopFiring();
@@ -60,6 +61,7 @@ void URLEnemyAttackComponent::ActivateForPool()
 
 void URLEnemyAttackComponent::DeactivateForPool()
 {
+	ClearCleanupPressure();
 	AimMirror.Reset();
 	SupportAttackRate = 1.0f;
 	StopFiring();
@@ -191,6 +193,29 @@ void URLEnemyAttackComponent::SetExperimentAttackAllowed(bool bAllowed, bool bRe
 	else if (bResume && bAutoStartFiring) { StartFiring(); }
 }
 
+void URLEnemyAttackComponent::ClearCleanupPressure()
+{
+	CleanupAttackRate = 1;
+	bCleanupIncomingShot = false;
+	CleanupRetryDelay = 0.15f;
+}
+
+void URLEnemyAttackComponent::SetCleanupPressure(float Rate, bool bIncomingShot, float MaxIdleWait, float RetryDelay)
+{
+	CleanupAttackRate = FMath::IsFinite(Rate) ? FMath::Clamp(Rate, 1.0f, 4.0f) : 1;
+	bCleanupIncomingShot = bIncomingShot;
+	CleanupRetryDelay = FMath::IsFinite(RetryDelay) ? FMath::Clamp(RetryDelay, 0.05f, 0.5f) : 0.15f;
+	if (!GetWorld() || !bFiring || bTutorialCombatControlled || RemainingShotsInBurst > 0 || bIncomingShot) { return; }
+	const float IdleCap = FMath::IsFinite(MaxIdleWait) ? FMath::Clamp(MaxIdleWait, 0.1f, 3.0f) : 0.7f;
+	const float Delay = FMath::Max(0.1f, FMath::Min(IdleCap, AttackInterval / (SupportAttackRate * CleanupAttackRate)));
+	const float Remaining = GetWorld()->GetTimerManager().GetTimerRemaining(AttackTimerHandle);
+	// Never restart a timer already closer to firing: polling must not postpone it.
+	if (Remaining > Delay)
+	{
+		GetWorld()->GetTimerManager().SetTimer(AttackTimerHandle, this, &ThisClass::BeginBurst, Delay, false);
+	}
+}
+
 void URLEnemyAttackComponent::BeginBurst()
 {
 	ARLEnemyCharacter* Enemy = Cast<ARLEnemyCharacter>(GetOwner());
@@ -201,6 +226,11 @@ void URLEnemyAttackComponent::BeginBurst()
 		return;
 	}
 
+	if (bCleanupIncomingShot)
+	{
+		GetWorld()->GetTimerManager().SetTimer(AttackTimerHandle, this, &ThisClass::BeginBurst, CleanupRetryDelay, false);
+		return;
+	}
 	BurstStartTime = GetWorld()->GetTimeSeconds();
 	if (URLEnemyMovementComponent* Movement = Enemy->FindComponentByClass<URLEnemyMovementComponent>())
 	{
@@ -210,7 +240,7 @@ void URLEnemyAttackComponent::BeginBurst()
 			return;
 		}
 	}
-	CurrentBurstInterval = FRLEnemyAttackVariation::SampleInterval(AttackInterval / SupportAttackRate,
+	CurrentBurstInterval = FRLEnemyAttackVariation::SampleInterval(AttackInterval / (SupportAttackRate * CleanupAttackRate),
 		UsesAttackVariation() ? AttackVariation.AttackIntervalJitterRatio : 0.0f, 0.1f);
 	RemainingShotsInBurst = FMath::Max(1, ShotsPerBurst);
 	FireNextShot();

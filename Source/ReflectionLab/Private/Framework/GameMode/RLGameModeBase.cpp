@@ -1,6 +1,7 @@
 #include "Framework/GameMode/RLGameModeBase.h"
 #include "Framework/RLArenaExperimentComponent.h"
 #include "Framework/RLWaveDefinitionResolver.h"
+#include "Framework/RLCombatPacingComponent.h"
 #include "Data/RLArenaExperimentDataAsset.h"
 
 #include "Combat/RLProjectile.h"
@@ -25,6 +26,7 @@
 
 ARLGameModeBase::ARLGameModeBase()
 {
+	CombatPacing = CreateDefaultSubobject<URLCombatPacingComponent>(TEXT("CombatPacing"));
 	ArenaExperiment = CreateDefaultSubobject<URLArenaExperimentComponent>(TEXT("ArenaExperiment"));
 	static ConstructorHelpers::FObjectFinder<URLRunDefinitionDataAsset> RunDefinitionFinder(
 		TEXT("/Game/ReflectionLab/Data/Difficulty/DA_DefaultRun.DA_DefaultRun"));
@@ -667,6 +669,7 @@ void ARLGameModeBase::BeginWave(int32 WaveIndex)
 			RequestedEnemyCount,
 			SpawnedEnemyCount);
 	}
+	CombatPacing->Configure(RunDefinition->CleanupPacing, !bTutorialRound && !RoundDefinition->EnemyClass);
 }
 
 void ARLGameModeBase::FinishRound()
@@ -1159,6 +1162,7 @@ void ARLGameModeBase::SetRunState(ERLRunState NewState)
 	}
 
 	RunState = NewState;
+	if (RunState != ERLRunState::PlayingRound) { CombatPacing->ResetPacing(); }
 	if ((RunState == ERLRunState::TutorialCompleted ||
 		RunState == ERLRunState::RunCompleted || RunState == ERLRunState::GameOver) &&
 		RunEndTimeSeconds <= 0.0f && GetWorld())

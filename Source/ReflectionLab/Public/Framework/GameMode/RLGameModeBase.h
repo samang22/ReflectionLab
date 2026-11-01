@@ -13,6 +13,7 @@ class URLRunDefinitionDataAsset;
 class URLRunRewardDataAsset;
 class URLArenaExperimentDataAsset;
 class URLArenaExperimentComponent;
+class URLCombatPacingComponent;
 struct FRLDifficultyPhase;
 struct FRLWaveDefinition;
 struct FRLRoundDefinition;
@@ -202,6 +203,8 @@ public:
 	FRLWaveChangedSignature OnWaveChanged;
 
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Run|Combat Pacing")
+	TObjectPtr<URLCombatPacingComponent> CombatPacing;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Run|Experiments")
 	TObjectPtr<URLArenaExperimentComponent> ArenaExperiment;
 	virtual void BeginPlay() override;

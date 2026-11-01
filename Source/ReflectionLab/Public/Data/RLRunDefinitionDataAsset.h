@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Data/RLCombatPacingSettings.h"
 #include "Engine/DataAsset.h"
 #include "RLRunDefinitionDataAsset.generated.h"
 
@@ -73,6 +74,8 @@ class REFLECTIONLAB_API URLRunDefinitionDataAsset : public UDataAsset
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Run|Combat Pacing")
+	FRLCombatPacingSettings CleanupPacing;
 	// Migration-only source fields. Runtime uses FRLRoundDefinition exclusively.
 	UPROPERTY()
 	TMap<int32, TObjectPtr<URLArenaExperimentDataAsset>> RoundExperiments;
