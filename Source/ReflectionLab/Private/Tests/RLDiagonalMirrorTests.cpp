@@ -11,6 +11,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Components/StaticMeshComponent.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FRLDiagonalMirrorTest, "ReflectionLab.Experiments.DiagonalMirrors",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -83,6 +84,44 @@ bool FRLDiagonalMirrorTest::RunTest(const FString& Parameters)
 	Experiment->Configure(Data);
 	TestEqual(TEXT("New round starts zoom transition afresh"),Boom->TargetArmLength,1950.0f);
 	Experiment->ResetExperiment();
+	// The authored layout must fit above the lower screen edge at typical PIE sizes.
+	auto* Authored = LoadObject<URLArenaExperimentDataAsset>(nullptr,
+		TEXT("/Game/ReflectionLab/Data/Experiments/DA_MirrorArena.DA_MirrorArena"));
+	if (TestNotNull(TEXT("Authored mirror arena"), Authored))
+	{
+		Boom->SetWorldRotation(FRotator(-75,45,0));
+		TestTrue(TEXT("Configure authored framing"), Arena->Configure(Authored));
+		Arena->TickComponent(1,LEVELTICK_All,nullptr);
+		const FRotationMatrix ViewRotation(Boom->GetComponentRotation());
+		const FVector Forward = ViewRotation.GetUnitAxis(EAxis::X);
+		const FVector Right = ViewRotation.GetUnitAxis(EAxis::Y);
+		const FVector Up = ViewRotation.GetUnitAxis(EAxis::Z);
+		const FVector Camera = Boom->GetComponentLocation() - Forward * Boom->TargetArmLength;
+		const double TanHalfFOV = FMath::Tan(FMath::DegreesToRadians(30.0));
+		for (double Aspect : {16.0/9.0, 1.93})
+		{
+			for (TActorIterator<ARLProjectileMirrorWall> It(World); It; ++It)
+			{
+				auto* Mesh = It->FindComponentByClass<UStaticMeshComponent>();
+				FVector Min, Max;
+				Mesh->GetLocalBounds(Min, Max);
+				for (int32 Corner = 0; Corner < 8; ++Corner)
+				{
+					const FVector Local(Corner & 1 ? Max.X : Min.X,
+						Corner & 2 ? Max.Y : Min.Y, Corner & 4 ? Max.Z : Min.Z);
+					const FVector Delta = Mesh->GetComponentTransform().TransformPosition(Local) - Camera;
+					const double Depth = FVector::DotProduct(Delta, Forward);
+					TestTrue(TEXT("Mirror corner is in front of camera"), Depth > 0);
+					if (Depth <= 0) { continue; }
+					TestTrue(TEXT("Full mirror width stays inside frame"),
+						FMath::Abs(FVector::DotProduct(Delta, Right)) / (Depth * TanHalfFOV) < 0.96);
+					TestTrue(TEXT("Full mirror height clears lower and upper screen edges"),
+						FMath::Abs(FVector::DotProduct(Delta, Up)) / (Depth * TanHalfFOV / Aspect) < 0.96);
+				}
+			}
+		}
+		Arena->ResetArena();
+	}
 	World->DestroyWorld(false); GEngine->DestroyWorldContext(World);
 	return true;
 }

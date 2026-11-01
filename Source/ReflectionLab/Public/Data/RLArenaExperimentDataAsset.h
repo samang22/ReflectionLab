@@ -16,6 +16,8 @@ class REFLECTIONLAB_API URLArenaExperimentDataAsset : public UDataAsset
 {
 	GENERATED_BODY()
 public:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Experiment|Combat")
+	bool bAllowRingAttacks = true;
 	virtual void PostInitProperties() override;
 	virtual void PostLoad() override;
 	UFUNCTION(BlueprintCallable, Category="Experiment|Migration")

@@ -38,5 +38,11 @@ FRLWaveDefinition RLWaveDefinitionResolver::Resolve(const FRLWaveDefinition& Aut
 		WaveDefinition.bUseWeightedPatterns = true;
 		WaveDefinition.DefaultProjectileWeight = 1;
 	}
+	if (Experiment && !Experiment->bAllowRingAttacks)
+	{
+		// Independent of the projectile override: preserve authored special shots.
+		WaveDefinition.RingAttack.Weight = 0;
+		WaveDefinition.RingAttack.ShotInterval = 0;
+	}
 	return WaveDefinition;
 }

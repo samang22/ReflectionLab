@@ -47,6 +47,38 @@ bool FRLWaveResolutionTest::RunTest(const FString& Parameters)
 	Round.bIsTutorial = false;
 	const auto Invalid = RLWaveDefinitionResolver::Resolve(Authored, Round, 0, nullptr);
 	TestTrue(TEXT("Invalid caller frequency produces finite timing"), FMath::IsFinite(Invalid.AttackIntervalMultiplier));
+	Experiment->ProjectileDefinition = nullptr;
+	Experiment->bAllowRingAttacks = false;
+	const auto NoRings = RLWaveDefinitionResolver::Resolve(Authored, Round, 1, Experiment);
+	TestEqual(TEXT("Ring opt-out disables weighted patterns without a projectile override"), NoRings.RingAttack.Weight, 0);
+	TestEqual(TEXT("Ring opt-out disables legacy intervals"), NoRings.RingAttack.ShotInterval, 0);
+	TestEqual(TEXT("Ring opt-out preserves special projectile rules"), NoRings.ProjectileRules.Num(), Authored.ProjectileRules.Num());
+	TestEqual(TEXT("Ring opt-out does not alter authored rings"), Authored.RingAttack.Weight, 5);
+	Experiment->bAllowRingAttacks = true;
+	TestEqual(TEXT("Other experiments retain authored rings"),
+		RLWaveDefinitionResolver::Resolve(Authored, Round, 1, Experiment).RingAttack.Weight, 5);
+	auto* Run = LoadObject<URLRunDefinitionDataAsset>(nullptr,
+		TEXT("/Game/ReflectionLab/Data/Difficulty/DA_DefaultRun.DA_DefaultRun"));
+	if (TestNotNull(TEXT("Authored run"), Run))
+	{
+		int32 Number = 0;
+		bool bFoundFourthRound = false;
+		for (const auto& Entry : Run->Rounds)
+		{
+			if (Entry.bIsTutorial || ++Number != 4) { continue; }
+			bFoundFourthRound = true;
+			if (!TestNotNull(TEXT("Round four experiment"), Entry.Experiment.Get()) ||
+				!TestNotNull(TEXT("Round four schedule"), Entry.DifficultySchedule.Get())) { break; }
+			TestFalse(TEXT("Round four asset disables ring attacks"), Entry.Experiment->bAllowRingAttacks);
+			for (const auto& Wave : Entry.DifficultySchedule->Waves)
+			{
+				const auto Resolved = RLWaveDefinitionResolver::Resolve(Wave, Entry, 1, Entry.Experiment);
+				TestEqual(TEXT("Every round-four wave excludes weighted rings"), Resolved.RingAttack.Weight, 0);
+				TestEqual(TEXT("Every round-four wave excludes interval rings"), Resolved.RingAttack.ShotInterval, 0);
+			}
+		}
+		TestTrue(TEXT("Displayed round four exists"), bFoundFourthRound);
+	}
 	return true;
 }
 #endif
